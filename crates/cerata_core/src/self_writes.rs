@@ -71,7 +71,10 @@ impl SelfWriteLog {
 
     /// [`Self::is_self_write`] with a fingerprint the caller already has.
     pub fn matches(&self, path: &Path, current: Fingerprint) -> bool {
-        let now = Instant::now();
+        self.matches_at(path, current, Instant::now())
+    }
+
+    fn matches_at(&self, path: &Path, current: Fingerprint, now: Instant) -> bool {
         self.entries
             .lock()
             .get(&canonical_key(path))
@@ -114,6 +117,36 @@ mod tests {
         // An external tool rewrites the file right after our save.
         std::fs::write(&path, "theirs").unwrap();
         assert!(!log.is_self_write(&path));
+    }
+
+    // Writer `watcher.rs` test_self_write_detection and
+    // self_write_entry_is_not_consumed_on_match: one save fans out into
+    // several OS events, and each of them is an echo.
+    #[test]
+    fn a_recorded_write_matches_every_echo_of_it() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("note.md");
+        let log = SelfWriteLog::new();
+        log.record(&path, b"ours");
+        std::fs::write(&path, "ours").unwrap();
+        for _ in 0..3 {
+            assert!(log.is_self_write(&path));
+        }
+        assert!(!log.is_self_write(&dir.path().join("other.md")));
+    }
+
+    // Writer `watcher.rs` self_write_expires_after_ttl.
+    #[test]
+    fn a_recorded_write_expires_after_the_ttl() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("note.md");
+        let log = SelfWriteLog::new();
+        log.record(&path, b"ours");
+        let print = Fingerprint::of(b"ours");
+        let start = Instant::now();
+        assert!(log.matches_at(&path, print, start));
+        let expired = start + SELF_WRITE_TTL + Duration::from_millis(1);
+        assert!(!log.matches_at(&path, print, expired));
     }
 
     #[test]

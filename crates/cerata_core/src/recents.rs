@@ -143,6 +143,33 @@ mod tests {
     }
 
     #[test]
+    fn push_recent_stamps_new_entries_and_refreshes_a_reopened_one() {
+        let data = TempDir::new().unwrap();
+        let notes = TempDir::new().unwrap();
+        let a = notes.path().join("a.md");
+        let b = notes.path().join("b.md");
+        std::fs::write(&a, "").unwrap();
+        std::fs::write(&b, "").unwrap();
+        let stale = vec![RecentEntry {
+            path: canonical_string(&a),
+            opened_at: 1,
+        }];
+        std::fs::write(
+            data.path().join("recent_files.json"),
+            serde_json::to_string(&stale).unwrap(),
+        )
+        .unwrap();
+        let store = RecentsStore::new(data.path());
+        let before = now_secs();
+        store.record_file(&b).unwrap();
+        store.record_file(&a).unwrap();
+        let files = store.files().unwrap();
+        let paths: Vec<&str> = files.iter().map(|e| e.path.as_str()).collect();
+        assert_eq!(paths, [canonical_string(&a), canonical_string(&b)]);
+        assert!(files.iter().all(|e| e.opened_at >= before), "{files:?}");
+    }
+
+    #[test]
     fn push_recent_caps_at_thirty() {
         let data = TempDir::new().unwrap();
         let notes = TempDir::new().unwrap();
@@ -190,6 +217,9 @@ mod tests {
         let store = RecentsStore::new(data.path());
         store.record_file(&png).unwrap();
         store.record_file(&notes.path().join("missing.md")).unwrap();
+        let folder = notes.path().join("folder.md");
+        std::fs::create_dir(&folder).unwrap();
+        store.record_file(&folder).unwrap();
         assert!(store.files().unwrap().is_empty());
     }
 

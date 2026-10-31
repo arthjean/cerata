@@ -926,6 +926,41 @@ mod tests {
         assert!(live.contains(&root.join("ab").join("three.md")));
     }
 
+    // Writer `watcher.rs` add_subtree tests: a folder that appears is walked
+    // for Markdown only, and walking it again adds nothing.
+    #[test]
+    fn subtree_walk_indexes_markdown_only_and_is_idempotent() {
+        let dir = TempDir::new().unwrap();
+        let root = dunce::canonicalize(dir.path()).unwrap();
+        let batch = root.join("batch");
+        fs::create_dir_all(batch.join("deep")).unwrap();
+        fs::write(batch.join("one.md"), "x").unwrap();
+        fs::write(batch.join("deep").join("two.MARKDOWN"), "x").unwrap();
+        fs::write(batch.join("image.png"), "x").unwrap();
+        fs::write(batch.join("notes.txt"), "x").unwrap();
+        let ignore = WorkspaceIgnore::load_with_global(&root, None);
+        let mut live = LiveIndex::new(&root);
+        live.upsert(IndexedFile {
+            path: batch.join("one.md"),
+            relative_path: "batch/one.md".into(),
+            name: "one.md".into(),
+            modified_at: 0,
+        });
+
+        for _ in 0..2 {
+            let found = index_subtree(&root, &batch, &ignore);
+            let mut names: Vec<&str> = found.iter().map(|f| f.name.as_str()).collect();
+            names.sort_unstable();
+            assert_eq!(names, ["one.md", "two.MARKDOWN"]);
+            for file in found {
+                live.upsert(file);
+            }
+            assert_eq!(live.len(), 2);
+        }
+        assert!(live.contains(&batch.join("deep").join("two.MARKDOWN")));
+        assert!(!live.contains(&batch.join("image.png")));
+    }
+
     #[test]
     fn live_index_update_cost_does_not_grow_with_index_size() {
         let root = PathBuf::from("/w");
