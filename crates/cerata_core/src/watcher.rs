@@ -489,8 +489,10 @@ mod tests {
 
         fn start(mut self) -> Self {
             self.watcher = Some(WorkspaceWatcher::start(self.ctx.clone()).unwrap());
-            // Let the OS watch settle before the test starts writing.
-            std::thread::sleep(Duration::from_millis(200));
+            // FSEvents can deliver the setup writes after the stream starts;
+            // drain until the watcher has been quiet for two batch windows so
+            // they never land in the test's own expectations.
+            while self.events.recv_timeout(2 * BATCH_WINDOW).is_ok() {}
             self
         }
 
@@ -677,13 +679,14 @@ mod tests {
     fn batches_group_events_within_the_window() {
         let (sender, receiver) = mpsc::channel();
         let feeder = std::thread::spawn(move || {
-            for (delay, value) in [(0, 1), (100, 2), (100, 3), (400, 4)] {
+            // Wide margins: CI timers (macOS runners) overshoot short sleeps.
+            for (delay, value) in [(0, 1), (100, 2), (100, 3), (1500, 4)] {
                 std::thread::sleep(Duration::from_millis(delay));
                 sender.send(value).unwrap();
             }
         });
         let first = receiver.recv().unwrap();
-        let (batch, connected) = collect_batch(first, &receiver, BATCH_WINDOW);
+        let (batch, connected) = collect_batch(first, &receiver, Duration::from_secs(1));
         assert_eq!(batch, vec![1, 2, 3]);
         assert!(connected);
         let next = receiver.recv().unwrap();
