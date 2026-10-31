@@ -24,3 +24,7 @@ workspace = true
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
 
+# US-002 throwaway spike of the editor engine (docs/adr/0001-editor-engine.md).
+[[example]]
+name = "editor_spike"
+test = true
