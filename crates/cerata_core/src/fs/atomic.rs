@@ -55,10 +55,12 @@ pub(crate) fn atomic_write_with(
         .open(&temp)?;
 
     let result = (|| {
-        write(&mut file, bytes)?;
+        // Permissions first: the content must never sit in a temp file more
+        // readable than the original.
         if let Some(meta) = &existing {
             file.set_permissions(meta.permissions())?;
         }
+        write(&mut file, bytes)?;
         file.sync_all()?;
         drop(file);
         rename_with_retry(&temp, &target)?;
