@@ -466,16 +466,80 @@ mod tests {
         assert_eq!(window.with_snapshot(&captured, || ()), None);
     }
 
+    // Writer `state.rs` guarded_workspace_snapshot_rejects_stale_callbacks_and_holds_read_guard.
     #[test]
-    fn clear_workspace_only_when_still_current() {
+    fn a_publish_holds_the_state_lock_so_no_transition_interleaves() {
         let (_config, settings) = settings();
         let window = WindowRegistry::new().create(settings);
         let a = TempDir::new().unwrap();
         let (sender, _events) = mpsc::channel();
-        let info = open_workspace(&window, a.path(), sender).unwrap();
+        open_workspace(&window, a.path(), sender).unwrap();
+        let captured = window.snapshot().unwrap();
+        let published = window.with_snapshot(&captured, || window.runtime.try_write().is_none());
+        assert_eq!(published, Some(true));
+    }
+
+    // Writer `commands/fs.rs` create_sidebar_entry_rejects_stale_workspace_before_mutation.
+    #[test]
+    fn a_stale_snapshot_never_reaches_the_file_system() {
+        let (_config, settings) = settings();
+        let window = WindowRegistry::new().create(settings);
+        let a = TempDir::new().unwrap();
+        let b = TempDir::new().unwrap();
+        let (sender, _events) = mpsc::channel();
+        open_workspace(&window, a.path(), sender.clone()).unwrap();
+        let captured = window.snapshot().unwrap();
+        let stale = window.runtime().unwrap();
+        open_workspace(&window, b.path(), sender).unwrap();
+        let created = window.with_snapshot(&captured, || {
+            stale
+                .fs
+                .create_untitled(&stale.root, crate::fs::EntryKind::File)
+        });
+        assert!(created.is_none());
+        assert_eq!(std::fs::read_dir(a.path()).unwrap().count(), 0);
+    }
+
+    // Writer `state.rs` close_workspace_invalidates_the_snapshot_and_rejects_stale_roots.
+    #[test]
+    fn clear_workspace_only_when_still_current() {
+        let (_config, settings) = settings();
+        let window = WindowRegistry::new().create(settings.clone());
+        let a = TempDir::new().unwrap();
+        let b = TempDir::new().unwrap();
+        let (sender, _events) = mpsc::channel();
+        let info = open_workspace(&window, a.path(), sender.clone()).unwrap();
+        let captured = window.snapshot().unwrap();
+        let closed = window.runtime().unwrap();
         assert!(!window.clear_workspace_if_current(Path::new("/not/it")));
         assert!(window.clear_workspace_if_current(&info.root));
         assert!(window.snapshot().is_none());
+        assert!(window.runtime().is_none());
+        assert!(closed.token.is_stale(), "jobs of the closed workspace stop");
+        assert!(settings.workspace_path().is_none());
+        assert_eq!(window.with_snapshot(&captured, || ()), None);
+
+        let other = open_workspace(&window, b.path(), sender).unwrap();
+        assert!(!window.clear_workspace_if_current(&info.root));
+        assert_eq!(window.snapshot().map(|s| s.root), Some(other.root));
+    }
+
+    // Writer `commands/workspace.rs` canonicalize_resolves_var_alias_on_macos.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn canonicalize_resolves_var_alias_on_macos() {
+        let dir = TempDir::new().unwrap();
+        let canonical = canonicalize_workspace_root(dir.path()).unwrap();
+        let raw = canonical.to_string_lossy().into_owned();
+        // `/var` is an alias of `/private/var`: both spellings must give the
+        // same root, or the sidebar and the index disagree on every path.
+        if let Some(aliased) = raw.strip_prefix("/private") {
+            assert!(Path::new(aliased).exists());
+            assert_eq!(
+                canonicalize_workspace_root(Path::new(aliased)).unwrap(),
+                canonical
+            );
+        }
     }
 
     #[test]

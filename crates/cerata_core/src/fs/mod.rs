@@ -721,6 +721,32 @@ mod tests {
         assert!(entry.is_dir);
     }
 
+    // Writer create_sidebar_entry_rejects_a_replaced_workspace_root: the root
+    // is moved away and a link to another folder takes its place. The root is
+    // re-canonicalized on every operation, so the link resolves outside.
+    #[test]
+    fn create_untitled_rejects_a_replaced_workspace_root() {
+        let parent = TempDir::new().unwrap();
+        let root = parent.path().join("workspace");
+        fs::create_dir(&root).unwrap();
+        let ws = WorkspaceFs::new(&root).unwrap();
+        fs::rename(&root, parent.path().join("moved-workspace")).unwrap();
+        let outside = TempDir::new().unwrap();
+        #[cfg(unix)]
+        let linked = std::os::unix::fs::symlink(outside.path(), &root);
+        #[cfg(windows)]
+        let linked = std::os::windows::fs::symlink_dir(outside.path(), &root);
+        if let Err(error) = linked {
+            eprintln!("skipped: cannot create symlinks here: {error}");
+            return;
+        }
+        assert!(matches!(
+            ws.create_untitled(&root, EntryKind::File),
+            Err(FsError::OutsideWorkspace(_))
+        ));
+        assert_eq!(fs::read_dir(outside.path()).unwrap().count(), 0);
+    }
+
     #[test]
     fn create_untitled_rejects_parent_outside_workspace() {
         let dir = TempDir::new().unwrap();

@@ -448,6 +448,9 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         let ignore = WorkspaceIgnore::load_with_global(&root, None);
         assert!(!ignore.excludes(&root.join("note.md"), false));
+        // Writer `watcher.rs` test_ignores_hidden_files: hidden files too.
+        assert!(ignore.excludes(&root.join(".DS_Store"), false));
+        assert!(ignore.excludes(&root.join("sub").join(".hidden.md"), false));
         assert!(ignore.excludes(&root.join(".obsidian").join("app.md"), false));
         assert!(ignore.excludes(&root.join(".cerata").join("config"), false));
     }
