@@ -23,7 +23,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, windows-2022, ubuntu-22.04]
+        # macos-14 images retire on 2026-11-02.
+        os: [macos-15, windows-2022, ubuntu-22.04]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     defaults:
