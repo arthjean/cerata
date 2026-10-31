@@ -133,6 +133,22 @@ impl WorkspaceFs {
         Ok(parent.join(name))
     }
 
+    /// An existing entry itself, without following a final symlink: its
+    /// parent is canonicalized and confined, its own name is kept. Deleting
+    /// or renaming a link must act on the link, never on its target.
+    fn confine_entry(&self, path: &Path) -> Result<PathBuf, FsError> {
+        let Some(name) = path.file_name() else {
+            return self.confine_existing(path);
+        };
+        let parent = match path.parent() {
+            Some(parent) if !parent.as_os_str().is_empty() => parent,
+            _ => Path::new("."),
+        };
+        let entry = self.confine_existing(parent)?.join(name);
+        fs::symlink_metadata(&entry).map_err(|e| FsError::io(&entry, e))?;
+        Ok(entry)
+    }
+
     fn check_inside(&self, canonical: &Path, original: &Path) -> Result<(), FsError> {
         if canonical.starts_with(&self.root) {
             Ok(())
@@ -292,12 +308,20 @@ impl WorkspaceFs {
     /// with `/` (and `<>:"\|?*` on Windows). A case-only rename of the same
     /// file is allowed on case-insensitive file systems.
     pub fn rename(&self, old: &Path, new: &Path) -> Result<PathBuf, FsError> {
-        let old = self.confine_existing(old)?;
+        let old = self.confine_entry(old)?;
         let new = self.confine_new(new)?;
-        if let Ok(existing) = dunce::canonicalize(&new)
-            && existing != old
-        {
-            return Err(FsError::AlreadyExists(new));
+        // Any entry at `new`, a dangling symlink included, blocks the rename,
+        // unless both paths name the same regular entry (case-only rename on
+        // a case-insensitive file system). Symlinks never take that exception:
+        // a link and its target share a canonical path.
+        if let Ok(existing) = fs::symlink_metadata(&new) {
+            let is_link = |meta: &fs::Metadata| meta.file_type().is_symlink();
+            let same_entry = !is_link(&existing)
+                && !fs::symlink_metadata(&old).is_ok_and(|meta| is_link(&meta))
+                && dunce::canonicalize(&new).ok() == dunce::canonicalize(&old).ok();
+            if !same_entry {
+                return Err(FsError::AlreadyExists(new));
+            }
         }
         fs::rename(&old, &new).map_err(|e| FsError::io(&old, e))?;
         Ok(new)
@@ -305,7 +329,7 @@ impl WorkspaceFs {
 
     /// Moves a file or folder to the OS trash.
     pub fn delete(&self, path: &Path) -> Result<(), FsError> {
-        let path = self.confine_existing(path)?;
+        let path = self.confine_entry(path)?;
         if path == self.root {
             return Err(FsError::OutsideWorkspace(path));
         }
@@ -349,7 +373,11 @@ impl WorkspaceFs {
             {
                 Ok(file) => {
                     drop(file);
-                    self.write_file(&candidate, content, source_file.format)?;
+                    if let Err(error) = self.write_file(&candidate, content, source_file.format) {
+                        // Leave no empty placeholder behind.
+                        let _ = fs::remove_file(&candidate);
+                        return Err(error);
+                    }
                     return Ok(candidate);
                 }
                 Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
@@ -853,6 +881,78 @@ mod tests {
             ws.write_file(&dir.path().join("link.md"), "pwned", TextFormat::default()),
             Err(FsError::OutsideWorkspace(_))
         ));
+    }
+
+    /// Creates a file symlink; `false` where the account cannot (Windows
+    /// without Developer Mode or elevation).
+    fn file_symlink(target: &Path, link: &Path) -> bool {
+        #[cfg(unix)]
+        let created = std::os::unix::fs::symlink(target, link);
+        #[cfg(windows)]
+        let created = std::os::windows::fs::symlink_file(target, link);
+        if let Err(error) = &created {
+            eprintln!("skipped: cannot create symlinks here: {error}");
+        }
+        created.is_ok()
+    }
+
+    #[test]
+    fn rename_and_delete_act_on_a_symlink_never_on_its_target() {
+        let dir = setup_test_dir();
+        fs::create_dir(dir.path().join("archive")).unwrap();
+        let target = dir.path().join("archive").join("real.md");
+        fs::write(&target, "kept").unwrap();
+        let link = dir.path().join("link.md");
+        if !file_symlink(&target, &link) {
+            return;
+        }
+        let ws = ws(&dir);
+
+        let renamed = ws.rename(&link, &dir.path().join("moved.md")).unwrap();
+        assert!(
+            fs::symlink_metadata(&renamed)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(fs::read_to_string(&target).unwrap(), "kept");
+
+        match ws.delete(&renamed) {
+            Ok(()) => assert!(fs::symlink_metadata(&renamed).is_err()),
+            // Headless CI sessions may have no trash.
+            Err(error) => eprintln!("delete skipped: no trash available here: {error}"),
+        }
+        assert_eq!(fs::read_to_string(&target).unwrap(), "kept");
+    }
+
+    #[test]
+    fn rename_never_replaces_an_existing_link_or_its_target() {
+        let dir = setup_test_dir();
+        let target = dir.path().join("hello.md");
+        let link = dir.path().join("link.md");
+        if !file_symlink(&target, &link) {
+            return;
+        }
+        let dangling = dir.path().join("dangling.md");
+        assert!(file_symlink(&dir.path().join("gone.md"), &dangling));
+        let ws = ws(&dir);
+        let world = dir.path().join("world.md");
+        for (old, new) in [(&link, &target), (&world, &link), (&world, &dangling)] {
+            assert!(
+                matches!(ws.rename(old, new), Err(FsError::AlreadyExists(_))),
+                "{} -> {}",
+                old.display(),
+                new.display()
+            );
+        }
+        assert_eq!(fs::read_to_string(&target).unwrap(), "# Hello");
+        assert_eq!(fs::read_to_string(&world).unwrap(), "# World");
+        assert!(
+            fs::symlink_metadata(&dangling)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
     }
 
     #[test]
