@@ -882,12 +882,19 @@ mod tests {
             .output()
             .unwrap();
         assert!(deny.status.success(), "{deny:?}");
+        // Accounts with backup privileges (CI runners run as administrators)
+        // still read the folder; the test needs a denial that holds.
+        let readable = fs::read_dir(&locked).is_ok();
         let index = index(dir.path());
         let restore = std::process::Command::new("icacls")
             .args([&path, "/remove:d", &user])
             .output()
             .unwrap();
         assert!(restore.status.success(), "{restore:?}");
+        if readable {
+            eprintln!("skipped: this account reads folders despite a deny ACE");
+            return;
+        }
         assert_eq!(index.files.len(), 3);
         assert_eq!(index.warnings.len(), 1);
         assert_eq!(index.warnings[0].path, locked);
