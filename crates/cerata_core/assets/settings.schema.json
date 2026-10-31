@@ -1,0 +1,403 @@
+{
+  "$cerata": "Ported from Writer Computer apps/desktop/shared/settings.schema.json at commit 79b744c (GPL-3.0, see NOTICE). Embedded by crates/cerata_core/src/settings/schema.rs with include_str!. Changes from Writer: this note, and one dash in $comment replaced by a semicolon. The $comment is Writer's and names Writer paths. cssVar and cssFormat are web-only bindings that Cerata ignores.",
+  "$comment": "Settings contract: keys, types, defaults, labels, descriptions, and CSS-var bindings. Read by Rust (apps/desktop/src-tauri/src/config.rs) via include_str! and by the frontend via a static import (lib/settings-schema.ts). Theme preset *values* are not part of the contract; they live in shared/themes/*.json, one file per preset. Per docs/consolidation.md: do not declare defaults, labels, or types anywhere else.",
+  "settings": [
+    {
+      "key": "editor.font-size",
+      "label": "Font Size",
+      "description": "Font size in pixels for the editor",
+      "category": "Editor",
+      "type": "number",
+      "default": 16,
+      "cssVar": "--writer-editor-base-font-size",
+      "cssFormat": "px"
+    },
+    {
+      "key": "editor.zoom",
+      "label": "Zoom",
+      "description": "Editor text zoom in percent, on top of Font Size. Cmd+= and Cmd+- step through presets; Cmd+0 returns to 100.",
+      "category": "Editor",
+      "type": "range",
+      "min": 50,
+      "max": 300,
+      "step": 5,
+      "scope": "global",
+      "cssVar": "--writer-editor-zoom",
+      "default": 100
+    },
+    {
+      "key": "editor.line-height",
+      "label": "Line Height",
+      "description": "Line height multiplier for the editor",
+      "category": "Editor",
+      "type": "number",
+      "default": 1.875,
+      "cssVar": "--writer-editor-line-height"
+    },
+    {
+      "key": "editor.content-width",
+      "label": "Content Width",
+      "description": "Maximum width of the text column in pixels",
+      "category": "Editor",
+      "type": "range",
+      "min": 480,
+      "max": 1600,
+      "step": 10,
+      "default": 734,
+      "cssVar": "--writer-editor-max-width",
+      "cssFormat": "px"
+    },
+    {
+      "key": "editor.tab-size",
+      "label": "Tab Size",
+      "description": "Number of spaces per tab",
+      "category": "Editor",
+      "type": "number",
+      "default": 2
+    },
+    {
+      "key": "statusbar.show-words",
+      "label": "Words",
+      "description": "Show the word count in the status bar",
+      "category": "Status Bar",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "statusbar.show-characters",
+      "label": "Characters",
+      "description": "Show the character count in the status bar",
+      "category": "Status Bar",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "statusbar.show-paragraphs",
+      "label": "Paragraphs",
+      "description": "Show the paragraph count in the status bar",
+      "category": "Status Bar",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "appearance.theme",
+      "label": "Schema",
+      "description": "Light or dark color schema",
+      "category": "Appearance",
+      "type": "enum",
+      "options": ["system", "light", "dark"],
+      "default": "system"
+    },
+    {
+      "key": "appearance.sidebar-width",
+      "label": "Sidebar Width",
+      "description": "Default sidebar width in pixels",
+      "category": "Appearance",
+      "type": "number",
+      "default": 240
+    },
+    {
+      "key": "appearance.sidebar-visible",
+      "label": "Sidebar Visible",
+      "description": "Show the sidebar by default",
+      "category": "Appearance",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "appearance.sidebar-file-label",
+      "label": "Sidebar File Label",
+      "description": "Show the document title or the filename for files in the sidebar",
+      "category": "Appearance",
+      "type": "enum",
+      "options": ["title", "filename"],
+      "default": "title"
+    },
+    {
+      "key": "appearance.sidebar-sort",
+      "label": "Sidebar Sort",
+      "description": "Order of entries in the sidebar tree",
+      "category": "Appearance",
+      "type": "enum",
+      "options": [
+        "name-asc",
+        "name-desc",
+        "modified-desc",
+        "modified-asc",
+        "created-desc",
+        "created-asc"
+      ],
+      "default": "name-asc"
+    },
+    {
+      "key": "appearance.sidebar-folders-first",
+      "label": "Sidebar Folders First",
+      "description": "Keep folders above files in the sidebar tree; off sorts folders and files together",
+      "category": "Appearance",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "appearance.sidebar-show-search",
+      "label": "Sidebar Search Button",
+      "description": "Show the Search button at the top of the sidebar",
+      "category": "Appearance",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "appearance.sidebar-show-recents",
+      "label": "Sidebar Recents",
+      "description": "Show the Recents section in the sidebar",
+      "category": "Appearance",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "fonts.ui",
+      "label": "UI font",
+      "description": "Font family and fallback stack used throughout the app",
+      "category": "Typography",
+      "type": "font",
+      "cssVar": "--ui-font",
+      "default": "\"SF Pro\", -apple-system-body, ui-sans-serif, -apple-system, system-ui, \"Segoe UI\", Helvetica, \"Apple Color Emoji\", Arial, sans-serif, \"Segoe UI Emoji\", \"Segoe UI Symbol\""
+    },
+    {
+      "key": "fonts.editor",
+      "label": "Editor font",
+      "description": "Font family and fallback stack used for document text",
+      "category": "Typography",
+      "type": "font",
+      "cssVar": "--editor-font",
+      "default": "\"SF Pro\", -apple-system-body, ui-sans-serif, -apple-system, system-ui, \"Segoe UI\", Helvetica, \"Apple Color Emoji\", Arial, sans-serif, \"Segoe UI Emoji\", \"Segoe UI Symbol\""
+    },
+    {
+      "key": "fonts.mono",
+      "label": "Code font",
+      "description": "Font family and fallback stack used for code",
+      "category": "Typography",
+      "type": "font",
+      "cssVar": "--mono-font",
+      "default": "\"SF Mono\", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace"
+    },
+    {
+      "key": "theme.light.preset",
+      "label": "Preset",
+      "description": "Light theme preset",
+      "category": "Theme",
+      "$comment": "Valid values are populated at runtime from shared/themes/*.json plus the special \"custom\" sentinel; we intentionally don't enum-constrain the contract so adding a preset doesn't require a schema edit.",
+      "type": "string",
+      "default": "Writer"
+    },
+    {
+      "key": "theme.light.accent",
+      "label": "Accent",
+      "description": "Light theme accent color",
+      "category": "Theme",
+      "type": "color",
+      "cssVar": "--accent",
+      "default": "#FF6A00"
+    },
+    {
+      "key": "theme.light.background",
+      "label": "Background",
+      "description": "Light theme background color",
+      "category": "Theme",
+      "type": "color",
+      "cssVar": "--bg-base",
+      "default": "#FFFFFF"
+    },
+    {
+      "key": "theme.light.foreground",
+      "label": "Foreground",
+      "description": "Light theme foreground color",
+      "category": "Theme",
+      "type": "color",
+      "cssVar": "--fg-base",
+      "default": "#0D0D0D"
+    },
+    {
+      "key": "theme.light.translucent",
+      "label": "Translucent",
+      "description": "Light theme translucency (0 = solid, 100 = max).",
+      "category": "Theme",
+      "type": "range",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "default": 10
+    },
+    {
+      "key": "theme.light.contrast",
+      "label": "Contrast",
+      "description": "alpha multiplier on borders, cards, hover bgs.",
+      "category": "Theme",
+      "type": "range",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "default": 20
+    },
+    {
+      "key": "theme.dark.preset",
+      "label": "Preset",
+      "description": "Dark theme preset",
+      "category": "Theme",
+      "$comment": "Valid values are populated at runtime from shared/themes/*.json plus the special \"custom\" sentinel; we intentionally don't enum-constrain the contract so adding a preset doesn't require a schema edit.",
+      "type": "string",
+      "default": "Writer"
+    },
+    {
+      "key": "theme.dark.accent",
+      "label": "Accent",
+      "description": "Dark theme accent color",
+      "category": "Theme",
+      "type": "color",
+      "cssVar": "--accent",
+      "default": "#FF6A00"
+    },
+    {
+      "key": "theme.dark.background",
+      "label": "Background",
+      "description": "Dark theme background color",
+      "category": "Theme",
+      "type": "color",
+      "cssVar": "--bg-base",
+      "default": "#111111"
+    },
+    {
+      "key": "theme.dark.foreground",
+      "label": "Foreground",
+      "description": "Dark theme foreground color",
+      "category": "Theme",
+      "type": "color",
+      "cssVar": "--fg-base",
+      "default": "#FCFCFC"
+    },
+    {
+      "key": "theme.dark.translucent",
+      "label": "Translucent",
+      "description": "Dark theme translucency (0 = solid, 100 = max).",
+      "category": "Theme",
+      "type": "range",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "default": 20
+    },
+    {
+      "key": "theme.dark.contrast",
+      "label": "Contrast",
+      "description": "alpha multiplier on borders, cards, hover bgs.",
+      "category": "Theme",
+      "type": "range",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "default": 16
+    },
+    {
+      "key": "files.associations",
+      "label": "File Associations",
+      "description": "File patterns to include in the workspace",
+      "category": "Files",
+      "type": "list",
+      "default": ["*.md", "*.mdx", "*.markdown"]
+    },
+    {
+      "key": "files.default-encoding",
+      "label": "Default Encoding",
+      "description": "Default text encoding for files",
+      "category": "Files",
+      "type": "string",
+      "default": "utf-8"
+    },
+    {
+      "key": "files.insert-final-newline",
+      "label": "Insert Final Newline",
+      "description": "Ensure files end with a newline when saving",
+      "category": "Files",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "files.trim-trailing-whitespace",
+      "label": "Trim Trailing Whitespace",
+      "description": "Remove trailing whitespace from lines when saving",
+      "category": "Files",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "workspace.restore-open-files",
+      "label": "Restore Open Files",
+      "description": "Reopen previously open files when opening a workspace",
+      "category": "Workspace",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "workspace.max-recent-workspaces",
+      "label": "Max Recent Workspaces",
+      "description": "Maximum number of recent workspaces to remember",
+      "category": "Workspace",
+      "type": "number",
+      "default": 10
+    },
+    {
+      "key": "workspace.default-terminal",
+      "label": "Default Terminal",
+      "description": "Terminal application name on macOS, or executable name/full path on Windows and Linux. Leave blank for Writer's platform default; arguments are not supported.",
+      "category": "Workspace",
+      "type": "string",
+      "placeholder": "Platform default",
+      "normalize": "trim",
+      "scope": "global",
+      "default": ""
+    },
+    {
+      "key": "window.restore-workspace",
+      "label": "Restore Workspace",
+      "description": "Automatically reopen the last workspace when the app starts",
+      "category": "Window",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "search.debounce-ms",
+      "label": "Search Debounce",
+      "description": "Delay in milliseconds before performing search",
+      "category": "Search",
+      "type": "number",
+      "default": 150
+    },
+    {
+      "key": "search.max-results",
+      "label": "Max Search Results",
+      "description": "Maximum number of search results to return",
+      "category": "Search",
+      "type": "number",
+      "default": 50
+    },
+    {
+      "key": "telemetry.enabled",
+      "label": "Share Usage Data",
+      "description": "Send usage events (app opened, workspace opened, file and folder created) to help decide what to build next. Off until you turn it on. Never includes your documents, file names, or paths; the full list is in the Telemetry doc in Writer's repository.",
+      "category": "Privacy",
+      "type": "boolean",
+      "scope": "global",
+      "default": false
+    },
+    {
+      "key": "telemetry.email",
+      "label": "Email",
+      "description": "Optional. Give the maintainer a way to tell you about new releases and ask about the features you use. Sent on its own when you change it, whether or not Share Usage Data is on; clear it to remove the address and go back to being anonymous.",
+      "category": "Privacy",
+      "type": "string",
+      "placeholder": "you@example.com",
+      "normalize": "trim",
+      "scope": "global",
+      "default": ""
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+[package]
+name = "cerata_markdown"
+description = "Buffer, Markdown tree, decoration rules and editing commands for Cerata. No GPUI."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true
+

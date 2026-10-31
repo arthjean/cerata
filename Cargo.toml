@@ -1,0 +1,59 @@
+[workspace]
+resolver = "3"
+members = ["crates/cerata_core", "crates/cerata_markdown", "crates/cerata"]
+default-members = ["crates/cerata"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98.0"
+license = "GPL-3.0-or-later"
+authors = ["Arthur Jean"]
+repository = "https://github.com/arthjean/cerata"
+
+[workspace.dependencies]
+cerata_core = { path = "crates/cerata_core" }
+cerata_markdown = { path = "crates/cerata_markdown" }
+
+# GPUI, pinned to an exact upstream Zed revision (never a branch, never a fork).
+# Same rev as Paneflow, which builds and ships it on macOS, Windows and Linux.
+# Bumping: change the three `rev` values here, keep `[patch.crates-io]` aligned
+# with the bumped Zed `Cargo.toml`, run `cargo update -p gpui`, then the quality
+# gates (`cargo test` too: `cargo build` skips test targets).
+gpui = { git = "https://github.com/zed-industries/zed", rev = "37faef81f74fc1bb08be9939c4cffc8ede6ced2f" }
+# `font-kit` is mandatory on macOS: without it the Core Text rasterization path
+# is compiled out and every glyph renders as an empty bitmap. No-op elsewhere.
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "37faef81f74fc1bb08be9939c4cffc8ede6ced2f", features = ["font-kit"] }
+
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tempfile = "3"
+
+# Selected clippy::restriction lints (never the whole group). unwrap/expect
+# are `warn`, as the policy prescribes, and CI runs clippy with
+# `-D warnings`, so an `unwrap()` in production code fails the job; tests may
+# unwrap through the `allow-*-in-tests` switches in clippy.toml.
+[workspace.lints.clippy]
+panic = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+todo = "warn"
+unwrap_used = "warn"
+expect_used = "warn"
+unwrap_in_result = "warn"
+
+# Forks GPUI requires, aligned with the pinned Zed rev above (copied from that
+# rev's root Cargo.toml). Re-check on every GPUI bump.
+[patch.crates-io]
+async-process = { git = "https://github.com/zed-industries/async-process.git", rev = "0b6d6713570af61806e1e5cb40e0f757cb93fd9d" }
+async-task = { git = "https://github.com/zed-industries/async-task.git", rev = "015845a19fc31752c02367567d3b8900a406f9da" }
+calloop = { git = "https://github.com/zed-industries/calloop", rev = "3759371fee14c40066d64777e2a36b6ffcc22590" }
+khronos-egl = { git = "https://github.com/zed-industries/khronos-egl", rev = "42214b36347b108fd9630ca6254b96dde59e04fe" }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
