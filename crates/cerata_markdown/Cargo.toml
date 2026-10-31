@@ -12,3 +12,14 @@ authors.workspace = true
 [lints]
 workspace = true
 
+[dev-dependencies]
+pulldown-cmark = "0.13.6"
+tree-sitter = "0.27.1"
+tree-sitter-md = { version = "0.5.4", features = ["parser"] }
+
+# US-003 throwaway parser spike (tree-sitter-md vs pulldown-cmark). `test = true`
+# makes `cargo test` run its assertions; `--release` runs the measurements.
+[[example]]
+name = "parser_spike"
+path = "examples/parser_spike.rs"
+test = true
