@@ -1,0 +1,1 @@
+pay $x+y$ dollars

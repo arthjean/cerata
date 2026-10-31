@@ -1,0 +1,1 @@
+I paid $5 and $x$
