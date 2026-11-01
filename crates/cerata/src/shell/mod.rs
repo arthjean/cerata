@@ -294,9 +294,19 @@ impl WindowView {
             cx.new(|cx| crate::editor::text_field::TextField::new("Search", cx).bare(15.0));
         let sidebar_filter_events = cx.subscribe_in(&sidebar_filter, window, Self::on_filter_event);
         let this = cx.weak_entity();
-        window.on_window_should_close(cx, move |_, cx| {
-            let _ = this.update(cx, |view, _| view.before_close());
-            true
+        // Returning `true` would let `DefWindowProc` destroy the HWND before
+        // GPUI drops the window, whose teardown then calls Win32 on a dead
+        // handle. GPUI removes the window instead; the last one quits, since
+        // the quit hook writes every window and skips the deactivation that
+        // a removed window still reports while it hides.
+        window.on_window_should_close(cx, move |window, cx| {
+            if cx.windows().len() == 1 {
+                cx.quit();
+            } else {
+                let _ = this.update(cx, |view, _| view.before_close());
+                window.defer(cx, |window, _| window.remove_window());
+            }
+            false
         });
         Self {
             core,
