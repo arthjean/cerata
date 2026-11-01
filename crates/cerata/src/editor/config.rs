@@ -154,7 +154,10 @@ pub fn resolve_family(families: &str, installed: &[String], mono: bool) -> Share
     SharedString::new_static(default_family(mono))
 }
 
-fn default_family(mono: bool) -> &'static str {
+/// The platform's default family: gpui maps its implicit `.SystemUIFont`
+/// to IBM Plex Sans off macOS, which Cerata does not ship, so roots name
+/// this one instead.
+pub fn default_family(mono: bool) -> &'static str {
     match (cfg!(target_os = "macos"), cfg!(target_os = "windows"), mono) {
         (true, _, false) => ".SystemUIFont",
         (true, _, true) => "Menlo",

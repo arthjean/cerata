@@ -1624,6 +1624,7 @@ impl Render for WindowView {
             .flex()
             .flex_col()
             .bg(theme::background())
+            .font_family(crate::editor::config::default_family(false))
             .text_color(theme::text())
             .on_action(cx.listener(|this, _: &GoBack, window, cx| {
                 if !this.editor_has_focus(window, cx) {
