@@ -1,6 +1,7 @@
 //! The application menus (`src-tauri/src/lib.rs:280-334`): Cerata
 //! (Preferences, Quit), Edit and Window, as macOS's native menu bar.
-//! Windows and Linux draw no menu bar.
+//! Windows and Linux draw no menu bar; Ctrl+Q quits there as Cmd+Q does on
+//! macOS.
 
 use gpui::{Action, App, KeyBinding, MenuItem, OsAction, actions};
 
@@ -90,8 +91,8 @@ pub fn native_menus() -> Vec<gpui::Menu> {
 
 pub fn init(cx: &mut App) {
     cx.on_action(|_: &Quit, cx| cx.quit());
+    cx.bind_keys([KeyBinding::new(secondary!("q"), Quit, None)]);
     if cfg!(target_os = "macos") {
-        cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);
         cx.set_menus(native_menus());
     }
 }
@@ -132,5 +133,15 @@ mod tests {
             ]
         );
         assert_eq!(native_menus().len(), 3);
+    }
+
+    #[gpui::test]
+    fn the_secondary_q_quits_on_every_os(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| {
+            init(cx);
+            let keys = [gpui::Keystroke::parse(secondary!("q")).unwrap()];
+            let bindings = cx.all_bindings_for_input(&keys);
+            assert!(bindings.iter().any(|b| b.action().partial_eq(&Quit)));
+        });
     }
 }

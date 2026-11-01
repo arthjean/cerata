@@ -625,6 +625,14 @@ impl WindowView {
         self.commit_setting(key, pending, cx);
     }
 
+    pub fn reset_setting(&self, key: &str, cx: &mut Context<Self>) {
+        let pending = self
+            .core
+            .settings()
+            .begin_reset(key, cerata_core::settings::Layer::Global);
+        self.commit_setting(key, pending, cx);
+    }
+
     fn commit_setting(
         &self,
         key: &str,
@@ -678,6 +686,10 @@ impl WindowView {
             |this, _, event, window, cx| match event.clone() {
                 crate::settings_panel::PanelEvent::Set(key, value) => {
                     this.write_setting(&key, value, cx);
+                    this.setting_written(cx);
+                }
+                crate::settings_panel::PanelEvent::Reset(key) => {
+                    this.reset_setting(&key, cx);
                     this.setting_written(cx);
                 }
                 crate::settings_panel::PanelEvent::Close => this.close_settings(window, cx),

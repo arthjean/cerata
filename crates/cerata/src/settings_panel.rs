@@ -2,7 +2,9 @@
 //! a navigation (Back to the app, a search field, pages in groups) and the
 //! main column with the active page. A page holds one or more cards of
 //! Writer's settings panel (`settings-panel/index.tsx:11-88`): one control
-//! per value type. Writes go through the window, which applies them.
+//! per value type, and a Reset button in a slot every row reserves, so a
+//! value leaving its default never moves the controls. Writes go through
+//! the window, which applies them.
 
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -42,6 +44,8 @@ const PRIMARIES: [&str; 5] = [
 #[derive(Clone, Debug, PartialEq)]
 pub enum PanelEvent {
     Set(String, ConfigValue),
+    /// Back to the schema default.
+    Reset(String),
     /// Back to the app.
     Close,
 }
@@ -427,6 +431,22 @@ impl SettingsPanel {
 
     fn value(&self, key: &str) -> Option<ConfigValue> {
         self.state.settings().get(key)
+    }
+
+    /// The value differs from the schema default: its Reset button shows.
+    pub fn is_modified(&self, key: &str) -> bool {
+        self.def(key)
+            .is_some_and(|def| self.value(key).as_ref() != Some(&def.default))
+    }
+
+    pub fn reset(&mut self, key: &str, cx: &mut Context<Self>) {
+        if let Some(field) = self.fields.get(key) {
+            field.update(cx, |field, _| field.invalid = false);
+        }
+        self.lists.remove(key);
+        self.seen_revision = None;
+        cx.emit(PanelEvent::Reset(key.to_owned()));
+        cx.notify();
     }
 
     fn def(&self, key: &str) -> Option<SettingDef> {
@@ -1085,6 +1105,7 @@ impl SettingsPanel {
         } else {
             def.label.clone()
         };
+        let reset = self.reset_slot(def, &label, cx);
         div()
             .flex()
             .items_start()
@@ -1113,10 +1134,50 @@ impl SettingsPanel {
                         )
                     }),
             )
-            .child(div().flex_none().child(control))
+            .child(
+                div()
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .child(reset)
+                    .child(control),
+            )
             .into_any_element()
     }
+
+    /// The Reset button's slot, as wide whether or not it shows.
+    fn reset_slot(&self, def: &SettingDef, label: &str, cx: &mut Context<Self>) -> gpui::Div {
+        let key = def.key.clone();
+        div()
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_end()
+            .w(px(RESET_SLOT))
+            .h(px(32.0))
+            .when(self.is_modified(&key), |d| {
+                d.child(
+                    crate::a11y::button(
+                        div().id(SharedString::from(format!("setting-{key}-reset"))),
+                        format!("Reset {label} to its default"),
+                    )
+                    .px(px(8.0))
+                    .py(px(4.0))
+                    .rounded(px(8.0))
+                    .text_size(px(12.0))
+                    .text_color(theme::muted())
+                    .cursor_pointer()
+                    .hover(|s| s.bg(theme::panel()).text_color(theme::text()))
+                    .child("Reset")
+                    .on_click(cx.listener(move |this, _, _, cx| this.reset(&key, cx))),
+                )
+            })
+    }
 }
+
+/// Width of the Reset slot: the button at 12 px with its padding.
+const RESET_SLOT: f32 = 52.0;
 
 // The navigation's measures are the sidebar's (Paneflow's rows): 8 px
 // margin, 32 px rows padded 7, radius 9, a 15 px icon 8 from a 14 px label.

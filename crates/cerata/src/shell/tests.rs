@@ -1241,11 +1241,12 @@ fn settings_panel(
 }
 
 #[gpui::test]
-fn settings_write_through_the_panel(cx: &mut TestAppContext) {
+fn settings_write_through_the_panel_and_reset_to_the_default(cx: &mut TestAppContext) {
     use cerata_core::settings::ConfigValue;
     let env = setup(cx);
     let (handle, panel) = settings_panel(cx, &env);
     assert!(read(cx, handle, |view, _| view.settings_open));
+    assert!(!panel.read_with(cx, |p, _| p.is_modified("editor.font-size")));
     let field = panel.read_with(cx, |p, _| p.fields["editor.font-size"].clone());
     field.update(cx, |field, cx| field.set_text("18", cx));
     panel.update(cx, |p, cx| p.commit_field("editor.font-size", cx));
@@ -1255,6 +1256,17 @@ fn settings_write_through_the_panel(cx: &mut TestAppContext) {
         Some(ConfigValue::Number(18.0))
     );
     assert_eq!(read(cx, handle, |view, _| view.config.font_size), 18.0);
+    assert!(
+        panel.read_with(cx, |p, _| p.is_modified("editor.font-size")),
+        "Reset shows"
+    );
+
+    panel.update(cx, |p, cx| p.reset("editor.font-size", cx));
+    wait_until(cx, |cx| {
+        setting(cx, handle, "editor.font-size") == Some(ConfigValue::Number(16.0))
+    });
+    assert!(!panel.read_with(cx, |p, _| p.is_modified("editor.font-size")));
+    assert_eq!(read(cx, handle, |view, _| view.config.font_size), 16.0);
 }
 
 #[gpui::test]
