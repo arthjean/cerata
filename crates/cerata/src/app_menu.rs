@@ -1,6 +1,6 @@
 //! The application menus (`src-tauri/src/lib.rs:280-334`): Cerata
-//! (Preferences, Quit), Edit and Window. macOS gets them as its native
-//! menu bar; Windows and Linux draw the same menus at the top of the window.
+//! (Preferences, Quit), Edit and Window, as macOS's native menu bar.
+//! Windows and Linux draw no menu bar.
 
 use gpui::{Action, App, KeyBinding, MenuItem, OsAction, actions};
 
@@ -87,9 +87,6 @@ pub fn native_menus() -> Vec<gpui::Menu> {
         })
         .collect()
 }
-
-/// Draws the menus in the window everywhere but macOS.
-pub const DRAWN: bool = !cfg!(target_os = "macos");
 
 pub fn init(cx: &mut App) {
     cx.on_action(|_: &Quit, cx| cx.quit());

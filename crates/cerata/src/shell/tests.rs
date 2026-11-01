@@ -1417,30 +1417,6 @@ fn the_theme_preference_sets_the_palette(cx: &mut TestAppContext) {
     assert!(!crate::editor::theme::palette().dark);
 }
 
-#[gpui::test]
-fn the_drawn_menu_bar_runs_the_same_actions_as_the_native_one(cx: &mut TestAppContext) {
-    let env = setup(cx);
-    let handle = workspace(cx, &env);
-    let vcx = VisualTestContext::from_window(handle.into(), cx);
-    vcx.run_until_parked();
-    update(cx, handle, |view, _, cx| view.open_app_menu(0, 0.0, cx));
-    let labels = read(cx, handle, |view, _| {
-        view.tab_menu.as_ref().unwrap().labels()
-    });
-    assert_eq!(labels, ["Preferences…", "-", "Quit Cerata"]);
-    let preferences = read(cx, handle, |view, _| {
-        view.tab_menu
-            .as_ref()
-            .unwrap()
-            .find("Preferences…")
-            .unwrap()
-    });
-    focus_shell(cx, handle);
-    update(cx, handle, |view, window, cx| preferences(view, window, cx));
-    let active = read(cx, handle, |view, _| view.tabs.active().location.clone());
-    assert_eq!(active, Location::Settings);
-}
-
 /// An edit the autosave throttle still holds reaches the disk when the
 /// window closes from its menu.
 #[gpui::test]

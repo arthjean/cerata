@@ -1,6 +1,7 @@
 //! The tab strip (`editor-tabs.tsx:104-225`): back and forward for the
 //! active tab, the tabs (at most 180 px, close button on hover and on the
-//! active tab, a red dot after a failed save), and a new-tab button.
+//! active tab, a red dot after a failed save), and a new-tab button. It
+//! sits in the title bar, so each control occludes the drag area.
 
 use gpui::{
     Context, FontWeight, InteractiveElement, IntoElement, MouseButton, ParentElement,
@@ -13,7 +14,6 @@ use crate::icons::{Icon, icon};
 use crate::menu::{HasMenu, Item, Menu};
 use crate::tabs::Location;
 
-pub const HEIGHT: f32 = 40.0;
 const TAB_MAX_WIDTH: f32 = 180.0;
 
 fn label(location: &Location) -> String {
@@ -34,6 +34,7 @@ pub fn nav_button(
     enabled: bool,
 ) -> gpui::Stateful<gpui::Div> {
     crate::a11y::button(div().id(id), name)
+        .occlude()
         .flex()
         .items_center()
         .justify_center()
@@ -56,7 +57,6 @@ pub fn render(view: &WindowView, cx: &mut Context<WindowView>) -> impl IntoEleme
     let mut strip = div()
         .id("tab-strip")
         .flex()
-        .flex_1()
         .min_w_0()
         .gap(px(2.0))
         .overflow_x_scroll();
@@ -77,6 +77,7 @@ pub fn render(view: &WindowView, cx: &mut Context<WindowView>) -> impl IntoEleme
         let mut item =
             crate::a11y::control(div().id(("tab", tab.id)), gpui::Role::Tab, name.clone())
                 .aria_selected(is_active)
+                .occlude()
                 .on_click(cx.listener(move |this, _, window, cx| this.activate_tab(ix, window, cx)))
                 .group(group.clone())
                 .flex()
@@ -154,13 +155,11 @@ pub fn render(view: &WindowView, cx: &mut Context<WindowView>) -> impl IntoEleme
     div()
         .id("tab-bar")
         .flex()
-        .flex_none()
+        .flex_1()
+        .min_w_0()
         .items_center()
         .gap(px(4.0))
-        .h(px(HEIGHT))
         .px(px(8.0))
-        .border_b_1()
-        .border_color(theme::border())
         .child(
             nav_button("tab-back", Icon::ArrowLeft, "Back", can_back)
                 .on_click(cx.listener(|this, _, window, cx| this.go_back(window, cx))),
@@ -172,6 +171,7 @@ pub fn render(view: &WindowView, cx: &mut Context<WindowView>) -> impl IntoEleme
         .child(strip)
         .child(
             crate::a11y::button(div().id("tab-new"), "New tab")
+                .occlude()
                 .flex()
                 .items_center()
                 .justify_center()

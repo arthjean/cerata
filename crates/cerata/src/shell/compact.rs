@@ -92,6 +92,7 @@ pub fn render(view: &WindowView, cx: &mut Context<WindowView>) -> AnyElement {
     let title = view.compact_title();
     let trigger = crate::a11y::button(div().id("compact-title"), format!("{title}, recent files"))
         .aria_expanded(open)
+        .occlude()
         .max_w(px(240.0))
         .h(px(28.0))
         .px(px(12.0))
@@ -123,15 +124,12 @@ pub fn render(view: &WindowView, cx: &mut Context<WindowView>) -> AnyElement {
         .on_click(cx.listener(|this, _, window, cx| this.toggle_recents_picker(window, cx)));
 
     let header = div()
-        .relative()
-        .flex_none()
-        .h(px(tab_bar::HEIGHT))
-        .w_full()
+        .flex_1()
+        .min_w_0()
+        .h_full()
         .px(px(8.0))
         .flex()
         .items_center()
-        .border_b_1()
-        .border_color(theme::rule())
         .child(div().flex().gap(px(2.0)).child(back).child(forward))
         .child(div().flex_1().flex().justify_center().child(trigger))
         .child(div().w(px(58.0)));
@@ -241,7 +239,8 @@ fn picker(
         .id("compact-picker")
         .absolute()
         .inset_0()
-        .pt(px(tab_bar::HEIGHT - 4.0))
+        .occlude()
+        .pt(px(super::title_bar::HEIGHT - 4.0))
         .flex()
         .justify_center()
         .items_start()

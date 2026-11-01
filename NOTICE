@@ -69,3 +69,15 @@ Rounded set, copied from @hugeicons/core-free-icons 4.4.0
 above, with this holder):
 
     Copyright (c) 2025 Hugeicons
+
+Third-party notice: UnifrakturMaguntia
+--------------------------------------
+
+crates/cerata/assets/fonts/UnifrakturMaguntia-Book.ttf, the wordmark's face,
+is copied from the Google Fonts repository (ofl/unifrakturmaguntia). It is
+distributed under the SIL Open Font License, version 1.1, whose full text is
+crates/cerata/assets/fonts/OFL.txt:
+
+    Copyright (c) 2010, j. 'mach' wust, with Reserved Font Name
+    UnifrakturMaguntia.
+    Copyright (c) 2009, Peter Wiegel.

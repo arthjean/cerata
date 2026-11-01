@@ -78,6 +78,7 @@ fn main() -> ExitCode {
         cx.bind_keys(sidebar::bindings());
         cx.bind_keys(palette::bindings());
         app_menu::init(cx);
+        shell::title_bar::init(cx);
         app::init(cx, core);
         if let Some(listener) = listener {
             serve_launches(cx, listener);

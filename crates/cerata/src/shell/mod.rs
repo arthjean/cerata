@@ -4,10 +4,10 @@
 mod banner;
 mod commands;
 mod compact;
-mod menu_bar;
 mod pages;
 mod status_bar;
 mod tab_bar;
+pub mod title_bar;
 
 #[cfg(test)]
 mod tests;
@@ -177,6 +177,7 @@ pub fn window_options(cx: &App) -> WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
         window_min_size: Some(size(px(MIN_SIZE.width), px(MIN_SIZE.height))),
         app_id: Some("cerata".into()),
+        titlebar: title_bar::options(),
         ..Default::default()
     }
 }
@@ -1659,9 +1660,6 @@ impl Render for WindowView {
                     window.remove_window();
                 }),
             );
-        if crate::app_menu::DRAWN {
-            root = root.child(menu_bar::render(cx));
-        }
         if self.chrome == Chrome::Workspace {
             root = root
                 .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| this.toggle_sidebar(cx)))
@@ -1692,11 +1690,25 @@ impl Render for WindowView {
             root = register_tab_jumps(root, cx);
         }
         let mut main = div().flex().flex_col().flex_1().min_w_0().h_full();
-        if self.chrome == Chrome::Workspace && self.workspace.is_some() {
-            main = main.child(tab_bar::render(self, cx));
-        }
-        if self.chrome == Chrome::Compact {
-            main = main.child(compact::render(self, cx));
+        let header = match self.chrome {
+            Chrome::Workspace if self.workspace.is_some() => {
+                Some(tab_bar::render(self, cx).into_any_element())
+            }
+            Chrome::Compact => Some(compact::render(self, cx)),
+            Chrome::Workspace => None,
+        };
+        let captions = title_bar::caption_buttons(window);
+        if header.is_some() || captions.is_some() {
+            let filler = header.is_none().then(|| div().flex_1());
+            main = main.child(
+                title_bar::row("title-bar")
+                    .w_full()
+                    .border_b_1()
+                    .border_color(theme::border())
+                    .children(header)
+                    .children(filler)
+                    .children(captions),
+            );
         }
         let mut content = div().relative().flex_1().min_h_0().w_full();
         let mut comparing = None;
@@ -1727,8 +1739,11 @@ impl Render for WindowView {
                         .flex_none()
                         .w(px(self.sidebar_width))
                         .h_full()
+                        .flex()
+                        .flex_col()
                         .bg(theme::panel())
-                        .child(sidebar),
+                        .child(title_bar::wordmark())
+                        .child(div().flex_1().min_h_0().child(sidebar)),
                 )
                 .child(
                     div()
@@ -1781,6 +1796,7 @@ impl Render for WindowView {
                     .id("palette-overlay")
                     .absolute()
                     .inset_0()
+                    .occlude()
                     .flex()
                     .justify_center()
                     .pt(px(80.0))
