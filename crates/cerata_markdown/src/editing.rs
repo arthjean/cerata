@@ -291,7 +291,7 @@ impl EditorState {
     }
 
     /// Replaces each change's range; every caret lands after its insert.
-    fn replace_ranges(&mut self, changes: Vec<Change>, event: UserEvent) -> bool {
+    pub(crate) fn replace_ranges(&mut self, changes: Vec<Change>, event: UserEvent) -> bool {
         let mut sorted = changes.clone();
         sorted.sort_by_key(|c| c.from);
         let mut shift: isize = 0;

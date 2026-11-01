@@ -199,18 +199,31 @@ pub fn decorate(
     selection: &Selection,
     drag_frozen: Option<&Selection>,
 ) -> Vec<Decoration> {
+    decorate_range(tree, text, selection, drag_frozen, 0..text.len())
+}
+
+/// [`decorate`] restricted to the nodes touching `range` (inclusive) and the
+/// tabs inside it. A node that spans past `range` still yields all its
+/// decorations, so a renderer filters by line.
+pub fn decorate_range(
+    tree: &MarkdownTree,
+    text: &Text,
+    selection: &Selection,
+    drag_frozen: Option<&Selection>,
+    range: Range<usize>,
+) -> Vec<Decoration> {
     let selection = drag_frozen.unwrap_or(selection).clamp(text);
     let mut cx = Cx {
         text,
         selection: &selection,
         out: Vec::new(),
     };
-    for node in tree.iter() {
+    for node in tree.iter_range(range.clone()) {
         cx.hide(node);
         cx.fold(node);
         cx.line(node);
     }
-    cx.tabs();
+    cx.tabs(range);
     let mut out = cx.out;
     out.sort_by_key(|d| {
         let range = d.range();
@@ -470,8 +483,11 @@ impl Cx<'_> {
     }
 
     /// Every tab is drawn at a fixed width.
-    fn tabs(&mut self) {
-        for pos in memchr::memchr_iter(b'\t', self.text.as_str().as_bytes()) {
+    fn tabs(&mut self, range: Range<usize>) {
+        let start = range.start.min(self.text.len());
+        let end = range.end.min(self.text.len()).max(start);
+        let bytes = &self.text.as_str().as_bytes()[start..end];
+        for pos in memchr::memchr_iter(b'\t', bytes).map(|pos| start + pos) {
             self.out.push(Decoration::Replace {
                 range: pos..pos + 1,
                 widget: Widget::Tab,

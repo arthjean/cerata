@@ -7,6 +7,7 @@
 
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
+pub mod basic;
 pub mod change;
 pub mod code;
 pub mod commands;
@@ -26,6 +27,8 @@ pub use decorate::{Decoration, HideMode, LineStyle, MarkStyle, Widget, decorate}
 pub use history::UserEvent;
 pub use motion::Vertical;
 pub use selection::{Selection, SelectionRange};
-pub use state::{Anchor, Applied, EditorState, ScrollAnchor, Transaction, TransactionError};
+pub use state::{
+    Anchor, Applied, EditorState, LineSplice, ScrollAnchor, Transaction, TransactionError,
+};
 pub use text::{Line, Text};
 pub use tree::{MarkdownTree, Node, NodeKind};

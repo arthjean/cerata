@@ -863,8 +863,20 @@ fn push_indent_steps(line: &Line, mark_from: usize, depth: usize, out: &mut List
 }
 
 pub fn list_decorations(tree: &MarkdownTree, text: &Text) -> ListDecorations {
+    list_decorations_in(tree, text, 0..text.len())
+}
+
+/// [`list_decorations`] for the list markers touching `range` (inclusive).
+pub fn list_decorations_in(
+    tree: &MarkdownTree,
+    text: &Text,
+    range: Range<usize>,
+) -> ListDecorations {
     let mut out = ListDecorations::default();
-    for mark in tree.iter().filter(|n| n.kind() == NodeKind::ListMark) {
+    for mark in tree
+        .iter_range(range)
+        .filter(|n| n.kind() == NodeKind::ListMark)
+    {
         // A bare marker with no space after it is still plain text.
         if !text
             .slice(mark.to()..(mark.to() + 1).min(text.len()))

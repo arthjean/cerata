@@ -290,3 +290,27 @@ fn arrows_right_outside_a_widget_enter_it() {
         "column 1 of the image line"
     );
 }
+
+#[test]
+fn ranged_decorations_match_the_whole_document_line_by_line() {
+    let doc = "# Title\n\nSome **bold** and `code`, a [link](u) --\n\n> quote\n> > nested\n\n```rust\nfn a() {}\n\tx\n```\n\n- [ ] task\n- item :smile:\n\n![img](a.png)\n\n---\ntail\twith tab\n";
+    let tree = MarkdownTree::parse(doc);
+    let text = Text::new(doc);
+    let selection = Selection::cursor(10);
+    let all = decorate(&tree, &text, &selection, None);
+    let on_line = |decorations: &[Decoration], line: crate::text::Line| -> Vec<Decoration> {
+        decorations
+            .iter()
+            .filter(|d| {
+                let r = d.range();
+                r.start <= line.to && r.end >= line.from
+            })
+            .cloned()
+            .collect()
+    };
+    for n in 0..text.line_count() {
+        let line = text.line(n);
+        let ranged = decorate_range(&tree, &text, &selection, None, line.range());
+        assert_eq!(on_line(&ranged, line), on_line(&all, line), "line {n}");
+    }
+}

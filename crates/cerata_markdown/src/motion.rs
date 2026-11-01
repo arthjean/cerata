@@ -16,13 +16,16 @@ pub enum Vertical {
 /// Where the caret goes when `direction` is pressed in `state`, if a widget
 /// takes the move; `None` leaves it to the regular vertical motion.
 pub fn reveal_block_on_arrow(state: &EditorState, direction: Vertical) -> Option<usize> {
-    let decorations = state.decorations();
+    // A move only enters a widget past the blank lines around the caret's
+    // line: the nodes touching that run are all it needs.
+    let text = state.text();
+    let line = text.line_at(state.selection().main().head).number;
+    let decorations = state.decorations_in(run_start(text, line)..run_end(text, line));
     let widgets: Vec<_> = decorations
         .iter()
         .filter(|d| d.widget().is_some_and(Widget::is_fold))
         .map(Decoration::range)
         .collect();
-    let text = state.text();
     let head = state.selection().main().head;
     let target = at_widget_boundary(text, &widgets, head, direction)
         .or_else(|| on_adjacent_line(text, &widgets, head, direction))?;
@@ -143,7 +146,7 @@ fn reveal_at(state: &EditorState, head: usize, target: usize) -> usize {
     let line = text.line_at(target);
     let in_column = text.floor_char_boundary((line.from + column).min(line.to));
     let probe = Selection::cursor(in_column);
-    let hidden = crate::decorate::decorate(state.tree(), text, &probe, None).iter().any(|d| {
+    let hidden = crate::decorate::decorate_range(state.tree(), text, &probe, None, line.range()).iter().any(|d| {
         matches!(d, Decoration::Replace { range, widget, .. } if widget.is_fold() && range.start < in_column && in_column < range.end)
     });
     if hidden { target } else { in_column }

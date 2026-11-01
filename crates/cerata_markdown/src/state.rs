@@ -6,17 +6,28 @@
 //! history on tab swap, `use-prosemark-editor.ts:139-203`).
 
 use crate::change::{Bias, Change, ChangeError, ChangeSet};
-use crate::decorate::{Decoration, decorate};
+use crate::decorate::{Decoration, decorate, decorate_range};
 use crate::history::{History, UserEvent};
 use crate::selection::Selection;
 use crate::text::Text;
 use crate::tree::MarkdownTree;
+use std::ops::Range;
 
 /// A selection filter runs on every transaction that sets the selection,
 /// after the document changes are applied, and may replace the selection
 /// (CodeMirror's `transactionFilter` returning `{ selection, sequential:
 /// true }`). Its output is in the new document and is clamped into it.
 pub type SelectionFilter = fn(&EditorState, Selection) -> Selection;
+
+/// Lines an edit replaced, for a renderer that keeps one item per line:
+/// `old` lines starting at line `first` became `new` lines. Applied in order,
+/// each splice is in the coordinates left by the previous ones.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LineSplice {
+    pub first: usize,
+    pub old: usize,
+    pub new: usize,
+}
 
 /// Where a tab's viewport starts: the line holding `pos` and a pixel offset
 /// into it. Mapped through every edit, so it survives changes above it.
@@ -141,6 +152,10 @@ pub struct EditorState {
     loading: bool,
     /// The selection a pointer drag started from, while it is in flight.
     drag: Option<Selection>,
+    /// Line splices since the last [`EditorState::take_line_splices`].
+    splices: Vec<LineSplice>,
+    /// The time stamped on transactions that carry none, for undo grouping.
+    now_ms: u64,
 }
 
 impl EditorState {
@@ -163,6 +178,8 @@ impl EditorState {
             saved_revision: 0,
             loading: false,
             drag: None,
+            splices: Vec::new(),
+            now_ms: 0,
         }
     }
 
@@ -179,7 +196,13 @@ impl EditorState {
     /// its positions refer to the replaced text (Writer's `writer.reload`).
     pub fn reload(&mut self, content: impl Into<String>) {
         let head = self.selection.main().head;
+        let old_lines = self.text.line_count();
         self.text = Text::new(content);
+        self.splices.push(LineSplice {
+            first: 0,
+            old: old_lines,
+            new: self.text.line_count(),
+        });
         let pos = self.text.floor_char_boundary(head);
         self.selection = Selection::cursor(pos);
         self.tree = MarkdownTree::parse(self.text.as_str());
@@ -215,6 +238,30 @@ impl EditorState {
     /// on the drag's starting selection while a drag is in flight.
     pub fn decorations(&self) -> Vec<Decoration> {
         decorate(&self.tree, &self.text, &self.selection, self.drag.as_ref())
+    }
+
+    /// Decorations of the nodes touching `range` (inclusive): the subset of
+    /// [`EditorState::decorations`] a renderer needs for the lines it shows.
+    pub fn decorations_in(&self, range: Range<usize>) -> Vec<Decoration> {
+        decorate_range(
+            &self.tree,
+            &self.text,
+            &self.selection,
+            self.drag.as_ref(),
+            range,
+        )
+    }
+
+    /// The current time, in ms on any monotonic clock: transactions without
+    /// their own time stamp ([`Transaction::at`]) take it, so typing groups
+    /// into undo steps by real time.
+    pub fn set_time(&mut self, now_ms: u64) {
+        self.now_ms = now_ms;
+    }
+
+    /// Line splices made by every edit (and reload) since the last call.
+    pub fn take_line_splices(&mut self) -> Vec<LineSplice> {
+        std::mem::take(&mut self.splices)
     }
 
     /// A pointer drag starts: what is revealed stays as it is until
@@ -283,7 +330,11 @@ impl EditorState {
             explicit,
             tr.user_event,
             tr.add_to_history,
-            tr.time_ms,
+            if tr.time_ms == 0 {
+                self.now_ms
+            } else {
+                tr.time_ms
+            },
             tr.scroll_into_view,
         ))
     }
@@ -342,6 +393,9 @@ impl EditorState {
     ) -> Applied {
         let doc_changed = !changes.is_empty();
         let previous_text = std::mem::replace(&mut self.text, text);
+        if doc_changed {
+            push_splices(&mut self.splices, &previous_text, &self.text, &changes);
+        }
         let previous_selection = self.selection.clone();
         if doc_changed {
             self.tree = self
@@ -384,6 +438,37 @@ impl EditorState {
     }
 }
 
+/// The line splices of `changes` (from `before` to `after`), merged where
+/// two changes touch the same line.
+fn push_splices(out: &mut Vec<LineSplice>, before: &Text, after: &Text, changes: &ChangeSet) {
+    // (old first, old last, new first, new last), in document order.
+    let mut groups: Vec<(usize, usize, usize, usize)> = Vec::new();
+    let mut delta: isize = 0;
+    for change in changes.changes() {
+        let old_first = before.line_at(change.from).number;
+        let old_last = before.line_at(change.to).number;
+        let new_from = (change.from as isize + delta).max(0) as usize;
+        let new_to = new_from + change.insert.len();
+        delta += change.insert.len() as isize - (change.to - change.from) as isize;
+        let new_first = after.line_at(new_from).number;
+        let new_last = after.line_at(new_to.min(after.len())).number;
+        match groups.last_mut() {
+            Some(group) if old_first <= group.1 => {
+                group.1 = group.1.max(old_last);
+                group.3 = group.3.max(new_last);
+            }
+            _ => groups.push((old_first, old_last, new_first, new_last)),
+        }
+    }
+    for (old_first, old_last, new_first, new_last) in groups {
+        out.push(LineSplice {
+            first: new_first,
+            old: old_last - old_first + 1,
+            new: new_last - new_first + 1,
+        });
+    }
+}
+
 /// The selection filters every editor installs.
 pub fn default_filters() -> Vec<SelectionFilter> {
     vec![crate::list::prefix_selection_guard]
@@ -403,6 +488,81 @@ mod tests {
                     .at(time_ms),
             )
             .unwrap();
+    }
+
+    /// Applies `splices` to one item per line of `before`, tagging new items.
+    fn replay_splices(before: &str, splices: &[LineSplice]) -> Vec<Option<usize>> {
+        let mut items: Vec<Option<usize>> = (0..Text::new(before).line_count()).map(Some).collect();
+        for splice in splices {
+            items.splice(
+                splice.first..splice.first + splice.old,
+                std::iter::repeat_n(None, splice.new),
+            );
+        }
+        items
+    }
+
+    #[test]
+    fn line_splices_track_every_edit_and_keep_untouched_lines() {
+        let before = "a
+b
+c
+d
+e";
+        let mut state = EditorState::new(before);
+        state
+            .apply(Transaction::new().changes([
+                Change::insert(
+                    1, "
+x
+y",
+                ),
+                Change::new(4..5, "C"),
+                Change::delete(5..6),
+            ]))
+            .unwrap();
+        assert_eq!(
+            state.doc(),
+            "a
+x
+y
+b
+Cd
+e"
+        );
+        let splices = state.take_line_splices();
+        let items = replay_splices(before, &splices);
+        assert_eq!(items.len(), state.text().line_count());
+        assert_eq!(items, vec![None, None, None, Some(1), None, Some(4)]);
+        assert!(state.take_line_splices().is_empty());
+
+        assert!(state.undo());
+        assert_eq!(replay_splices(state.doc(), &[]).len(), 5);
+        let undo = state.take_line_splices();
+        let after_undo = replay_splices(
+            "a
+x
+y
+b
+Cd
+e",
+            &undo,
+        );
+        assert_eq!(after_undo.len(), 5);
+        assert_eq!(after_undo.last(), Some(&Some(5)));
+
+        state.reload(
+            "one
+two",
+        );
+        assert_eq!(
+            state.take_line_splices(),
+            vec![LineSplice {
+                first: 0,
+                old: 5,
+                new: 2
+            }]
+        );
     }
 
     #[test]
