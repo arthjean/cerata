@@ -2,7 +2,7 @@
 //! `sidebar-section.tsx:17-93`), on Paneflow's row measures: 8 px margin,
 //! 32 px rows padded 7 (plus 12 per depth), radius 9, a 20 px icon slot
 //! 8 from a 14 px label on a 20 px line; 20 px section headers with a
-//! chevron.
+//! chevron, flush with the wordmark.
 
 use cerata_core::fs::DirEntry;
 use gpui::{
@@ -256,7 +256,9 @@ fn header(
         // belonging to its own rows, not to the section before it.
         .mt(px(16.0))
         .mb(px(4.0))
-        .px(px(PADDING))
+        // The chevron's stroke starts 3 px into its box: flush with the
+        // rows' margin, it lines up with the wordmark's first letter.
+        .pr(px(PADDING))
         .text_size(px(12.0))
         .font_weight(FontWeight::MEDIUM)
         .text_color(theme::muted())
