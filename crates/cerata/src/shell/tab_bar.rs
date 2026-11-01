@@ -254,9 +254,9 @@ pub fn render(view: &WindowView, cx: &mut Context<WindowView>) -> impl IntoEleme
         .flex_1()
         .min_w_0()
         .h_full()
-        // The drawn title bar's top pixel sits under the window border, so
-        // the chips center on the 38 px between it and the row's border.
-        .when(super::title_bar::DRAWN, |bar| bar.pt(px(1.0)))
+        // On Windows the title bar's top pixel sits under the window border,
+        // so the chips center on the 38 px between it and the row's border.
+        .when(cfg!(target_os = "windows"), |bar| bar.pt(px(1.0)))
         .items_center()
         .gap(px(4.0))
         .px(px(8.0))

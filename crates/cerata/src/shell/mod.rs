@@ -4,6 +4,7 @@
 mod banner;
 mod commands;
 mod compact;
+pub mod frame;
 mod pages;
 mod sidebar_footer;
 mod status_bar;
@@ -579,8 +580,10 @@ impl WindowView {
     }
 
     pub fn resize_sidebar(&mut self, x: f32, window: &Window, cx: &mut Context<Self>) {
-        let window_width = f32::from(window.viewport_size().width);
-        let width = sidebar::tree::clamp_width(x, window_width);
+        // A client-decorated window's surface sits inside its margins.
+        let free = frame::Free::of(window);
+        let window_width = f32::from(window.viewport_size().width) - free.horizontal_margins();
+        let width = sidebar::tree::clamp_width(x - free.left_margin(), window_width);
         if width != self.sidebar_width {
             self.sidebar_width = width;
             cx.notify();
@@ -1759,7 +1762,7 @@ impl Render for WindowView {
             if let (Some(sidebar), true) = (self.sidebar.clone(), self.sidebar_visible) {
                 body = body
                     .child(
-                        div()
+                        frame::round_left(div(), frame::Free::of(window))
                             .flex_none()
                             .w(px(self.sidebar_width))
                             .h_full()
@@ -1810,7 +1813,8 @@ impl Render for WindowView {
             body = body.child(main);
             body
         };
-        root.child(body)
+        let root = root
+            .child(body)
             .children(pages::notice(self.notice.clone(), cx))
             .children(compact::overlay(self, cx))
             .children(
@@ -1839,7 +1843,8 @@ impl Render for WindowView {
                             })
                             .child(palette),
                     )
-            }))
+            }));
+        frame::frame(root, window)
     }
 }
 

@@ -1289,7 +1289,7 @@ impl SettingsPanel {
                     .child("No matching settings"),
             );
         }
-        div()
+        crate::shell::frame::round_left(div(), crate::shell::frame::Free::of(window))
             .id("settings-nav")
             .flex_none()
             .w(px(self.nav_width()))

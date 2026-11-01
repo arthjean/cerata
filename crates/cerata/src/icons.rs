@@ -31,6 +31,9 @@ pub enum Icon {
     SidebarLeft,
     TextFont,
     UnfoldMore,
+    Minimize,
+    Maximize,
+    Restore,
 }
 
 impl Icon {
@@ -58,6 +61,9 @@ impl Icon {
             Icon::SidebarLeft => include_bytes!("../assets/icons/sidebar-left.svg"),
             Icon::TextFont => include_bytes!("../assets/icons/text-font.svg"),
             Icon::UnfoldMore => include_bytes!("../assets/icons/unfold-more.svg"),
+            Icon::Minimize => include_bytes!("../assets/icons/minus-sign.svg"),
+            Icon::Maximize => include_bytes!("../assets/icons/square.svg"),
+            Icon::Restore => include_bytes!("../assets/icons/copy-01.svg"),
         }
     }
 
@@ -85,6 +91,9 @@ impl Icon {
             Icon::SidebarLeft => "icons/sidebar-left.svg",
             Icon::TextFont => "icons/text-font.svg",
             Icon::UnfoldMore => "icons/unfold-more.svg",
+            Icon::Minimize => "icons/minus-sign.svg",
+            Icon::Maximize => "icons/square.svg",
+            Icon::Restore => "icons/copy-01.svg",
         }
     }
 }
@@ -127,6 +136,9 @@ mod tests {
             Icon::SidebarLeft,
             Icon::TextFont,
             Icon::UnfoldMore,
+            Icon::Minimize,
+            Icon::Maximize,
+            Icon::Restore,
         ];
         for icon in all {
             let text = std::str::from_utf8(icon.data()).unwrap();
