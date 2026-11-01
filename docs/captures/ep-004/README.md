@@ -1,10 +1,49 @@
 # Captures et revue d'interface d'EP-004 (Windows)
 
+## Revue 2 : surface après la refonte (2026-11-01)
+
+Revue `/better-interface` de la coquille telle que livrée après la refonte sur les mesures de Paneflow : barre de titre dessinée, onglets en pilules, sidebar reconstruite (sections animées, filtre en place, pied de sidebar), écran Réglages, palette, accueil et nouvel onglet, fenêtre compacte et son sélecteur de récents, bandeau de conflit, barre d'état, menus contextuels, renommage. Thèmes clair et sombre, fenêtre de 1280 et de 800 px de large. Ce rapport est joint à la revue des stories US-023 à US-030.
+
+`cerata.exe` (build release) est piloté par de vraies entrées de l'OS : souris, clavier et molette par `SendInput`, disposition AZERTY. L'arbre d'accessibilité est lu par UI Automation (rôle, nom, focus clavier), l'ordre de tabulation est parcouru touche par touche, les contrastes sont mesurés sur les pixels capturés, fond translucide réellement rendu compris. Les fichiers de l'utilisateur dans `%APPDATA%\cerata` sont sauvegardés avant la revue et restaurés après.
+
+Pile : GPUI (`gpui` épinglé par rev), jetons de couleur dans `crates/cerata/src/theme.rs` et `crates/cerata/src/editor/theme.rs`, contrôles dans `crates/cerata/src/{a11y,select,switch,input}.rs`. Aucune documentation d'interface propre au projet hors des spécifications de Writer citées par le PRD.
+
+Domaines passés, dans l'ordre : accessibilité, mise en page, rédaction, typographie, couleur, finition. Les six skills ont été chargés.
+
+### Constats corrigés
+
+| Sévérité | Emplacement | Avant | Après | Pourquoi |
+|---|---|---|---|---|
+| HIGH | `crates/cerata/src/editor/text_field.rs:296` ; recherche de la sidebar, recherche et champs des réglages, palette, renommage, recherche de l'éditeur | Le champ texte partagé n'a ni rôle ni nom : UI Automation ne voit pas la recherche de la sidebar, et le focus clavier sur les champs de couleur des réglages tombe sur la fenêtre sans nom | Rôle `TextInput`, nom (le libellé du réglage, sinon le placeholder), valeur et placeholder exposés ; UIA liste `Edit|Search`, `Edit|Light theme accent`, etc. | WCAG 4.1.2, champ non annoncé |
+| HIGH | `crates/cerata/src/shell/sidebar_footer.rs:172` | Le champ de recherche de la sidebar est `invisible()` au repos : absent de l'ordre de tabulation, il ne s'atteint qu'au survol de la souris | Rendu transparent (`opacity(0.0)`) au repos : il reste un arrêt de tabulation et se remplit au focus (`revue2-apres-recherche-reset-pluriel.png`) | WCAG 2.1.1, chemin souris sans chemin clavier |
+| MEDIUM | `crates/cerata/src/settings_panel.rs:786` | Les deux cartes de thème annoncent « Preset », « Accent », « Translucent »… deux fois chacun | Nom préfixé par le thème : « Light theme preset », « Dark theme accent » ; test `theme_rows_are_named_with_their_theme` | WCAG 2.4.6, contrôles indiscernables à l'écoute |
+| MEDIUM | `crates/cerata/src/settings_panel.rs:1491` | Un clic bref sur la piste d'un curseur (pression et relâchement avant la frame suivante, comme un tapotement de pavé tactile) affiche la valeur sans l'enregistrer | Le relâchement est toujours écouté ; vérifié : `theme.light.translucent = 49` écrit après un clic | Valeur affichée trompeuse |
+| MEDIUM | `crates/cerata/src/shell/banner.rs:51`, `crates/cerata/src/sidebar/render.rs:309` | « Keep My Version », « Show More » en casse de titre, à côté de « Create new note », « Open in new tab », « Back to the app » | « Keep my version », « Show more » | Une casse par type d'élément |
+| LOW | `crates/cerata/src/shell/status_bar.rs:273` | « 1 paragraphs », « 1 words » | Singulier pour 1 (`revue2-apres-recherche-reset-pluriel.png`) | Chaîne fausse |
+
+Ajouts de la revue d'epic vérifiés sur l'app : le bouton Reset occupe une place réservée de 52 px à gauche du contrôle (`crates/cerata/src/settings_panel.rs:1175`), les contrôles ne bougent pas quand il apparaît, et un clic rétablit le défaut ; `Ctrl+Q` quitte l'application (`crates/cerata/src/app_menu.rs:94`).
+
+### Contrôles sans constat
+
+Ordre de tabulation complet et cohérent avec l'ordre visuel (sidebar, recherche, réglages, navigation, onglets, page) ; anneau de focus visible sur les lignes de l'arbre et les onglets (`revue2-focus-clavier.png`). Boutons de légende exposés par UIA comme boutons système (Réduire, Agrandir, Fermer). Sélecteurs des réglages ouverts et choisis au clavier (lettre puis Entrée). Animations de la sidebar, du filtre, des interrupteurs et du focus des champs : chacune lit `reduce_motion` et saute à l'état final. Erreur de renommage sur place, en `danger` à 5,28:1. Contrastes mesurés, thème sombre : en-têtes de section 6,50:1, « Show more » 6,22:1, lignes 11,92:1, raccourcis de l'accueil 8,60:1, correspondances de la palette (accent) 5,74:1 ; thème clair : en-têtes et « Show more » 6,44:1, barre d'état 10,86:1. Les flèches Retour et Avant désactivées (1,90:1 et 2,54:1) sont exemptées. Fenêtre de 800 px sans débordement (`revue2-clair-800px.png`). Bandeau de conflit (`revue2-conflit.png`), écran Réglages (`revue2-reglages.png`), coquille sombre (`revue2-coquille-sombre.png`).
+
+### Constats laissés ouverts (LOW)
+
+Les valeurs des listes déroulantes viennent du schéma telles quelles (« system », « light » en minuscules à côté de « Cerata »). Une description de réglage finit par un point, pas les autres. Le message de renommage utilise des guillemets droits. Avec une translucidité réglée haut par l'utilisateur, le texte secondaire dépend de ce qui est derrière la fenêtre (3,73:1 mesuré à 49, devant un bureau clair) ; la valeur par défaut, 10, passe. Les titres longs sont tronqués dans l'arbre ; le titre complet reste dans le nom accessible, dans l'onglet une fois la note ouverte et en élargissant la sidebar. Les lignes active et sélectionnée se ressemblent, comme dans Writer.
+
+### Vérification
+
+Captures `revue2-*.png` et `us-026-arbre-50k-revue2.png` ; arbre UIA et parcours de tabulation avant et après correctifs ; tests `cargo test --workspace`. Non vérifié : lecture par un lecteur d'écran (Narrateur ou NVDA), mode Contraste élevé de Windows, zoom système à 200 % (le zoom de Cerata ne grossit que le texte de la note), macOS et Linux (EP-007, EP-008).
+
+Verdict : Approve. Aucun constat HIGH ne subsiste dans le périmètre.
+
+## Première revue (avant la refonte)
+
 Revue `/better-interface` de la coquille de l'application (EP-004), le 2026-11-01, sur la machine de référence Windows (`docs/benchmarks.md`). `cerata.exe` est piloté par de vraies entrées de l'OS (souris, clavier et molette par `SendInput`, disposition AZERTY), chaque étape capturée dans la zone cliente. Les contrastes sont mesurés sur les pixels capturés, fond réellement rendu compris (la fenêtre est translucide).
 
-Ce rapport est joint à la revue des stories US-023 à US-030.
+Elle a précédé la refonte de l'interface (commits `5ac34c1` à `baef261`) ; la revue 2 la remplace pour la surface actuelle.
 
-## Périmètre
+### Périmètre
 
 Fenêtres et session, onglets et navigation, sidebar (sections, arbre, menus, renommage, suppression), bandeau de conflit, palette de commandes, accueil et nouvel onglet, fenêtre compacte et son sélecteur de récents, panneau de réglages, thèmes clair et sombre, barre d'état, menus dessinés (barre de menus, menus contextuels de la coquille), notice de fenêtre. États vides, d'erreur, de chargement, fenêtre étroite (800 px) et zoom à 200 % compris.
 
@@ -12,7 +51,7 @@ Hors périmètre : la surface de l'éditeur (EP-003), dont seuls le fond du menu
 
 Domaines passés, dans l'ordre : accessibilité, mise en page, rédaction, typographie, couleur, finition. Aucune documentation d'interface propre au projet en dehors des spécifications de Writer citées par le PRD.
 
-## Constats corrigés
+### Constats corrigés
 
 | Sévérité | Emplacement | Avant | Après | Pourquoi |
 |---|---|---|---|---|
@@ -29,15 +68,15 @@ Domaines passés, dans l'ordre : accessibilité, mise en page, rédaction, typog
 | MEDIUM | `crates/cerata/src/settings_panel.rs:88` | Catégorie « Privacy » (télémétrie) affichée alors que la v1 n'en envoie aucune | Catégorie masquée | Réglage trompeur |
 | LOW | `crates/cerata_core/assets/settings.schema.json:84` | « Schema », « Light or dark color schema », descriptions de contraste et mention de Writer | « Color Scheme », « Light, dark, or the system setting », descriptions corrigées, « the platform default » | Rédaction |
 
-## Constats laissés ouverts (LOW)
+### Constats laissés ouverts (LOW)
 
 La capitalisation « UI font » vient du schéma de Writer, porté tel quel. Le dialogue de suppression ne nomme pas la Corbeille et écrit « file(s) ». Les titres longs sont tronqués dans le sélecteur compact (le chemin complet reste dans le nom accessible). Les lignes active et sélectionnée de la sidebar se ressemblent, comme dans Writer. Les raccourcis de l'éditeur sous AZERTY et l'accessibilité des surfaces d'EP-003 relèvent d'EP-003.
 
-## Performance de l'arbre (US-026)
+### Performance de l'arbre (US-026)
 
 `us-026-arbre-50k.png` : 50 000 notes dans un seul dossier, arbre affiché par nom puis complété par les titres, après 300 crans de molette. Valeurs et procédure dans `docs/benchmarks.md`.
 
-## Vérification
+### Vérification
 
 Chaque correctif a été revu sur l'application lancée (captures `apres-*`), en clair et en sombre, à 800 px de large et à 200 % de zoom. Tests de régression : contraste des jetons sur chaque préréglage, clavier des menus et restitution du focus, notice d'échec d'enregistrement, chemins des récents, liaisons par position, arbre de 50 000 fichiers.
 
