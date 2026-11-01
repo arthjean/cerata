@@ -406,7 +406,11 @@ impl Sidebar {
             self.expanded.remove(dir);
         }
         if self.expanded.remove(dir) {
-            if self.opening.as_ref().is_some_and(|(opening, _)| opening == dir) {
+            if self
+                .opening
+                .as_ref()
+                .is_some_and(|(opening, _)| opening == dir)
+            {
                 self.opening = None;
             }
             self.fade_folder_glyph(dir, false, cx);

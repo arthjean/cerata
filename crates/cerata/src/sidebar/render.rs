@@ -610,14 +610,7 @@ impl Render for Sidebar {
                             draggable: true,
                         };
                         let text = label(&tree_row.entry, this.options.label);
-                        let row = row(
-                            ("sidebar-row", ix),
-                            &tree_row.entry,
-                            state,
-                            text,
-                            this,
-                            cx,
-                        );
+                        let row = row(("sidebar-row", ix), &tree_row.entry, state, text, this, cx);
                         Some(match opacity {
                             Some(amount) => row.opacity(amount),
                             None => row,
@@ -722,11 +715,7 @@ fn with_section(
         None => root.children(rows),
         Some(amount) => {
             let height = rows.len() as f32 * ROW_HEIGHT;
-            root.child(
-                revealing(height, amount, reduce)
-                    .flex_none()
-                    .children(rows),
-            )
+            root.child(revealing(height, amount, reduce).flex_none().children(rows))
         }
     }
 }
