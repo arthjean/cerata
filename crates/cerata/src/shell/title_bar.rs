@@ -54,8 +54,9 @@ pub fn row(id: &'static str) -> gpui::Stateful<gpui::Div> {
 /// "Cerata" in blackletter, at the top of the sidebar.
 pub fn wordmark() -> impl IntoElement {
     row("sidebar-title-bar")
-        // On the sidebar rows' text edge (margin 8 + padding 7).
-        .px(px(15.0))
+        // As far from the sidebar's left edge as the glyphs' tops are from
+        // its top edge (the wordmark's side bearing adds about half a pixel).
+        .px(px(10.0))
         .text_size(px(24.0))
         .font_family(WORDMARK_FONT)
         .text_color(theme::text())
