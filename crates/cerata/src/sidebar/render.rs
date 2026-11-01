@@ -12,6 +12,9 @@ use gpui::{
     uniform_list,
 };
 
+use std::time::Instant;
+
+use super::reveal::{FOLDER_MOTION, Reveal};
 use super::tree::{Listing, label};
 use super::{ClearSelection, ROW_HEIGHT, Section, Sidebar, SidebarEvent};
 use crate::editor::theme;
@@ -511,44 +514,44 @@ impl Render for Sidebar {
             return root.child(filter_results(self, cx));
         }
 
+        let now = Instant::now();
+        let reduce = cx.reduce_motion();
+        if self.section_moving(now) || self.folder_fade(now).is_some() {
+            window.request_animation_frame();
+        }
+
         if !self.pinned_entries.is_empty() {
             let collapsed = self.collapsed.contains(&Section::Pinned);
             root = root.child(header(Section::Pinned, "Pinned", collapsed, cx));
-            if !collapsed {
+            let moving = self.section_amount(Section::Pinned, now);
+            if !collapsed || moving.is_some() {
                 let entries = self.pinned_entries.clone();
-                root = root.children(flat_rows(
-                    Section::Pinned,
-                    &entries,
-                    self.pinned_visible,
-                    self,
-                    cx,
-                ));
+                let mut rows = flat_rows(Section::Pinned, &entries, self.pinned_visible, self, cx);
                 if self.pinned_has_more() {
-                    root = root.child(show_more(Section::Pinned, cx));
+                    rows.push(show_more(Section::Pinned, cx));
                 }
+                root = with_section(root, rows, moving, reduce);
             }
         }
         if self.show_recents && !self.recents.is_empty() {
             let collapsed = self.collapsed.contains(&Section::Recents);
             root = root.child(header(Section::Recents, "Recents", collapsed, cx));
-            if !collapsed {
+            let moving = self.section_amount(Section::Recents, now);
+            if !collapsed || moving.is_some() {
                 let entries = self.recents.clone();
-                root = root.children(flat_rows(
-                    Section::Recents,
-                    &entries,
-                    self.recents_visible,
-                    self,
-                    cx,
-                ));
+                let mut rows =
+                    flat_rows(Section::Recents, &entries, self.recents_visible, self, cx);
                 if self.recents_more {
-                    root = root.child(show_more(Section::Recents, cx));
+                    rows.push(show_more(Section::Recents, cx));
                 }
+                root = with_section(root, rows, moving, reduce);
             }
         }
 
         let collapsed = self.collapsed.contains(&Section::Everything);
         root = root.child(header(Section::Everything, "Everything", collapsed, cx));
-        if collapsed {
+        let moving = self.section_amount(Section::Everything, now);
+        if collapsed && moving.is_none() {
             return root;
         }
         match &self.root_listing {
@@ -579,9 +582,14 @@ impl Render for Sidebar {
                     .filter(|drag| drag.active)
                     .map(|drag| drag.paths.clone())
                     .unwrap_or_default();
+                let fade = this.folder_fade(std::time::Instant::now());
                 range
                     .filter_map(|ix| {
                         let tree_row = this.rows.get(ix)?.clone();
+                        let opacity = fade.as_ref().and_then(|(dir, amount)| {
+                            let path = &tree_row.entry.path;
+                            (path != dir && path.starts_with(dir)).then_some(*amount)
+                        });
                         let state = RowState {
                             depth: tree_row.depth,
                             expanded: tree_row.expanded,
@@ -594,21 +602,123 @@ impl Render for Sidebar {
                             draggable: true,
                         };
                         let text = label(&tree_row.entry, this.options.label);
-                        Some(row(
+                        let row = row(
                             ("sidebar-row", ix),
                             &tree_row.entry,
                             state,
                             text,
                             this,
                             cx,
-                        ))
+                        );
+                        Some(match opacity {
+                            Some(amount) => row.opacity(amount),
+                            None => row,
+                        })
                     })
                     .collect::<Vec<_>>()
             }),
         )
-        .track_scroll(&self.scroll)
-        .flex_1()
-        .min_h_0();
-        root.child(list)
+        .track_scroll(&self.scroll);
+
+        let Some(amount) = moving else {
+            // Settled open: measured for the next opening or closing.
+            let measured = self.everything_height.clone();
+            return root.child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .relative()
+                    .child(
+                        canvas(
+                            move |bounds, _, _| measured.set(f32::from(bounds.size.height)),
+                            |_, _, _, _| {},
+                        )
+                        .absolute()
+                        .size_full(),
+                    )
+                    .child(list.size_full()),
+            );
+        };
+        // The list keeps its settled height, so its scroll does not move,
+        // and grows or shrinks behind a clip down to its last row.
+        let full = match self.everything_height.get() {
+            measured if measured > 0. => measured,
+            _ => f32::from(window.viewport_size().height),
+        };
+        let shown = full.min(count as f32 * ROW_HEIGHT);
+        root.child(
+            revealing(shown, amount, reduce)
+                .min_h_0()
+                .child(list.w_full().h(px(full))),
+        )
+    }
+}
+
+impl Sidebar {
+    /// How far a section's rows are shown while it opens or closes; `None`
+    /// once settled.
+    fn section_amount(&self, section: Section, now: Instant) -> Option<f32> {
+        self.section_reveals
+            .get(&section)
+            .filter(|reveal| reveal.animating(now))
+            .map(|reveal| reveal.amount(now))
+    }
+
+    fn section_moving(&self, now: Instant) -> bool {
+        self.section_reveals
+            .values()
+            .any(|reveal| reveal.animating(now))
+    }
+
+    /// The folder whose rows fade in and their opacity. Its clock starts
+    /// once its listing is read, so rows that arrive late still fade.
+    fn folder_fade(&mut self, now: Instant) -> Option<(std::path::PathBuf, f32)> {
+        let (dir, fade) = self.opening.as_mut()?;
+        if fade.is_none() && !matches!(self.listings.get(dir.as_path()), Some(Listing::Loading)) {
+            let mut started = Reveal::new(false, FOLDER_MOTION);
+            started.retarget(true, now);
+            *fade = Some(started);
+        }
+        match fade {
+            None => Some((dir.clone(), 0.)),
+            Some(fade) if fade.animating(now) => Some((dir.clone(), fade.amount(now))),
+            Some(_) => {
+                self.opening = None;
+                None
+            }
+        }
+    }
+}
+
+/// Content that opens or closes: a share of its `height` and its opacity.
+/// Reduced motion keeps the height, so the content only fades.
+fn revealing(height: f32, amount: f32, reduce: bool) -> gpui::Div {
+    let shown = if reduce { height } else { height * amount };
+    div()
+        .w_full()
+        .h(px(shown))
+        .overflow_hidden()
+        .opacity(amount)
+        .flex()
+        .flex_col()
+}
+
+/// A flat section's rows, settled or moving.
+fn with_section(
+    root: gpui::Stateful<gpui::Div>,
+    rows: Vec<AnyElement>,
+    moving: Option<f32>,
+    reduce: bool,
+) -> gpui::Stateful<gpui::Div> {
+    match moving {
+        None => root.children(rows),
+        Some(amount) => {
+            let height = rows.len() as f32 * ROW_HEIGHT;
+            root.child(
+                revealing(height, amount, reduce)
+                    .flex_none()
+                    .children(rows),
+            )
+        }
     }
 }

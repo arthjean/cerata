@@ -51,7 +51,7 @@ pub struct RowMotion {
     started: Option<Instant>,
 }
 
-fn ease_out_cubic(progress: f32) -> f32 {
+pub(super) fn ease_out_cubic(progress: f32) -> f32 {
     1. - (1. - progress).powi(3)
 }
 

@@ -9,6 +9,7 @@
 mod filter;
 pub mod ops;
 mod render;
+mod reveal;
 pub mod tree;
 
 #[cfg(test)]
@@ -97,6 +98,13 @@ pub struct Sidebar {
     pub recents_more: bool,
     pub show_recents: bool,
     pub collapsed: HashSet<Section>,
+    /// The last opening or closing of each section toggled.
+    pub section_reveals: HashMap<Section, reveal::Reveal>,
+    /// The folder last expanded, and its rows' fade once its listing is read.
+    pub opening: Option<(PathBuf, Option<reveal::Reveal>)>,
+    /// Everything's list height last frame it was settled open: the height
+    /// it opens to and closes from.
+    pub everything_height: std::rc::Rc<std::cell::Cell<f32>>,
     /// Bumped by every section refresh: only the latest one is applied.
     sections_version: u64,
     /// Latest read of each folder: an older read finishing last is dropped.
@@ -154,6 +162,9 @@ impl Sidebar {
             recents_more: false,
             show_recents: true,
             collapsed: HashSet::new(),
+            section_reveals: HashMap::new(),
+            opening: None,
+            everything_height: Default::default(),
             sections_version: 0,
             read_versions: HashMap::new(),
             menu: None,
@@ -233,6 +244,7 @@ impl Sidebar {
         self.drag = None;
         self.pending_rename = None;
         self.revealing = None;
+        self.opening = None;
         self.pinned_visible = PINNED_PAGE;
         self.recents_visible = RECENTS_PAGE;
         self.reset_filter();
@@ -390,11 +402,15 @@ impl Sidebar {
             self.expanded.remove(dir);
         }
         if self.expanded.remove(dir) {
+            if self.opening.as_ref().is_some_and(|(opening, _)| opening == dir) {
+                self.opening = None;
+            }
             self.rebuild_rows();
             cx.notify();
             return;
         }
         self.expanded.insert(dir.to_path_buf());
+        self.opening = Some((dir.to_path_buf(), None));
         if !matches!(self.listings.get(dir), Some(Listing::Loaded(_))) {
             self.load_dir(dir, cx);
         }
@@ -483,9 +499,14 @@ impl Sidebar {
     }
 
     pub fn toggle_section(&mut self, section: Section, cx: &mut Context<Self>) {
-        if !self.collapsed.remove(&section) {
+        let open = self.collapsed.remove(&section);
+        if !open {
             self.collapsed.insert(section);
         }
+        self.section_reveals
+            .entry(section)
+            .or_insert_with(|| reveal::Reveal::new(!open, reveal::SECTION_MOTION))
+            .retarget(open, std::time::Instant::now());
         cx.notify();
     }
 
