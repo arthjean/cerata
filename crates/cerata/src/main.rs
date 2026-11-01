@@ -2,6 +2,7 @@
 
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
+mod editor;
 mod window;
 
 use cerata_core::cli;
@@ -35,6 +36,7 @@ fn main() -> ExitCode {
             }
         })
         .detach();
+        editor::actions::init(cx);
         start(cx, target.clone());
     });
     ExitCode::SUCCESS
@@ -50,8 +52,24 @@ fn start(cx: &mut App, target: Option<open_target::OpenTarget>) {
         }
     };
     let (events, receiver) = std::sync::mpsc::channel::<WatchEnvelope>();
+    let mut document = window::Document::default();
+    let mut config = editor::EditorConfig::default();
     match startup(&core, target, events) {
         Ok((window_state, bundle)) => {
+            config = editor::EditorConfig::from_settings(&bundle.settings);
+            if let Some(file) = bundle.standalone_file.clone() {
+                document = window::Document {
+                    text: file.content,
+                    path: Some(file.path),
+                    root: None,
+                };
+            } else if let Some(file) = bundle.active_file.clone() {
+                document = window::Document {
+                    text: file.content,
+                    path: Some(file.path),
+                    root: bundle.workspace.as_ref().map(|info| info.root.clone()),
+                };
+            }
             log::info!(
                 "startup: workspace {:?}, {} entries, {} recent workspaces, {} recent files",
                 bundle.workspace.as_ref().map(|info| &info.root),
@@ -79,7 +97,7 @@ fn start(cx: &mut App, target: Option<open_target::OpenTarget>) {
         }
         Err(error) => log::error!("startup failed: {error}"),
     }
-    if let Err(error) = window::open_main_window(cx) {
+    if let Err(error) = window::open_main_window(cx, document, config) {
         log::error!("failed to open the main window: {error:#}");
         cx.quit();
     }
