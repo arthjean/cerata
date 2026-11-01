@@ -118,6 +118,7 @@ pub fn nav_button(
 ) -> gpui::Stateful<gpui::Div> {
     crate::a11y::button(div().id(id), name)
         .occlude()
+        .flex_none()
         .flex()
         .items_center()
         .justify_center()
