@@ -1,0 +1,1110 @@
+{
+ "fixture": "unicode.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": [
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ]
+   ],
+   "decorations": [
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     8,
+     8
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 8..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     9,
+     9
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 8..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     14,
+     14
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 8..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     15,
+     15
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 8..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     22,
+     22
+    ]
+   ],
+   "decorations": [
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     23,
+     23
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     24,
+     24
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     31,
+     31
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "mark cm-emphasis 31..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     33,
+     33
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "mark cm-emphasis 31..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     43,
+     43
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "mark cm-emphasis 31..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     45,
+     45
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "mark cm-emphasis 31..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     46,
+     46
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "mark cm-inline-code 46..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     47,
+     47
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "mark cm-inline-code 46..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     52,
+     52
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "mark cm-inline-code 46..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     53,
+     53
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "mark cm-inline-code 46..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     54,
+     54
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     55,
+     55
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     60,
+     60
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     61,
+     61
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     62,
+     62
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     67,
+     67
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     68,
+     68
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     79,
+     79
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "mark cm-emphasis 79..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     80,
+     80
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "mark cm-emphasis 79..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     86,
+     86
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "mark cm-emphasis 79..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     87,
+     87
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "mark cm-emphasis 79..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     88,
+     88
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     88,
+     88
+    ]
+   ],
+   "decorations": [
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ],
+    [
+     87,
+     87
+    ]
+   ],
+   "decorations": [
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "mark cm-emphasis 79..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     8,
+     8
+    ],
+    [
+     86,
+     86
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 8..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "mark cm-emphasis 79..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     9,
+     9
+    ],
+    [
+     80,
+     80
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 8..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "mark cm-emphasis 79..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     14,
+     14
+    ],
+    [
+     79,
+     79
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 8..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "mark cm-emphasis 79..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     15,
+     15
+    ],
+    [
+     68,
+     68
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 8..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     22,
+     22
+    ],
+    [
+     67,
+     67
+    ]
+   ],
+   "decorations": [
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     23,
+     23
+    ],
+    [
+     62,
+     62
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     1
+    ]
+   ],
+   "decorations": [
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     8,
+     9
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 8..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     14,
+     15
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 8..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     22,
+     23
+    ]
+   ],
+   "decorations": [
+    "hide 8..9",
+    "mark cm-emphasis 8..15",
+    "hide 14..15",
+    "hide 31..33",
+    "mark cm-emphasis 31..45",
+    "hide 43..45",
+    "hide 46..47",
+    "mark cm-inline-code 46..53",
+    "hide 52..53",
+    "hide 54..55",
+    "mark cm-rendered-link 54..68",
+    "hide 60..61",
+    "hide 61..62",
+    "hide 62..67",
+    "hide 67..68",
+    "hide 79..80",
+    "mark cm-emphasis 79..87",
+    "hide 86..87"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     88
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 8..15",
+    "mark cm-emphasis 31..45",
+    "mark cm-inline-code 46..53",
+    "mark cm-emphasis 79..87"
+   ]
+  }
+ ]
+}

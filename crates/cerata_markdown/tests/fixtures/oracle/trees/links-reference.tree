@@ -1,0 +1,26 @@
+Document 0..65
+  Paragraph 0..29
+    Link 0..6
+      LinkMark 0..1
+      LinkMark 2..3
+      LinkLabel 3..6
+    Link 7..12
+      LinkMark 7..8
+      LinkMark 9..10
+      LinkLabel 10..12
+    Link 13..16
+      LinkMark 13..14
+      LinkMark 15..16
+    Link 17..29
+      LinkMark 17..18
+      LinkMark 19..20
+      LinkLabel 20..29
+  LinkReference 31..48
+    LinkLabel 31..34
+    LinkMark 34..35
+    URL 36..44
+    LinkTitle 45..48
+  LinkReference 49..64
+    LinkLabel 49..52
+    LinkMark 52..53
+    URL 54..64

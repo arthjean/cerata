@@ -1,0 +1,14 @@
+Document 0..67
+  FencedCode 0..33
+    CodeMark 0..3
+    CodeInfo 3..7
+    CodeText 8..29
+    CodeMark 30..33
+  FencedCode 34..47
+    CodeMark 34..37
+    CodeText 38..43
+    CodeMark 44..47
+  FencedCode 48..66
+    CodeMark 48..51
+    CodeInfo 52..62
+    CodeMark 63..66

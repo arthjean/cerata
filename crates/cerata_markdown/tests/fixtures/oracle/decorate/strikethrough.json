@@ -1,0 +1,603 @@
+{
+ "fixture": "strikethrough.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": [
+    "mark cm-strikethrough 0..8",
+    "hide 16..18",
+    "mark cm-strikethrough 16..26",
+    "hide 24..26",
+    "hide 27..29",
+    "mark cm-strikethrough 27..40",
+    "hide 31..33",
+    "mark cm-emphasis 31..36",
+    "hide 34..36",
+    "hide 38..40"
+   ]
+  },
+  {
+   "selection": [
+    [
+     2,
+     2
+    ]
+   ],
+   "decorations": [
+    "mark cm-strikethrough 0..8",
+    "hide 16..18",
+    "mark cm-strikethrough 16..26",
+    "hide 24..26",
+    "hide 27..29",
+    "mark cm-strikethrough 27..40",
+    "hide 31..33",
+    "mark cm-emphasis 31..36",
+    "hide 34..36",
+    "hide 38..40"
+   ]
+  },
+  {
+   "selection": [
+    [
+     6,
+     6
+    ]
+   ],
+   "decorations": [
+    "mark cm-strikethrough 0..8",
+    "hide 16..18",
+    "mark cm-strikethrough 16..26",
+    "hide 24..26",
+    "hide 27..29",
+    "mark cm-strikethrough 27..40",
+    "hide 31..33",
+    "mark cm-emphasis 31..36",
+    "hide 34..36",
+    "hide 38..40"
+   ]
+  },
+  {
+   "selection": [
+    [
+     8,
+     8
+    ]
+   ],
+   "decorations": [
+    "mark cm-strikethrough 0..8",
+    "hide 16..18",
+    "mark cm-strikethrough 16..26",
+    "hide 24..26",
+    "hide 27..29",
+    "mark cm-strikethrough 27..40",
+    "hide 31..33",
+    "mark cm-emphasis 31..36",
+    "hide 34..36",
+    "hide 38..40"
+   ]
+  },
+  {
+   "selection": [
+    [
+     16,
+     16
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "mark cm-strikethrough 0..8",
+    "hide 6..8",
+    "mark cm-strikethrough 16..26",
+    "hide 27..29",
+    "mark cm-strikethrough 27..40",
+    "hide 31..33",
+    "mark cm-emphasis 31..36",
+    "hide 34..36",
+    "hide 38..40"
+   ]
+  },
+  {
+   "selection": [
+    [
+     18,
+     18
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "mark cm-strikethrough 0..8",
+    "hide 6..8",
+    "mark cm-strikethrough 16..26",
+    "hide 27..29",
+    "mark cm-strikethrough 27..40",
+    "hide 31..33",
+    "mark cm-emphasis 31..36",
+    "hide 34..36",
+    "hide 38..40"
+   ]
+  },
+  {
+   "selection": [
+    [
+     24,
+     24
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "mark cm-strikethrough 0..8",
+    "hide 6..8",
+    "mark cm-strikethrough 16..26",
+    "hide 27..29",
+    "mark cm-strikethrough 27..40",
+    "hide 31..33",
+    "mark cm-emphasis 31..36",
+    "hide 34..36",
+    "hide 38..40"
+   ]
+  },
+  {
+   "selection": [
+    [
+     26,
+     26
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "mark cm-strikethrough 0..8",
+    "hide 6..8",
+    "mark cm-strikethrough 16..26",
+    "hide 27..29",
+    "mark cm-strikethrough 27..40",
+    "hide 31..33",
+    "mark cm-emphasis 31..36",
+    "hide 34..36",
+    "hide 38..40"
+   ]
+  },
+  {
+   "selection": [
+    [
+     27,
+     27
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "mark cm-strikethrough 0..8",
+    "hide 6..8",
+    "hide 16..18",
+    "mark cm-strikethrough 16..26",
+    "hide 24..26",
+    "mark cm-strikethrough 27..40",
+    "hide 31..33",
+    "mark cm-emphasis 31..36",
+    "hide 34..36"
+   ]
+  },
+  {
+   "selection": [
+    [
+     29,
+     29
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "mark cm-strikethrough 0..8",
+    "hide 6..8",
+    "hide 16..18",
+    "mark cm-strikethrough 16..26",
+    "hide 24..26",
+    "mark cm-strikethrough 27..40",
+    "hide 31..33",
+    "mark cm-emphasis 31..36",
+    "hide 34..36"
+   ]
+  },
+  {
+   "selection": [
+    [
+     31,
+     31
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "mark cm-strikethrough 0..8",
+    "hide 6..8",
+    "hide 16..18",
+    "mark cm-strikethrough 16..26",
+    "hide 24..26",
+    "mark cm-strikethrough 27..40",
+    "mark cm-emphasis 31..36"
+   ]
+  },
+  {
+   "selection": [
+    [
+     33,
+     33
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "mark cm-strikethrough 0..8",
+    "hide 6..8",
+    "hide 16..18",
+    "mark cm-strikethrough 16..26",
+    "hide 24..26",
+    "mark cm-strikethrough 27..40",
+    "mark cm-emphasis 31..36"
+   ]
+  },
+  {
+   "selection": [
+    [
+     34,
+     34
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "mark cm-strikethrough 0..8",
+    "hide 6..8",
+    "hide 16..18",
+    "mark cm-strikethrough 16..26",
+    "hide 24..26",
+    "mark cm-strikethrough 27..40",
+    "mark cm-emphasis 31..36"
+   ]
+  },
+  {
+   "selection": [
+    [
+     36,
+     36
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "mark cm-strikethrough 0..8",
+    "hide 6..8",
+    "hide 16..18",
+    "mark cm-strikethrough 16..26",
+    "hide 24..26",
+    "mark cm-strikethrough 27..40",
+    "mark cm-emphasis 31..36"
+   ]
+  },
+  {
+   "selection": [
+    [
+     38,
+     38
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "mark cm-strikethrough 0..8",
+    "hide 6..8",
+    "hide 16..18",
+    "mark cm-strikethrough 16..26",
+    "hide 24..26",
+    "mark cm-strikethrough 27..40",
+    "hide 31..33",
+    "mark cm-emphasis 31..36",
+    "hide 34..36"
+   ]
+  },
+  {
+   "selection": [
+    [
+     40,
+     40
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "mark cm-strikethrough 0..8",
+    "hide 6..8",
+    "hide 16..18",
+    "mark cm-strikethrough 16..26",
+    "hide 24..26",
+    "mark cm-strikethrough 27..40",
+    "hide 31..33",
+    "mark cm-emphasis 31..36",
+    "hide 34..36"
+   ]
+  },
+  {
+   "selection": [
+    [
+     41,
+     41
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "mark cm-strikethrough 0..8",
+    "hide 6..8",
+    "hide 16..18",
+    "mark cm-strikethrough 16..26",
+    "hide 24..26",
+    "hide 27..29",
+    "mark cm-strikethrough 27..40",
+    "hide 31..33",
+    "mark cm-emphasis 31..36",
+    "hide 34..36",
+    "hide 38..40"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     41,
+     41
+    ]
+   ],
+   "decorations": [
+    "mark cm-strikethrough 0..8",
+    "hide 16..18",
+    "mark cm-strikethrough 16..26",
+    "hide 24..26",
+    "hide 27..29",
+    "mark cm-strikethrough 27..40",
+    "hide 31..33",
+    "mark cm-emphasis 31..36",
+    "hide 34..36",
+    "hide 38..40"
+   ]
+  },
+  {
+   "selection": [
+    [
+     2,
+     2
+    ],
+    [
+     40,
+     40
+    ]
+   ],
+   "decorations": [
+    "mark cm-strikethrough 0..8",
+    "hide 16..18",
+    "mark cm-strikethrough 16..26",
+    "hide 24..26",
+    "mark cm-strikethrough 27..40",
+    "hide 31..33",
+    "mark cm-emphasis 31..36",
+    "hide 34..36"
+   ]
+  },
+  {
+   "selection": [
+    [
+     6,
+     6
+    ],
+    [
+     38,
+     38
+    ]
+   ],
+   "decorations": [
+    "mark cm-strikethrough 0..8",
+    "hide 16..18",
+    "mark cm-strikethrough 16..26",
+    "hide 24..26",
+    "mark cm-strikethrough 27..40",
+    "hide 31..33",
+    "mark cm-emphasis 31..36",
+    "hide 34..36"
+   ]
+  },
+  {
+   "selection": [
+    [
+     8,
+     8
+    ],
+    [
+     36,
+     36
+    ]
+   ],
+   "decorations": [
+    "mark cm-strikethrough 0..8",
+    "hide 16..18",
+    "mark cm-strikethrough 16..26",
+    "hide 24..26",
+    "mark cm-strikethrough 27..40",
+    "mark cm-emphasis 31..36"
+   ]
+  },
+  {
+   "selection": [
+    [
+     16,
+     16
+    ],
+    [
+     34,
+     34
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "mark cm-strikethrough 0..8",
+    "hide 6..8",
+    "mark cm-strikethrough 16..26",
+    "mark cm-strikethrough 27..40",
+    "mark cm-emphasis 31..36"
+   ]
+  },
+  {
+   "selection": [
+    [
+     18,
+     18
+    ],
+    [
+     33,
+     33
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "mark cm-strikethrough 0..8",
+    "hide 6..8",
+    "mark cm-strikethrough 16..26",
+    "mark cm-strikethrough 27..40",
+    "mark cm-emphasis 31..36"
+   ]
+  },
+  {
+   "selection": [
+    [
+     24,
+     24
+    ],
+    [
+     31,
+     31
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "mark cm-strikethrough 0..8",
+    "hide 6..8",
+    "mark cm-strikethrough 16..26",
+    "mark cm-strikethrough 27..40",
+    "mark cm-emphasis 31..36"
+   ]
+  },
+  {
+   "selection": [
+    [
+     26,
+     26
+    ],
+    [
+     29,
+     29
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "mark cm-strikethrough 0..8",
+    "hide 6..8",
+    "mark cm-strikethrough 16..26",
+    "mark cm-strikethrough 27..40",
+    "hide 31..33",
+    "mark cm-emphasis 31..36",
+    "hide 34..36"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     2
+    ]
+   ],
+   "decorations": [
+    "mark cm-strikethrough 0..8",
+    "hide 16..18",
+    "mark cm-strikethrough 16..26",
+    "hide 24..26",
+    "hide 27..29",
+    "mark cm-strikethrough 27..40",
+    "hide 31..33",
+    "mark cm-emphasis 31..36",
+    "hide 34..36",
+    "hide 38..40"
+   ]
+  },
+  {
+   "selection": [
+    [
+     6,
+     8
+    ]
+   ],
+   "decorations": [
+    "mark cm-strikethrough 0..8",
+    "hide 16..18",
+    "mark cm-strikethrough 16..26",
+    "hide 24..26",
+    "hide 27..29",
+    "mark cm-strikethrough 27..40",
+    "hide 31..33",
+    "mark cm-emphasis 31..36",
+    "hide 34..36",
+    "hide 38..40"
+   ]
+  },
+  {
+   "selection": [
+    [
+     16,
+     18
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "mark cm-strikethrough 0..8",
+    "hide 6..8",
+    "mark cm-strikethrough 16..26",
+    "hide 27..29",
+    "mark cm-strikethrough 27..40",
+    "hide 31..33",
+    "mark cm-emphasis 31..36",
+    "hide 34..36",
+    "hide 38..40"
+   ]
+  },
+  {
+   "selection": [
+    [
+     24,
+     26
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "mark cm-strikethrough 0..8",
+    "hide 6..8",
+    "mark cm-strikethrough 16..26",
+    "hide 27..29",
+    "mark cm-strikethrough 27..40",
+    "hide 31..33",
+    "mark cm-emphasis 31..36",
+    "hide 34..36",
+    "hide 38..40"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     41
+    ]
+   ],
+   "decorations": [
+    "mark cm-strikethrough 0..8",
+    "mark cm-strikethrough 16..26",
+    "mark cm-strikethrough 27..40",
+    "mark cm-emphasis 31..36"
+   ]
+  }
+ ]
+}

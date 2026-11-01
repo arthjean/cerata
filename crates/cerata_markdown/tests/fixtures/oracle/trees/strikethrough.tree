@@ -1,0 +1,14 @@
+Document 0..41
+  Paragraph 0..40
+    Strikethrough 0..8
+      StrikethroughMark 0..2
+      StrikethroughMark 6..8
+    Strikethrough 16..26
+      StrikethroughMark 16..18
+      StrikethroughMark 24..26
+    Strikethrough 27..40
+      StrikethroughMark 27..29
+      StrongEmphasis 31..36
+        EmphasisMark 31..33
+        EmphasisMark 34..36
+      StrikethroughMark 38..40

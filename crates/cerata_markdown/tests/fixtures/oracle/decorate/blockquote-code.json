@@ -1,0 +1,563 @@
+{
+ "fixture": "blockquote-code.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": [
+    "invisible 2..5",
+    "invisible 5..7",
+    "invisible 26..29",
+    "invisible 31..32",
+    "invisible 40..41"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ]
+   ],
+   "decorations": [
+    "invisible 2..5",
+    "invisible 5..7",
+    "invisible 26..29",
+    "invisible 31..32",
+    "invisible 40..41"
+   ]
+  },
+  {
+   "selection": [
+    [
+     2,
+     2
+    ]
+   ],
+   "decorations": [
+    "invisible 31..32",
+    "invisible 40..41"
+   ]
+  },
+  {
+   "selection": [
+    [
+     5,
+     5
+    ]
+   ],
+   "decorations": [
+    "invisible 31..32",
+    "invisible 40..41"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ]
+   ],
+   "decorations": [
+    "invisible 31..32",
+    "invisible 40..41"
+   ]
+  },
+  {
+   "selection": [
+    [
+     8,
+     8
+    ]
+   ],
+   "decorations": [
+    "invisible 31..32",
+    "invisible 40..41"
+   ]
+  },
+  {
+   "selection": [
+    [
+     9,
+     9
+    ]
+   ],
+   "decorations": [
+    "invisible 31..32",
+    "invisible 40..41"
+   ]
+  },
+  {
+   "selection": [
+    [
+     10,
+     10
+    ]
+   ],
+   "decorations": [
+    "invisible 31..32",
+    "invisible 40..41"
+   ]
+  },
+  {
+   "selection": [
+    [
+     14,
+     14
+    ]
+   ],
+   "decorations": [
+    "invisible 31..32",
+    "invisible 40..41"
+   ]
+  },
+  {
+   "selection": [
+    [
+     15,
+     15
+    ]
+   ],
+   "decorations": [
+    "invisible 31..32",
+    "invisible 40..41"
+   ]
+  },
+  {
+   "selection": [
+    [
+     16,
+     16
+    ]
+   ],
+   "decorations": [
+    "invisible 31..32",
+    "invisible 40..41"
+   ]
+  },
+  {
+   "selection": [
+    [
+     17,
+     17
+    ]
+   ],
+   "decorations": [
+    "invisible 31..32",
+    "invisible 40..41"
+   ]
+  },
+  {
+   "selection": [
+    [
+     23,
+     23
+    ]
+   ],
+   "decorations": [
+    "invisible 31..32",
+    "invisible 40..41"
+   ]
+  },
+  {
+   "selection": [
+    [
+     24,
+     24
+    ]
+   ],
+   "decorations": [
+    "invisible 31..32",
+    "invisible 40..41"
+   ]
+  },
+  {
+   "selection": [
+    [
+     25,
+     25
+    ]
+   ],
+   "decorations": [
+    "invisible 31..32",
+    "invisible 40..41"
+   ]
+  },
+  {
+   "selection": [
+    [
+     26,
+     26
+    ]
+   ],
+   "decorations": [
+    "invisible 31..32",
+    "invisible 40..41"
+   ]
+  },
+  {
+   "selection": [
+    [
+     29,
+     29
+    ]
+   ],
+   "decorations": [
+    "invisible 31..32",
+    "invisible 40..41"
+   ]
+  },
+  {
+   "selection": [
+    [
+     30,
+     30
+    ]
+   ],
+   "decorations": [
+    "invisible 0..1",
+    "invisible 2..5",
+    "invisible 5..7",
+    "invisible 8..9",
+    "invisible 15..16",
+    "invisible 24..25",
+    "invisible 26..29",
+    "invisible 31..32",
+    "invisible 40..41"
+   ]
+  },
+  {
+   "selection": [
+    [
+     31,
+     31
+    ]
+   ],
+   "decorations": [
+    "invisible 0..1",
+    "invisible 2..5",
+    "invisible 5..7",
+    "invisible 8..9",
+    "invisible 15..16",
+    "invisible 24..25",
+    "invisible 26..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     32,
+     32
+    ]
+   ],
+   "decorations": [
+    "invisible 0..1",
+    "invisible 2..5",
+    "invisible 5..7",
+    "invisible 8..9",
+    "invisible 15..16",
+    "invisible 24..25",
+    "invisible 26..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     33,
+     33
+    ]
+   ],
+   "decorations": [
+    "invisible 0..1",
+    "invisible 2..5",
+    "invisible 5..7",
+    "invisible 8..9",
+    "invisible 15..16",
+    "invisible 24..25",
+    "invisible 26..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     34,
+     34
+    ]
+   ],
+   "decorations": [
+    "invisible 0..1",
+    "invisible 2..5",
+    "invisible 5..7",
+    "invisible 8..9",
+    "invisible 15..16",
+    "invisible 24..25",
+    "invisible 26..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     39,
+     39
+    ]
+   ],
+   "decorations": [
+    "invisible 0..1",
+    "invisible 2..5",
+    "invisible 5..7",
+    "invisible 8..9",
+    "invisible 15..16",
+    "invisible 24..25",
+    "invisible 26..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     40,
+     40
+    ]
+   ],
+   "decorations": [
+    "invisible 0..1",
+    "invisible 2..5",
+    "invisible 5..7",
+    "invisible 8..9",
+    "invisible 15..16",
+    "invisible 24..25",
+    "invisible 26..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     41,
+     41
+    ]
+   ],
+   "decorations": [
+    "invisible 0..1",
+    "invisible 2..5",
+    "invisible 5..7",
+    "invisible 8..9",
+    "invisible 15..16",
+    "invisible 24..25",
+    "invisible 26..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     48,
+     48
+    ]
+   ],
+   "decorations": [
+    "invisible 0..1",
+    "invisible 2..5",
+    "invisible 5..7",
+    "invisible 8..9",
+    "invisible 15..16",
+    "invisible 24..25",
+    "invisible 26..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     49,
+     49
+    ]
+   ],
+   "decorations": [
+    "invisible 0..1",
+    "invisible 2..5",
+    "invisible 5..7",
+    "invisible 8..9",
+    "invisible 15..16",
+    "invisible 24..25",
+    "invisible 26..29",
+    "invisible 31..32",
+    "invisible 40..41"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     49,
+     49
+    ]
+   ],
+   "decorations": [
+    "invisible 2..5",
+    "invisible 5..7",
+    "invisible 26..29",
+    "invisible 31..32",
+    "invisible 40..41"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ],
+    [
+     48,
+     48
+    ]
+   ],
+   "decorations": [
+    "invisible 2..5",
+    "invisible 5..7",
+    "invisible 26..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     2,
+     2
+    ],
+    [
+     41,
+     41
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     5,
+     5
+    ],
+    [
+     40,
+     40
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ],
+    [
+     39,
+     39
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     8,
+     8
+    ],
+    [
+     34,
+     34
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     9,
+     9
+    ],
+    [
+     33,
+     33
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     10,
+     10
+    ],
+    [
+     32,
+     32
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     1
+    ]
+   ],
+   "decorations": [
+    "invisible 2..5",
+    "invisible 5..7",
+    "invisible 26..29",
+    "invisible 31..32",
+    "invisible 40..41"
+   ]
+  },
+  {
+   "selection": [
+    [
+     2,
+     5
+    ]
+   ],
+   "decorations": [
+    "invisible 31..32",
+    "invisible 40..41"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     8
+    ]
+   ],
+   "decorations": [
+    "invisible 31..32",
+    "invisible 40..41"
+   ]
+  },
+  {
+   "selection": [
+    [
+     9,
+     10
+    ]
+   ],
+   "decorations": [
+    "invisible 31..32",
+    "invisible 40..41"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     49
+    ]
+   ],
+   "decorations": []
+  }
+ ]
+}

@@ -1,0 +1,6 @@
+Document 0..19
+  Paragraph 0..15
+  BulletList 16..18
+    ListItem 16..18
+      ListMark 16..17
+      Paragraph 18..18

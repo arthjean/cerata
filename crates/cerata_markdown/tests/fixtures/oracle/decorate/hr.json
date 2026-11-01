@@ -1,0 +1,409 @@
+{
+ "fixture": "hr.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 4..7",
+    "replace block HorizontalRuleWidget 8..11",
+    "replace block HorizontalRuleWidget 12..17",
+    "replace block HorizontalRuleWidget 25..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     3,
+     3
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 4..7",
+    "replace block HorizontalRuleWidget 8..11",
+    "replace block HorizontalRuleWidget 12..17",
+    "replace block HorizontalRuleWidget 25..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     4,
+     4
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 0..3",
+    "replace block HorizontalRuleWidget 8..11",
+    "replace block HorizontalRuleWidget 12..17",
+    "replace block HorizontalRuleWidget 25..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 0..3",
+    "replace block HorizontalRuleWidget 8..11",
+    "replace block HorizontalRuleWidget 12..17",
+    "replace block HorizontalRuleWidget 25..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     8,
+     8
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 0..3",
+    "replace block HorizontalRuleWidget 4..7",
+    "replace block HorizontalRuleWidget 12..17",
+    "replace block HorizontalRuleWidget 25..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     11,
+     11
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 0..3",
+    "replace block HorizontalRuleWidget 4..7",
+    "replace block HorizontalRuleWidget 12..17",
+    "replace block HorizontalRuleWidget 25..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     12,
+     12
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 0..3",
+    "replace block HorizontalRuleWidget 4..7",
+    "replace block HorizontalRuleWidget 8..11",
+    "replace block HorizontalRuleWidget 25..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     17,
+     17
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 0..3",
+    "replace block HorizontalRuleWidget 4..7",
+    "replace block HorizontalRuleWidget 8..11",
+    "replace block HorizontalRuleWidget 25..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     18,
+     18
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 0..3",
+    "replace block HorizontalRuleWidget 4..7",
+    "replace block HorizontalRuleWidget 8..11",
+    "replace block HorizontalRuleWidget 12..17",
+    "replace block HorizontalRuleWidget 25..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     19,
+     19
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 0..3",
+    "replace block HorizontalRuleWidget 4..7",
+    "replace block HorizontalRuleWidget 8..11",
+    "replace block HorizontalRuleWidget 12..17",
+    "replace block HorizontalRuleWidget 25..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     23,
+     23
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 0..3",
+    "replace block HorizontalRuleWidget 4..7",
+    "replace block HorizontalRuleWidget 8..11",
+    "replace block HorizontalRuleWidget 12..17",
+    "replace block HorizontalRuleWidget 25..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     24,
+     24
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 0..3",
+    "replace block HorizontalRuleWidget 4..7",
+    "replace block HorizontalRuleWidget 8..11",
+    "replace block HorizontalRuleWidget 12..17",
+    "replace block HorizontalRuleWidget 25..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     25,
+     25
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 0..3",
+    "replace block HorizontalRuleWidget 4..7",
+    "replace block HorizontalRuleWidget 8..11",
+    "replace block HorizontalRuleWidget 12..17"
+   ]
+  },
+  {
+   "selection": [
+    [
+     29,
+     29
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 0..3",
+    "replace block HorizontalRuleWidget 4..7",
+    "replace block HorizontalRuleWidget 8..11",
+    "replace block HorizontalRuleWidget 12..17"
+   ]
+  },
+  {
+   "selection": [
+    [
+     30,
+     30
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 0..3",
+    "replace block HorizontalRuleWidget 4..7",
+    "replace block HorizontalRuleWidget 8..11",
+    "replace block HorizontalRuleWidget 12..17",
+    "replace block HorizontalRuleWidget 25..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     30,
+     30
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 4..7",
+    "replace block HorizontalRuleWidget 8..11",
+    "replace block HorizontalRuleWidget 12..17",
+    "replace block HorizontalRuleWidget 25..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     3,
+     3
+    ],
+    [
+     29,
+     29
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 4..7",
+    "replace block HorizontalRuleWidget 8..11",
+    "replace block HorizontalRuleWidget 12..17"
+   ]
+  },
+  {
+   "selection": [
+    [
+     4,
+     4
+    ],
+    [
+     25,
+     25
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 0..3",
+    "replace block HorizontalRuleWidget 8..11",
+    "replace block HorizontalRuleWidget 12..17"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ],
+    [
+     24,
+     24
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 0..3",
+    "replace block HorizontalRuleWidget 8..11",
+    "replace block HorizontalRuleWidget 12..17",
+    "replace block HorizontalRuleWidget 25..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     8,
+     8
+    ],
+    [
+     23,
+     23
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 0..3",
+    "replace block HorizontalRuleWidget 4..7",
+    "replace block HorizontalRuleWidget 12..17",
+    "replace block HorizontalRuleWidget 25..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     11,
+     11
+    ],
+    [
+     19,
+     19
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 0..3",
+    "replace block HorizontalRuleWidget 4..7",
+    "replace block HorizontalRuleWidget 12..17",
+    "replace block HorizontalRuleWidget 25..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     12,
+     12
+    ],
+    [
+     18,
+     18
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 0..3",
+    "replace block HorizontalRuleWidget 4..7",
+    "replace block HorizontalRuleWidget 8..11",
+    "replace block HorizontalRuleWidget 25..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     3
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 4..7",
+    "replace block HorizontalRuleWidget 8..11",
+    "replace block HorizontalRuleWidget 12..17",
+    "replace block HorizontalRuleWidget 25..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     4,
+     7
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 0..3",
+    "replace block HorizontalRuleWidget 8..11",
+    "replace block HorizontalRuleWidget 12..17",
+    "replace block HorizontalRuleWidget 25..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     8,
+     11
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 0..3",
+    "replace block HorizontalRuleWidget 4..7",
+    "replace block HorizontalRuleWidget 12..17",
+    "replace block HorizontalRuleWidget 25..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     12,
+     17
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 0..3",
+    "replace block HorizontalRuleWidget 4..7",
+    "replace block HorizontalRuleWidget 8..11",
+    "replace block HorizontalRuleWidget 25..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     30
+    ]
+   ],
+   "decorations": []
+  }
+ ]
+}

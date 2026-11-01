@@ -1,0 +1,5 @@
+Document 0..12
+  Frontmatter 0..12
+    FrontmatterMark 0..3
+    FrontmatterContent 4..8
+    FrontmatterMark 9..12

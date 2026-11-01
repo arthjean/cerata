@@ -1,0 +1,370 @@
+{
+ "fixture": "math.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     2,
+     2
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     3,
+     3
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     4,
+     4
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     6,
+     6
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     9,
+     9
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     10,
+     10
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     11,
+     11
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     24,
+     24
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     25,
+     25
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     31,
+     31
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     32,
+     32
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     33,
+     33
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     34,
+     34
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     35,
+     35
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     36,
+     36
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     38,
+     38
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     39,
+     39
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     47,
+     47
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     48,
+     48
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     50,
+     50
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     51,
+     51
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     51,
+     51
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ],
+    [
+     50,
+     50
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     2,
+     2
+    ],
+    [
+     48,
+     48
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     3,
+     3
+    ],
+    [
+     47,
+     47
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     4,
+     4
+    ],
+    [
+     39,
+     39
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     6,
+     6
+    ],
+    [
+     38,
+     38
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ],
+    [
+     36,
+     36
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     9,
+     9
+    ],
+    [
+     35,
+     35
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     1
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     2,
+     3
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     4,
+     6
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     7,
+     9
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     51
+    ]
+   ],
+   "decorations": []
+  }
+ ]
+}

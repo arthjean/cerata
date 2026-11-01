@@ -1,0 +1,54 @@
+{
+ "fixture": "math-currency.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     22,
+     22
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     22,
+     22
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     22
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     22
+    ]
+   ],
+   "decorations": []
+  }
+ ]
+}

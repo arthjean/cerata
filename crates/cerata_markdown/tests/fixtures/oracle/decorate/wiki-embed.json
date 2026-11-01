@@ -1,0 +1,94 @@
+{
+ "fixture": "wiki-embed.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     2,
+     2
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     11,
+     11
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     12,
+     12
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     12,
+     12
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     2,
+     2
+    ],
+    [
+     11,
+     11
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     2
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     11,
+     12
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     12
+    ]
+   ],
+   "decorations": []
+  }
+ ]
+}

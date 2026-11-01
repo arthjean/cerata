@@ -1,0 +1,6 @@
+Document 0..10
+  Paragraph 0..10
+    Math 2..8
+      MathMark 2..4
+      MathFormula 4..6
+      MathMark 6..8

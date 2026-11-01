@@ -1,0 +1,7 @@
+Document 0..7
+  Paragraph 0..7
+    InlineCode 0..4
+      CodeMark 0..1
+      CodeMark 3..4
+    Escape 5..7
+      EscapeMark 5..6

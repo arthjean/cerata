@@ -1,0 +1,339 @@
+{
+ "fixture": "dashes.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": [
+    "replace inline DashWidget 2 2..4",
+    "replace inline DashWidget 3 7..10",
+    "replace inline DashWidget 2 25..27",
+    "replace inline DashWidget 2 29..31"
+   ]
+  },
+  {
+   "selection": [
+    [
+     2,
+     2
+    ]
+   ],
+   "decorations": [
+    "replace inline DashWidget 3 7..10",
+    "replace inline DashWidget 2 25..27",
+    "replace inline DashWidget 2 29..31"
+   ]
+  },
+  {
+   "selection": [
+    [
+     4,
+     4
+    ]
+   ],
+   "decorations": [
+    "replace inline DashWidget 3 7..10",
+    "replace inline DashWidget 2 25..27",
+    "replace inline DashWidget 2 29..31"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ]
+   ],
+   "decorations": [
+    "replace inline DashWidget 2 2..4",
+    "replace inline DashWidget 2 25..27",
+    "replace inline DashWidget 2 29..31"
+   ]
+  },
+  {
+   "selection": [
+    [
+     10,
+     10
+    ]
+   ],
+   "decorations": [
+    "replace inline DashWidget 2 2..4",
+    "replace inline DashWidget 2 25..27",
+    "replace inline DashWidget 2 29..31"
+   ]
+  },
+  {
+   "selection": [
+    [
+     20,
+     20
+    ]
+   ],
+   "decorations": [
+    "replace inline DashWidget 2 2..4",
+    "replace inline DashWidget 3 7..10",
+    "replace inline DashWidget 2 25..27",
+    "replace inline DashWidget 2 29..31"
+   ]
+  },
+  {
+   "selection": [
+    [
+     21,
+     21
+    ]
+   ],
+   "decorations": [
+    "replace inline DashWidget 2 2..4",
+    "replace inline DashWidget 3 7..10",
+    "replace inline DashWidget 2 25..27",
+    "replace inline DashWidget 2 29..31"
+   ]
+  },
+  {
+   "selection": [
+    [
+     25,
+     25
+    ]
+   ],
+   "decorations": [
+    "replace inline DashWidget 2 2..4",
+    "replace inline DashWidget 3 7..10",
+    "replace inline DashWidget 2 29..31"
+   ]
+  },
+  {
+   "selection": [
+    [
+     27,
+     27
+    ]
+   ],
+   "decorations": [
+    "replace inline DashWidget 2 2..4",
+    "replace inline DashWidget 3 7..10",
+    "replace inline DashWidget 2 29..31"
+   ]
+  },
+  {
+   "selection": [
+    [
+     29,
+     29
+    ]
+   ],
+   "decorations": [
+    "replace inline DashWidget 2 2..4",
+    "replace inline DashWidget 3 7..10",
+    "replace inline DashWidget 2 25..27"
+   ]
+  },
+  {
+   "selection": [
+    [
+     31,
+     31
+    ]
+   ],
+   "decorations": [
+    "replace inline DashWidget 2 2..4",
+    "replace inline DashWidget 3 7..10",
+    "replace inline DashWidget 2 25..27"
+   ]
+  },
+  {
+   "selection": [
+    [
+     36,
+     36
+    ]
+   ],
+   "decorations": [
+    "replace inline DashWidget 2 2..4",
+    "replace inline DashWidget 3 7..10",
+    "replace inline DashWidget 2 25..27",
+    "replace inline DashWidget 2 29..31"
+   ]
+  },
+  {
+   "selection": [
+    [
+     37,
+     37
+    ]
+   ],
+   "decorations": [
+    "replace inline DashWidget 2 2..4",
+    "replace inline DashWidget 3 7..10",
+    "replace inline DashWidget 2 25..27",
+    "replace inline DashWidget 2 29..31"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     37,
+     37
+    ]
+   ],
+   "decorations": [
+    "replace inline DashWidget 2 2..4",
+    "replace inline DashWidget 3 7..10",
+    "replace inline DashWidget 2 25..27",
+    "replace inline DashWidget 2 29..31"
+   ]
+  },
+  {
+   "selection": [
+    [
+     2,
+     2
+    ],
+    [
+     36,
+     36
+    ]
+   ],
+   "decorations": [
+    "replace inline DashWidget 3 7..10",
+    "replace inline DashWidget 2 25..27",
+    "replace inline DashWidget 2 29..31"
+   ]
+  },
+  {
+   "selection": [
+    [
+     4,
+     4
+    ],
+    [
+     31,
+     31
+    ]
+   ],
+   "decorations": [
+    "replace inline DashWidget 3 7..10",
+    "replace inline DashWidget 2 25..27"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ],
+    [
+     29,
+     29
+    ]
+   ],
+   "decorations": [
+    "replace inline DashWidget 2 2..4",
+    "replace inline DashWidget 2 25..27"
+   ]
+  },
+  {
+   "selection": [
+    [
+     10,
+     10
+    ],
+    [
+     27,
+     27
+    ]
+   ],
+   "decorations": [
+    "replace inline DashWidget 2 2..4",
+    "replace inline DashWidget 2 29..31"
+   ]
+  },
+  {
+   "selection": [
+    [
+     20,
+     20
+    ],
+    [
+     25,
+     25
+    ]
+   ],
+   "decorations": [
+    "replace inline DashWidget 2 2..4",
+    "replace inline DashWidget 3 7..10",
+    "replace inline DashWidget 2 29..31"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     2
+    ]
+   ],
+   "decorations": [
+    "replace inline DashWidget 3 7..10",
+    "replace inline DashWidget 2 25..27",
+    "replace inline DashWidget 2 29..31"
+   ]
+  },
+  {
+   "selection": [
+    [
+     4,
+     7
+    ]
+   ],
+   "decorations": [
+    "replace inline DashWidget 2 25..27",
+    "replace inline DashWidget 2 29..31"
+   ]
+  },
+  {
+   "selection": [
+    [
+     10,
+     20
+    ]
+   ],
+   "decorations": [
+    "replace inline DashWidget 2 2..4",
+    "replace inline DashWidget 2 25..27",
+    "replace inline DashWidget 2 29..31"
+   ]
+  },
+  {
+   "selection": [
+    [
+     21,
+     25
+    ]
+   ],
+   "decorations": [
+    "replace inline DashWidget 2 2..4",
+    "replace inline DashWidget 3 7..10",
+    "replace inline DashWidget 2 29..31"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     37
+    ]
+   ],
+   "decorations": []
+  }
+ ]
+}

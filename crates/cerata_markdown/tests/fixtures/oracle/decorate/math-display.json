@@ -1,0 +1,134 @@
+{
+ "fixture": "math-display.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     5,
+     5
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     21,
+     21
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     23,
+     23
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     28,
+     28
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     28,
+     28
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     5,
+     5
+    ],
+    [
+     23,
+     23
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ],
+    [
+     21,
+     21
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     5
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     7,
+     21
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     23,
+     28
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     28
+    ]
+   ],
+   "decorations": []
+  }
+ ]
+}

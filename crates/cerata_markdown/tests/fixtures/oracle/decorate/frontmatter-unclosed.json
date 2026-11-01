@@ -1,0 +1,111 @@
+{
+ "fixture": "frontmatter-unclosed.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     3,
+     3
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     4,
+     4
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 0..3"
+   ]
+  },
+  {
+   "selection": [
+    [
+     12,
+     12
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 0..3"
+   ]
+  },
+  {
+   "selection": [
+    [
+     13,
+     13
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 0..3"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     13,
+     13
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     3,
+     3
+    ],
+    [
+     12,
+     12
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     3
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     4,
+     12
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 0..3"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     13
+    ]
+   ],
+   "decorations": []
+  }
+ ]
+}

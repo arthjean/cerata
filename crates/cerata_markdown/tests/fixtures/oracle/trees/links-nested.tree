@@ -1,0 +1,23 @@
+Document 0..51
+  Paragraph 0..50
+    Link 0..15
+      LinkMark 0..1
+      LinkMark 11..12
+      LinkMark 12..13
+      URL 13..14
+      LinkMark 14..15
+    Link 16..28
+      LinkMark 16..17
+      LinkMark 24..25
+      LinkMark 25..26
+      URL 26..27
+      LinkMark 27..28
+    Link 29..34
+      LinkMark 29..30
+      LinkMark 33..34
+    Link 35..50
+      LinkMark 35..36
+      LinkMark 46..47
+      LinkMark 47..48
+      URL 48..49
+      LinkMark 49..50

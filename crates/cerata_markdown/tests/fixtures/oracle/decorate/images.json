@@ -1,0 +1,555 @@
+{
+ "fixture": "images.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": [
+    "widget block ImageWidget b.png 11..11",
+    "replace inline ImageWidget d.png 18..29",
+    "replace block ImageWidget e.png 38..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     2,
+     2
+    ]
+   ],
+   "decorations": [
+    "widget block ImageWidget b.png 11..11",
+    "replace inline ImageWidget d.png 18..29",
+    "replace block ImageWidget e.png 38..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     3,
+     3
+    ]
+   ],
+   "decorations": [
+    "widget block ImageWidget b.png 11..11",
+    "replace inline ImageWidget d.png 18..29",
+    "replace block ImageWidget e.png 38..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     4,
+     4
+    ]
+   ],
+   "decorations": [
+    "widget block ImageWidget b.png 11..11",
+    "replace inline ImageWidget d.png 18..29",
+    "replace block ImageWidget e.png 38..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     5,
+     5
+    ]
+   ],
+   "decorations": [
+    "replace inline ImageWidget d.png 18..29",
+    "replace block ImageWidget e.png 38..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     10,
+     10
+    ]
+   ],
+   "decorations": [
+    "replace inline ImageWidget d.png 18..29",
+    "replace block ImageWidget e.png 38..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     11,
+     11
+    ]
+   ],
+   "decorations": [
+    "widget block ImageWidget b.png 11..11",
+    "replace inline ImageWidget d.png 18..29",
+    "replace block ImageWidget e.png 38..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     12,
+     12
+    ]
+   ],
+   "decorations": [
+    "replace block ImageWidget b.png 0..11",
+    "replace inline ImageWidget d.png 18..29",
+    "replace block ImageWidget e.png 38..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     13,
+     13
+    ]
+   ],
+   "decorations": [
+    "replace block ImageWidget b.png 0..11",
+    "replace inline ImageWidget d.png 18..29",
+    "replace block ImageWidget e.png 38..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     18,
+     18
+    ]
+   ],
+   "decorations": [
+    "replace block ImageWidget b.png 0..11",
+    "widget inline ImageWidget d.png 29..29",
+    "replace block ImageWidget e.png 38..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     20,
+     20
+    ]
+   ],
+   "decorations": [
+    "replace block ImageWidget b.png 0..11",
+    "widget inline ImageWidget d.png 29..29",
+    "replace block ImageWidget e.png 38..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     21,
+     21
+    ]
+   ],
+   "decorations": [
+    "replace block ImageWidget b.png 0..11",
+    "widget inline ImageWidget d.png 29..29",
+    "replace block ImageWidget e.png 38..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     22,
+     22
+    ]
+   ],
+   "decorations": [
+    "replace block ImageWidget b.png 0..11",
+    "widget inline ImageWidget d.png 29..29",
+    "replace block ImageWidget e.png 38..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     23,
+     23
+    ]
+   ],
+   "decorations": [
+    "replace block ImageWidget b.png 0..11",
+    "replace block ImageWidget e.png 38..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     28,
+     28
+    ]
+   ],
+   "decorations": [
+    "replace block ImageWidget b.png 0..11",
+    "replace block ImageWidget e.png 38..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     29,
+     29
+    ]
+   ],
+   "decorations": [
+    "replace block ImageWidget b.png 0..11",
+    "widget inline ImageWidget d.png 29..29",
+    "replace block ImageWidget e.png 38..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     36,
+     36
+    ]
+   ],
+   "decorations": [
+    "replace block ImageWidget b.png 0..11",
+    "replace inline ImageWidget d.png 18..29",
+    "replace block ImageWidget e.png 38..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     37,
+     37
+    ]
+   ],
+   "decorations": [
+    "replace block ImageWidget b.png 0..11",
+    "replace inline ImageWidget d.png 18..29",
+    "replace block ImageWidget e.png 38..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     38,
+     38
+    ]
+   ],
+   "decorations": [
+    "replace block ImageWidget b.png 0..11",
+    "replace inline ImageWidget d.png 18..29",
+    "widget block ImageWidget e.png 60..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     40,
+     40
+    ]
+   ],
+   "decorations": [
+    "replace block ImageWidget b.png 0..11",
+    "replace inline ImageWidget d.png 18..29",
+    "widget block ImageWidget e.png 60..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     44,
+     44
+    ]
+   ],
+   "decorations": [
+    "replace block ImageWidget b.png 0..11",
+    "replace inline ImageWidget d.png 18..29",
+    "widget block ImageWidget e.png 60..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     45,
+     45
+    ]
+   ],
+   "decorations": [
+    "replace block ImageWidget b.png 0..11",
+    "replace inline ImageWidget d.png 18..29",
+    "widget block ImageWidget e.png 60..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     46,
+     46
+    ]
+   ],
+   "decorations": [
+    "replace block ImageWidget b.png 0..11",
+    "replace inline ImageWidget d.png 18..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     51,
+     51
+    ]
+   ],
+   "decorations": [
+    "replace block ImageWidget b.png 0..11",
+    "replace inline ImageWidget d.png 18..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     52,
+     52
+    ]
+   ],
+   "decorations": [
+    "replace block ImageWidget b.png 0..11",
+    "replace inline ImageWidget d.png 18..29",
+    "widget block ImageWidget e.png 60..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     59,
+     59
+    ]
+   ],
+   "decorations": [
+    "replace block ImageWidget b.png 0..11",
+    "replace inline ImageWidget d.png 18..29",
+    "widget block ImageWidget e.png 60..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     60,
+     60
+    ]
+   ],
+   "decorations": [
+    "replace block ImageWidget b.png 0..11",
+    "replace inline ImageWidget d.png 18..29",
+    "widget block ImageWidget e.png 60..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     61,
+     61
+    ]
+   ],
+   "decorations": [
+    "replace block ImageWidget b.png 0..11",
+    "replace inline ImageWidget d.png 18..29",
+    "replace block ImageWidget e.png 38..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     61,
+     61
+    ]
+   ],
+   "decorations": [
+    "widget block ImageWidget b.png 11..11",
+    "replace inline ImageWidget d.png 18..29",
+    "replace block ImageWidget e.png 38..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     2,
+     2
+    ],
+    [
+     60,
+     60
+    ]
+   ],
+   "decorations": [
+    "widget block ImageWidget b.png 11..11",
+    "replace inline ImageWidget d.png 18..29",
+    "widget block ImageWidget e.png 60..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     3,
+     3
+    ],
+    [
+     59,
+     59
+    ]
+   ],
+   "decorations": [
+    "widget block ImageWidget b.png 11..11",
+    "replace inline ImageWidget d.png 18..29",
+    "widget block ImageWidget e.png 60..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     4,
+     4
+    ],
+    [
+     52,
+     52
+    ]
+   ],
+   "decorations": [
+    "widget block ImageWidget b.png 11..11",
+    "replace inline ImageWidget d.png 18..29",
+    "widget block ImageWidget e.png 60..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     5,
+     5
+    ],
+    [
+     51,
+     51
+    ]
+   ],
+   "decorations": [
+    "replace inline ImageWidget d.png 18..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     10,
+     10
+    ],
+    [
+     46,
+     46
+    ]
+   ],
+   "decorations": [
+    "replace inline ImageWidget d.png 18..29"
+   ]
+  },
+  {
+   "selection": [
+    [
+     11,
+     11
+    ],
+    [
+     45,
+     45
+    ]
+   ],
+   "decorations": [
+    "widget block ImageWidget b.png 11..11",
+    "replace inline ImageWidget d.png 18..29",
+    "widget block ImageWidget e.png 60..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     12,
+     12
+    ],
+    [
+     44,
+     44
+    ]
+   ],
+   "decorations": [
+    "replace block ImageWidget b.png 0..11",
+    "replace inline ImageWidget d.png 18..29",
+    "widget block ImageWidget e.png 60..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     2
+    ]
+   ],
+   "decorations": [
+    "widget block ImageWidget b.png 11..11",
+    "replace inline ImageWidget d.png 18..29",
+    "replace block ImageWidget e.png 38..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     3,
+     4
+    ]
+   ],
+   "decorations": [
+    "widget block ImageWidget b.png 11..11",
+    "replace inline ImageWidget d.png 18..29",
+    "replace block ImageWidget e.png 38..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     5,
+     10
+    ]
+   ],
+   "decorations": [
+    "replace inline ImageWidget d.png 18..29",
+    "replace block ImageWidget e.png 38..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     11,
+     12
+    ]
+   ],
+   "decorations": [
+    "widget block ImageWidget b.png 11..11",
+    "replace inline ImageWidget d.png 18..29",
+    "replace block ImageWidget e.png 38..60"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     61
+    ]
+   ],
+   "decorations": []
+  }
+ ]
+}

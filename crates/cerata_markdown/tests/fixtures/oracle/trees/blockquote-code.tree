@@ -1,0 +1,19 @@
+Document 0..49
+  Blockquote 0..29
+    QuoteMark 0..1
+    FencedCode 2..29
+      CodeMark 2..5
+      CodeInfo 5..7
+      QuoteMark 8..9
+      CodeText 10..15
+      QuoteMark 15..16
+      CodeText 17..23
+      QuoteMark 24..25
+      CodeMark 26..29
+  Blockquote 31..48
+    QuoteMark 31..32
+    BulletList 33..48
+      ListItem 33..48
+        ListMark 33..34
+        Paragraph 35..48
+          QuoteMark 40..41

@@ -1,0 +1,103 @@
+{
+ "fixture": "setext-single-dash-space.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     15,
+     15
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     16,
+     16
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     17,
+     17
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     18,
+     18
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     18,
+     18
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     15,
+     15
+    ],
+    [
+     17,
+     17
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     15
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     16,
+     17
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     18
+    ]
+   ],
+   "decorations": []
+  }
+ ]
+}

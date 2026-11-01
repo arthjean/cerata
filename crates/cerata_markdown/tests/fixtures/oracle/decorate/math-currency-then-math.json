@@ -1,0 +1,103 @@
+{
+ "fixture": "math-currency-then-math.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     8,
+     8
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     16,
+     16
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     17,
+     17
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     17,
+     17
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ],
+    [
+     16,
+     16
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     7
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     8,
+     16
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     17
+    ]
+   ],
+   "decorations": []
+  }
+ ]
+}

@@ -1,0 +1,8 @@
+Document 0..9
+  Paragraph 0..9
+    InlineCode 0..5
+      CodeMark 0..1
+      CodeMark 4..5
+    Emoji 6..9
+      EmojiMark 6..7
+      EmojiMark 8..9

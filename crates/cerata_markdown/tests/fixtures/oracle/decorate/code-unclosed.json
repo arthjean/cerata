@@ -1,0 +1,248 @@
+{
+ "fixture": "code-unclosed.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": [
+    "invisible 6..10",
+    "invisible 10..12"
+   ]
+  },
+  {
+   "selection": [
+    [
+     4,
+     4
+    ]
+   ],
+   "decorations": [
+    "invisible 6..10",
+    "invisible 10..12"
+   ]
+  },
+  {
+   "selection": [
+    [
+     5,
+     5
+    ]
+   ],
+   "decorations": [
+    "invisible 6..10",
+    "invisible 10..12"
+   ]
+  },
+  {
+   "selection": [
+    [
+     6,
+     6
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     10,
+     10
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     12,
+     12
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     13,
+     13
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     29,
+     29
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     30,
+     30
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     31,
+     31
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     46,
+     46
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     47,
+     47
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     47,
+     47
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     4,
+     4
+    ],
+    [
+     46,
+     46
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     5,
+     5
+    ],
+    [
+     31,
+     31
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     6,
+     6
+    ],
+    [
+     30,
+     30
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     10,
+     10
+    ],
+    [
+     29,
+     29
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     12,
+     12
+    ],
+    [
+     13,
+     13
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     4
+    ]
+   ],
+   "decorations": [
+    "invisible 6..10",
+    "invisible 10..12"
+   ]
+  },
+  {
+   "selection": [
+    [
+     5,
+     6
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     10,
+     12
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     13,
+     29
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     47
+    ]
+   ],
+   "decorations": []
+  }
+ ]
+}

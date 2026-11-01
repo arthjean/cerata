@@ -1,0 +1,6 @@
+Document 0..9
+  Paragraph 0..7
+  BulletList 8..9
+    ListItem 8..9
+      ListMark 8..9
+      Paragraph 9..9

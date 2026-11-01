@@ -49,3 +49,13 @@ MIT License:
     LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
     FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
     IN THE SOFTWARE.
+
+Third-party notice: emoji shortcodes
+------------------------------------
+
+crates/cerata_markdown/src/emoji.tsv is the shortcode table of node-emoji
+2.2.0, built on emojilib, exported by scripts/oracle/oracle.ts. Both are
+distributed under the MIT License (full text above, with these holders):
+
+    node-emoji: Copyright (c) 2014-2023 Daniel Bugl
+    emojilib: Copyright (c) 2014 Mu-An Chiou

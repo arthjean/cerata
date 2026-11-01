@@ -1,0 +1,134 @@
+{
+ "fixture": "frontmatter-empty-body.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     3,
+     3
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     4,
+     4
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     8,
+     8
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     9,
+     9
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     12,
+     12
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     12,
+     12
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     3,
+     3
+    ],
+    [
+     9,
+     9
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     4,
+     4
+    ],
+    [
+     8,
+     8
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     3
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     4,
+     8
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     9,
+     12
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     12
+    ]
+   ],
+   "decorations": []
+  }
+ ]
+}

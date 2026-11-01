@@ -39,34 +39,27 @@ pub fn extract_title(path: &Path) -> Option<String> {
     title_from_text(text.strip_prefix('\u{feff}').unwrap_or(text))
 }
 
-/// [`extract_title`] on text already in memory.
+/// [`extract_title`] on text already in memory. The frontmatter is found by
+/// the editor's parser (`cerata_markdown::frontmatter`), so the sidebar and
+/// the editor never disagree on where it ends (US-010).
 pub fn title_from_text(text: &str) -> Option<String> {
-    if let Some(rest) = text
-        .strip_prefix("---\n")
-        .or_else(|| text.strip_prefix("---\r\n"))
-    {
-        let close = rest
-            .find("\n---\n")
-            .map(|at| (at, "\n---\n".len()))
-            .or_else(|| rest.find("\n---\r\n").map(|at| (at, "\n---\r\n".len())));
-        if let Some((end, marker_len)) = close {
-            for line in rest[..end].lines() {
-                if let Some(value) = line.trim().strip_prefix("title:") {
-                    let value = value.trim();
-                    let title = value
-                        .strip_prefix('"')
-                        .and_then(|v| v.strip_suffix('"'))
-                        .or_else(|| value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')))
-                        .unwrap_or(value);
-                    if !title.is_empty() {
-                        return Some(title.to_owned());
-                    }
+    let (frontmatter, body) = cerata_markdown::frontmatter::split(text);
+    if let Some(frontmatter) = frontmatter {
+        for line in frontmatter.lines() {
+            if let Some(value) = line.trim().strip_prefix("title:") {
+                let value = value.trim();
+                let title = value
+                    .strip_prefix('"')
+                    .and_then(|v| v.strip_suffix('"'))
+                    .or_else(|| value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')))
+                    .unwrap_or(value);
+                if !title.is_empty() {
+                    return Some(title.to_owned());
                 }
             }
-            return leading_h1(&rest[end + marker_len..]);
         }
     }
-    leading_h1(text)
+    leading_h1(body)
 }
 
 fn leading_h1(text: &str) -> Option<String> {
@@ -262,6 +255,13 @@ mod tests {
             title_of("\u{feff}---\r\ntitle: Win\r\n---\r\n# H").as_deref(),
             Some("Win")
         );
+    }
+
+    #[test]
+    fn extract_title_frontmatter_closed_at_end_of_file() {
+        // The editor's rule: a closing `---` with no newline after it.
+        assert_eq!(title_of("---\ntitle: End\n---").as_deref(), Some("End"));
+        assert_eq!(title_of("---\ntitle: Open\n# H"), None);
     }
 
     // Batches.

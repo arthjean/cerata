@@ -1,0 +1,8 @@
+Document 0..13
+  Paragraph 0..13
+    InlineCode 0..7
+      CodeMark 0..1
+      CodeMark 6..7
+    Link 8..13
+      LinkMark 8..9
+      LinkMark 12..13

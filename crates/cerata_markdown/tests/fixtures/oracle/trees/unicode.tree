@@ -1,0 +1,22 @@
+Document 0..88
+  ATXHeading1 0..22
+    HeaderMark 0..1
+    Emphasis 8..15
+      EmphasisMark 8..9
+      EmphasisMark 14..15
+  Paragraph 24..87
+    StrongEmphasis 31..45
+      EmphasisMark 31..33
+      EmphasisMark 43..45
+    InlineCode 46..53
+      CodeMark 46..47
+      CodeMark 52..53
+    Link 54..68
+      LinkMark 54..55
+      LinkMark 60..61
+      LinkMark 61..62
+      URL 62..67
+      LinkMark 67..68
+    Emphasis 79..87
+      EmphasisMark 79..80
+      EmphasisMark 86..87

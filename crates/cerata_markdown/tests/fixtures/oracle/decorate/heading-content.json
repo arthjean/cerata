@@ -1,0 +1,894 @@
+{
+ "fixture": "heading-content.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": [
+    "hide 2..3",
+    "mark cm-rendered-link 2..11",
+    "hide 7..8",
+    "hide 8..9",
+    "hide 9..10",
+    "hide 10..11",
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "hide 29..32",
+    "replace inline EmojiWidget 😄 43..50",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ]
+   ],
+   "decorations": [
+    "hide 2..3",
+    "mark cm-rendered-link 2..11",
+    "hide 7..8",
+    "hide 8..9",
+    "hide 9..10",
+    "hide 10..11",
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "hide 29..32",
+    "replace inline EmojiWidget 😄 43..50",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     2,
+     2
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "hide 29..32",
+    "replace inline EmojiWidget 😄 43..50",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     3,
+     3
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "hide 29..32",
+    "replace inline EmojiWidget 😄 43..50",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "hide 29..32",
+    "replace inline EmojiWidget 😄 43..50",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     8,
+     8
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "hide 29..32",
+    "replace inline EmojiWidget 😄 43..50",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     9,
+     9
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "hide 29..32",
+    "replace inline EmojiWidget 😄 43..50",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     10,
+     10
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "hide 29..32",
+    "replace inline EmojiWidget 😄 43..50",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     11,
+     11
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "hide 29..32",
+    "replace inline EmojiWidget 😄 43..50",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     16,
+     16
+    ]
+   ],
+   "decorations": [
+    "hide 2..3",
+    "mark cm-rendered-link 2..11",
+    "hide 7..8",
+    "hide 8..9",
+    "hide 9..10",
+    "hide 10..11",
+    "mark cm-inline-code 16..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "hide 29..32",
+    "replace inline EmojiWidget 😄 43..50",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     17,
+     17
+    ]
+   ],
+   "decorations": [
+    "hide 2..3",
+    "mark cm-rendered-link 2..11",
+    "hide 7..8",
+    "hide 8..9",
+    "hide 9..10",
+    "hide 10..11",
+    "mark cm-inline-code 16..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "hide 29..32",
+    "replace inline EmojiWidget 😄 43..50",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     21,
+     21
+    ]
+   ],
+   "decorations": [
+    "hide 2..3",
+    "mark cm-rendered-link 2..11",
+    "hide 7..8",
+    "hide 8..9",
+    "hide 9..10",
+    "hide 10..11",
+    "mark cm-inline-code 16..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "hide 29..32",
+    "replace inline EmojiWidget 😄 43..50",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     22,
+     22
+    ]
+   ],
+   "decorations": [
+    "hide 2..3",
+    "mark cm-rendered-link 2..11",
+    "hide 7..8",
+    "hide 8..9",
+    "hide 9..10",
+    "hide 10..11",
+    "mark cm-inline-code 16..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "hide 29..32",
+    "replace inline EmojiWidget 😄 43..50",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     23,
+     23
+    ]
+   ],
+   "decorations": [
+    "hide 2..3",
+    "mark cm-rendered-link 2..11",
+    "hide 7..8",
+    "hide 8..9",
+    "hide 9..10",
+    "hide 10..11",
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "mark cm-emphasis 23..28",
+    "hide 29..32",
+    "replace inline EmojiWidget 😄 43..50",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     25,
+     25
+    ]
+   ],
+   "decorations": [
+    "hide 2..3",
+    "mark cm-rendered-link 2..11",
+    "hide 7..8",
+    "hide 8..9",
+    "hide 9..10",
+    "hide 10..11",
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "mark cm-emphasis 23..28",
+    "hide 29..32",
+    "replace inline EmojiWidget 😄 43..50",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     26,
+     26
+    ]
+   ],
+   "decorations": [
+    "hide 2..3",
+    "mark cm-rendered-link 2..11",
+    "hide 7..8",
+    "hide 8..9",
+    "hide 9..10",
+    "hide 10..11",
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "mark cm-emphasis 23..28",
+    "hide 29..32",
+    "replace inline EmojiWidget 😄 43..50",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     28,
+     28
+    ]
+   ],
+   "decorations": [
+    "hide 2..3",
+    "mark cm-rendered-link 2..11",
+    "hide 7..8",
+    "hide 8..9",
+    "hide 9..10",
+    "hide 10..11",
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "mark cm-emphasis 23..28",
+    "hide 29..32",
+    "replace inline EmojiWidget 😄 43..50",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     29,
+     29
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 2..3",
+    "mark cm-rendered-link 2..11",
+    "hide 7..8",
+    "hide 8..9",
+    "hide 9..10",
+    "hide 10..11",
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "replace inline EmojiWidget 😄 43..50",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     31,
+     31
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 2..3",
+    "mark cm-rendered-link 2..11",
+    "hide 7..8",
+    "hide 8..9",
+    "hide 9..10",
+    "hide 10..11",
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "replace inline EmojiWidget 😄 43..50",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     43,
+     43
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 2..3",
+    "mark cm-rendered-link 2..11",
+    "hide 7..8",
+    "hide 8..9",
+    "hide 9..10",
+    "hide 10..11",
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     44,
+     44
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 2..3",
+    "mark cm-rendered-link 2..11",
+    "hide 7..8",
+    "hide 8..9",
+    "hide 9..10",
+    "hide 10..11",
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     49,
+     49
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 2..3",
+    "mark cm-rendered-link 2..11",
+    "hide 7..8",
+    "hide 8..9",
+    "hide 9..10",
+    "hide 10..11",
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     50,
+     50
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 2..3",
+    "mark cm-rendered-link 2..11",
+    "hide 7..8",
+    "hide 8..9",
+    "hide 9..10",
+    "hide 10..11",
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     51,
+     51
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 2..3",
+    "mark cm-rendered-link 2..11",
+    "hide 7..8",
+    "hide 8..9",
+    "hide 9..10",
+    "hide 10..11",
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "replace inline EmojiWidget 😄 43..50"
+   ]
+  },
+  {
+   "selection": [
+    [
+     53,
+     53
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 2..3",
+    "mark cm-rendered-link 2..11",
+    "hide 7..8",
+    "hide 8..9",
+    "hide 9..10",
+    "hide 10..11",
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "replace inline EmojiWidget 😄 43..50"
+   ]
+  },
+  {
+   "selection": [
+    [
+     58,
+     58
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 2..3",
+    "mark cm-rendered-link 2..11",
+    "hide 7..8",
+    "hide 8..9",
+    "hide 9..10",
+    "hide 10..11",
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "replace inline EmojiWidget 😄 43..50",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     59,
+     59
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 2..3",
+    "mark cm-rendered-link 2..11",
+    "hide 7..8",
+    "hide 8..9",
+    "hide 9..10",
+    "hide 10..11",
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "hide 29..32",
+    "replace inline EmojiWidget 😄 43..50",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     59,
+     59
+    ]
+   ],
+   "decorations": [
+    "hide 2..3",
+    "mark cm-rendered-link 2..11",
+    "hide 7..8",
+    "hide 8..9",
+    "hide 9..10",
+    "hide 10..11",
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "hide 29..32",
+    "replace inline EmojiWidget 😄 43..50",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ],
+    [
+     58,
+     58
+    ]
+   ],
+   "decorations": [
+    "hide 2..3",
+    "mark cm-rendered-link 2..11",
+    "hide 7..8",
+    "hide 8..9",
+    "hide 9..10",
+    "hide 10..11",
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "replace inline EmojiWidget 😄 43..50",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     2,
+     2
+    ],
+    [
+     53,
+     53
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "replace inline EmojiWidget 😄 43..50"
+   ]
+  },
+  {
+   "selection": [
+    [
+     3,
+     3
+    ],
+    [
+     51,
+     51
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "replace inline EmojiWidget 😄 43..50"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ],
+    [
+     50,
+     50
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     8,
+     8
+    ],
+    [
+     49,
+     49
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     9,
+     9
+    ],
+    [
+     44,
+     44
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     10,
+     10
+    ],
+    [
+     43,
+     43
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     1
+    ]
+   ],
+   "decorations": [
+    "hide 2..3",
+    "mark cm-rendered-link 2..11",
+    "hide 7..8",
+    "hide 8..9",
+    "hide 9..10",
+    "hide 10..11",
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "hide 29..32",
+    "replace inline EmojiWidget 😄 43..50",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     2,
+     3
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "hide 29..32",
+    "replace inline EmojiWidget 😄 43..50",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     8
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "hide 29..32",
+    "replace inline EmojiWidget 😄 43..50",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     9,
+     10
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-inline-code 16..22",
+    "hide 21..22",
+    "hide 23..25",
+    "mark cm-emphasis 23..28",
+    "hide 26..28",
+    "hide 29..32",
+    "replace inline EmojiWidget 😄 43..50",
+    "replace inline DashWidget 2 51..53"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     59
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 16..22",
+    "mark cm-emphasis 23..28"
+   ]
+  }
+ ]
+}

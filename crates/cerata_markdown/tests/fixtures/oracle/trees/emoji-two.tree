@@ -1,0 +1,8 @@
+Document 0..13
+  Paragraph 0..13
+    Emoji 0..3
+      EmojiMark 0..1
+      EmojiMark 2..3
+    Emoji 8..13
+      EmojiMark 8..9
+      EmojiMark 12..13

@@ -1,0 +1,966 @@
+{
+ "fixture": "links-nested.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34",
+    "hide 35..36",
+    "mark cm-rendered-link 35..50",
+    "hide 46..47",
+    "hide 47..48",
+    "hide 48..49",
+    "hide 49..50"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34",
+    "hide 35..36",
+    "mark cm-rendered-link 35..50",
+    "hide 46..47",
+    "hide 47..48",
+    "hide 48..49",
+    "hide 49..50"
+   ]
+  },
+  {
+   "selection": [
+    [
+     11,
+     11
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34",
+    "hide 35..36",
+    "mark cm-rendered-link 35..50",
+    "hide 46..47",
+    "hide 47..48",
+    "hide 48..49",
+    "hide 49..50"
+   ]
+  },
+  {
+   "selection": [
+    [
+     12,
+     12
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34",
+    "hide 35..36",
+    "mark cm-rendered-link 35..50",
+    "hide 46..47",
+    "hide 47..48",
+    "hide 48..49",
+    "hide 49..50"
+   ]
+  },
+  {
+   "selection": [
+    [
+     13,
+     13
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34",
+    "hide 35..36",
+    "mark cm-rendered-link 35..50",
+    "hide 46..47",
+    "hide 47..48",
+    "hide 48..49",
+    "hide 49..50"
+   ]
+  },
+  {
+   "selection": [
+    [
+     14,
+     14
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34",
+    "hide 35..36",
+    "mark cm-rendered-link 35..50",
+    "hide 46..47",
+    "hide 47..48",
+    "hide 48..49",
+    "hide 49..50"
+   ]
+  },
+  {
+   "selection": [
+    [
+     15,
+     15
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34",
+    "hide 35..36",
+    "mark cm-rendered-link 35..50",
+    "hide 46..47",
+    "hide 47..48",
+    "hide 48..49",
+    "hide 49..50"
+   ]
+  },
+  {
+   "selection": [
+    [
+     16,
+     16
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-rendered-link 0..15",
+    "hide 11..12",
+    "hide 12..13",
+    "hide 13..14",
+    "hide 14..15",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34",
+    "hide 35..36",
+    "mark cm-rendered-link 35..50",
+    "hide 46..47",
+    "hide 47..48",
+    "hide 48..49",
+    "hide 49..50"
+   ]
+  },
+  {
+   "selection": [
+    [
+     17,
+     17
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-rendered-link 0..15",
+    "hide 11..12",
+    "hide 12..13",
+    "hide 13..14",
+    "hide 14..15",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34",
+    "hide 35..36",
+    "mark cm-rendered-link 35..50",
+    "hide 46..47",
+    "hide 47..48",
+    "hide 48..49",
+    "hide 49..50"
+   ]
+  },
+  {
+   "selection": [
+    [
+     24,
+     24
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-rendered-link 0..15",
+    "hide 11..12",
+    "hide 12..13",
+    "hide 13..14",
+    "hide 14..15",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34",
+    "hide 35..36",
+    "mark cm-rendered-link 35..50",
+    "hide 46..47",
+    "hide 47..48",
+    "hide 48..49",
+    "hide 49..50"
+   ]
+  },
+  {
+   "selection": [
+    [
+     25,
+     25
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-rendered-link 0..15",
+    "hide 11..12",
+    "hide 12..13",
+    "hide 13..14",
+    "hide 14..15",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34",
+    "hide 35..36",
+    "mark cm-rendered-link 35..50",
+    "hide 46..47",
+    "hide 47..48",
+    "hide 48..49",
+    "hide 49..50"
+   ]
+  },
+  {
+   "selection": [
+    [
+     26,
+     26
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-rendered-link 0..15",
+    "hide 11..12",
+    "hide 12..13",
+    "hide 13..14",
+    "hide 14..15",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34",
+    "hide 35..36",
+    "mark cm-rendered-link 35..50",
+    "hide 46..47",
+    "hide 47..48",
+    "hide 48..49",
+    "hide 49..50"
+   ]
+  },
+  {
+   "selection": [
+    [
+     27,
+     27
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-rendered-link 0..15",
+    "hide 11..12",
+    "hide 12..13",
+    "hide 13..14",
+    "hide 14..15",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34",
+    "hide 35..36",
+    "mark cm-rendered-link 35..50",
+    "hide 46..47",
+    "hide 47..48",
+    "hide 48..49",
+    "hide 49..50"
+   ]
+  },
+  {
+   "selection": [
+    [
+     28,
+     28
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-rendered-link 0..15",
+    "hide 11..12",
+    "hide 12..13",
+    "hide 13..14",
+    "hide 14..15",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34",
+    "hide 35..36",
+    "mark cm-rendered-link 35..50",
+    "hide 46..47",
+    "hide 47..48",
+    "hide 48..49",
+    "hide 49..50"
+   ]
+  },
+  {
+   "selection": [
+    [
+     29,
+     29
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-rendered-link 0..15",
+    "hide 11..12",
+    "hide 12..13",
+    "hide 13..14",
+    "hide 14..15",
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 35..36",
+    "mark cm-rendered-link 35..50",
+    "hide 46..47",
+    "hide 47..48",
+    "hide 48..49",
+    "hide 49..50"
+   ]
+  },
+  {
+   "selection": [
+    [
+     30,
+     30
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-rendered-link 0..15",
+    "hide 11..12",
+    "hide 12..13",
+    "hide 13..14",
+    "hide 14..15",
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 35..36",
+    "mark cm-rendered-link 35..50",
+    "hide 46..47",
+    "hide 47..48",
+    "hide 48..49",
+    "hide 49..50"
+   ]
+  },
+  {
+   "selection": [
+    [
+     33,
+     33
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-rendered-link 0..15",
+    "hide 11..12",
+    "hide 12..13",
+    "hide 13..14",
+    "hide 14..15",
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 35..36",
+    "mark cm-rendered-link 35..50",
+    "hide 46..47",
+    "hide 47..48",
+    "hide 48..49",
+    "hide 49..50"
+   ]
+  },
+  {
+   "selection": [
+    [
+     34,
+     34
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-rendered-link 0..15",
+    "hide 11..12",
+    "hide 12..13",
+    "hide 13..14",
+    "hide 14..15",
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 35..36",
+    "mark cm-rendered-link 35..50",
+    "hide 46..47",
+    "hide 47..48",
+    "hide 48..49",
+    "hide 49..50"
+   ]
+  },
+  {
+   "selection": [
+    [
+     35,
+     35
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-rendered-link 0..15",
+    "hide 11..12",
+    "hide 12..13",
+    "hide 13..14",
+    "hide 14..15",
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34"
+   ]
+  },
+  {
+   "selection": [
+    [
+     36,
+     36
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-rendered-link 0..15",
+    "hide 11..12",
+    "hide 12..13",
+    "hide 13..14",
+    "hide 14..15",
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34"
+   ]
+  },
+  {
+   "selection": [
+    [
+     46,
+     46
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-rendered-link 0..15",
+    "hide 11..12",
+    "hide 12..13",
+    "hide 13..14",
+    "hide 14..15",
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34"
+   ]
+  },
+  {
+   "selection": [
+    [
+     47,
+     47
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-rendered-link 0..15",
+    "hide 11..12",
+    "hide 12..13",
+    "hide 13..14",
+    "hide 14..15",
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34"
+   ]
+  },
+  {
+   "selection": [
+    [
+     48,
+     48
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-rendered-link 0..15",
+    "hide 11..12",
+    "hide 12..13",
+    "hide 13..14",
+    "hide 14..15",
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34"
+   ]
+  },
+  {
+   "selection": [
+    [
+     49,
+     49
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-rendered-link 0..15",
+    "hide 11..12",
+    "hide 12..13",
+    "hide 13..14",
+    "hide 14..15",
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34"
+   ]
+  },
+  {
+   "selection": [
+    [
+     50,
+     50
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-rendered-link 0..15",
+    "hide 11..12",
+    "hide 12..13",
+    "hide 13..14",
+    "hide 14..15",
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34"
+   ]
+  },
+  {
+   "selection": [
+    [
+     51,
+     51
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-rendered-link 0..15",
+    "hide 11..12",
+    "hide 12..13",
+    "hide 13..14",
+    "hide 14..15",
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34",
+    "hide 35..36",
+    "mark cm-rendered-link 35..50",
+    "hide 46..47",
+    "hide 47..48",
+    "hide 48..49",
+    "hide 49..50"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     51,
+     51
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34",
+    "hide 35..36",
+    "mark cm-rendered-link 35..50",
+    "hide 46..47",
+    "hide 47..48",
+    "hide 48..49",
+    "hide 49..50"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ],
+    [
+     50,
+     50
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34"
+   ]
+  },
+  {
+   "selection": [
+    [
+     11,
+     11
+    ],
+    [
+     49,
+     49
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34"
+   ]
+  },
+  {
+   "selection": [
+    [
+     12,
+     12
+    ],
+    [
+     48,
+     48
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34"
+   ]
+  },
+  {
+   "selection": [
+    [
+     13,
+     13
+    ],
+    [
+     47,
+     47
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34"
+   ]
+  },
+  {
+   "selection": [
+    [
+     14,
+     14
+    ],
+    [
+     46,
+     46
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34"
+   ]
+  },
+  {
+   "selection": [
+    [
+     15,
+     15
+    ],
+    [
+     36,
+     36
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34"
+   ]
+  },
+  {
+   "selection": [
+    [
+     16,
+     16
+    ],
+    [
+     35,
+     35
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-rendered-link 0..15",
+    "hide 11..12",
+    "hide 12..13",
+    "hide 13..14",
+    "hide 14..15",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     1
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34",
+    "hide 35..36",
+    "mark cm-rendered-link 35..50",
+    "hide 46..47",
+    "hide 47..48",
+    "hide 48..49",
+    "hide 49..50"
+   ]
+  },
+  {
+   "selection": [
+    [
+     11,
+     12
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34",
+    "hide 35..36",
+    "mark cm-rendered-link 35..50",
+    "hide 46..47",
+    "hide 47..48",
+    "hide 48..49",
+    "hide 49..50"
+   ]
+  },
+  {
+   "selection": [
+    [
+     13,
+     14
+    ]
+   ],
+   "decorations": [
+    "hide 16..17",
+    "mark cm-rendered-link 16..28",
+    "hide 24..25",
+    "hide 25..26",
+    "hide 26..27",
+    "hide 27..28",
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34",
+    "hide 35..36",
+    "mark cm-rendered-link 35..50",
+    "hide 46..47",
+    "hide 47..48",
+    "hide 48..49",
+    "hide 49..50"
+   ]
+  },
+  {
+   "selection": [
+    [
+     15,
+     16
+    ]
+   ],
+   "decorations": [
+    "hide 29..30",
+    "mark cm-rendered-link 29..34",
+    "hide 33..34",
+    "hide 35..36",
+    "mark cm-rendered-link 35..50",
+    "hide 46..47",
+    "hide 47..48",
+    "hide 48..49",
+    "hide 49..50"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     51
+    ]
+   ],
+   "decorations": []
+  }
+ ]
+}

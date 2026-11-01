@@ -1,0 +1,150 @@
+{
+ "fixture": "escape-ascii-punctuation.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": [
+    "hide 16..17"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ]
+   ],
+   "decorations": [
+    "hide 16..17"
+   ]
+  },
+  {
+   "selection": [
+    [
+     2,
+     2
+    ]
+   ],
+   "decorations": [
+    "hide 16..17"
+   ]
+  },
+  {
+   "selection": [
+    [
+     16,
+     16
+    ]
+   ],
+   "decorations": [
+    "hide 0..1"
+   ]
+  },
+  {
+   "selection": [
+    [
+     17,
+     17
+    ]
+   ],
+   "decorations": [
+    "hide 0..1"
+   ]
+  },
+  {
+   "selection": [
+    [
+     18,
+     18
+    ]
+   ],
+   "decorations": [
+    "hide 0..1"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     18,
+     18
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ],
+    [
+     17,
+     17
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     2,
+     2
+    ],
+    [
+     16,
+     16
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     1
+    ]
+   ],
+   "decorations": [
+    "hide 16..17"
+   ]
+  },
+  {
+   "selection": [
+    [
+     2,
+     16
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     17,
+     18
+    ]
+   ],
+   "decorations": [
+    "hide 0..1"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     18
+    ]
+   ],
+   "decorations": []
+  }
+ ]
+}

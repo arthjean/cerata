@@ -1,0 +1,220 @@
+{
+ "fixture": "emoji-in-code-span.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     4,
+     4
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     5,
+     5
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     6,
+     6
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-inline-code 0..5",
+    "hide 4..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-inline-code 0..5",
+    "hide 4..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     8,
+     8
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-inline-code 0..5",
+    "hide 4..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     9,
+     9
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-inline-code 0..5",
+    "hide 4..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     9,
+     9
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ],
+    [
+     8,
+     8
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     4,
+     4
+    ],
+    [
+     7,
+     7
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     5,
+     5
+    ],
+    [
+     6,
+     6
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     1
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     4,
+     5
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     6,
+     7
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-inline-code 0..5",
+    "hide 4..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     8,
+     9
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-inline-code 0..5",
+    "hide 4..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     9
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..5"
+   ]
+  }
+ ]
+}

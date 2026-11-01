@@ -1,0 +1,234 @@
+{
+ "fixture": "hardbreak.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": [
+    "hide 9..10"
+   ]
+  },
+  {
+   "selection": [
+    [
+     3,
+     3
+    ]
+   ],
+   "decorations": [
+    "hide 9..10"
+   ]
+  },
+  {
+   "selection": [
+    [
+     5,
+     5
+    ]
+   ],
+   "decorations": [
+    "hide 9..10"
+   ]
+  },
+  {
+   "selection": [
+    [
+     6,
+     6
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     9,
+     9
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     10,
+     10
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     11,
+     11
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     16,
+     16
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     17,
+     17
+    ]
+   ],
+   "decorations": [
+    "hide 9..10"
+   ]
+  },
+  {
+   "selection": [
+    [
+     21,
+     21
+    ]
+   ],
+   "decorations": [
+    "hide 9..10"
+   ]
+  },
+  {
+   "selection": [
+    [
+     22,
+     22
+    ]
+   ],
+   "decorations": [
+    "hide 9..10"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     22,
+     22
+    ]
+   ],
+   "decorations": [
+    "hide 9..10"
+   ]
+  },
+  {
+   "selection": [
+    [
+     3,
+     3
+    ],
+    [
+     21,
+     21
+    ]
+   ],
+   "decorations": [
+    "hide 9..10"
+   ]
+  },
+  {
+   "selection": [
+    [
+     5,
+     5
+    ],
+    [
+     17,
+     17
+    ]
+   ],
+   "decorations": [
+    "hide 9..10"
+   ]
+  },
+  {
+   "selection": [
+    [
+     6,
+     6
+    ],
+    [
+     16,
+     16
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     9,
+     9
+    ],
+    [
+     11,
+     11
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     3
+    ]
+   ],
+   "decorations": [
+    "hide 9..10"
+   ]
+  },
+  {
+   "selection": [
+    [
+     5,
+     6
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     9,
+     10
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     11,
+     16
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     22
+    ]
+   ],
+   "decorations": []
+  }
+ ]
+}

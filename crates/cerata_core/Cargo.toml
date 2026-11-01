@@ -8,6 +8,7 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
+cerata_markdown.workspace = true
 dirs = "6"
 dunce = "1"
 ignore = "0.4"

@@ -1,0 +1,16 @@
+Document 0..32
+  OrderedList 0..13
+    ListItem 0..6
+      ListMark 0..2
+      Paragraph 3..6
+    ListItem 7..13
+      ListMark 7..9
+      Paragraph 10..13
+  OrderedList 14..21
+    ListItem 14..21
+      ListMark 14..17
+      Paragraph 18..21
+  OrderedList 23..31
+    ListItem 23..31
+      ListMark 23..25
+      Paragraph 26..31

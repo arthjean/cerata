@@ -1,0 +1,1064 @@
+{
+ "fixture": "headings-atx.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": [
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ]
+   ],
+   "decorations": [
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     4,
+     4
+    ]
+   ],
+   "decorations": [
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     5,
+     5
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     11,
+     11
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     13,
+     13
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     14,
+     14
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     17,
+     17
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     21,
+     21
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "mark cm-emphasis 21..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     22,
+     22
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "mark cm-emphasis 21..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     24,
+     24
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "mark cm-emphasis 21..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     25,
+     25
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "mark cm-emphasis 21..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     26,
+     26
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     30,
+     30
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     38,
+     38
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     39,
+     39
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     46,
+     46
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     47,
+     47
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     52,
+     52
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     55,
+     55
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     56,
+     56
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     62,
+     62
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     65,
+     65
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     66,
+     66
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     79,
+     79
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     80,
+     80
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     89,
+     89
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     90,
+     90
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     92,
+     92
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     93,
+     93
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     102,
+     102
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     103,
+     103
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     104,
+     104
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     105,
+     105
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104"
+   ]
+  },
+  {
+   "selection": [
+    [
+     106,
+     106
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104"
+   ]
+  },
+  {
+   "selection": [
+    [
+     118,
+     118
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     118,
+     118
+    ]
+   ],
+   "decorations": [
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ],
+    [
+     106,
+     106
+    ]
+   ],
+   "decorations": [
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104"
+   ]
+  },
+  {
+   "selection": [
+    [
+     4,
+     4
+    ],
+    [
+     105,
+     105
+    ]
+   ],
+   "decorations": [
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104"
+   ]
+  },
+  {
+   "selection": [
+    [
+     5,
+     5
+    ],
+    [
+     104,
+     104
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ],
+    [
+     103,
+     103
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     11,
+     11
+    ],
+    [
+     102,
+     102
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     13,
+     13
+    ],
+    [
+     93,
+     93
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     14,
+     14
+    ],
+    [
+     92,
+     92
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 5..8",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     1
+    ]
+   ],
+   "decorations": [
+    "hide 5..8",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     4,
+     5
+    ]
+   ],
+   "decorations": [
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     11
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 14..18",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     13,
+     14
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 21..22",
+    "mark cm-emphasis 21..25",
+    "hide 24..25",
+    "hide 26..31",
+    "hide 47..53",
+    "hide 56..63",
+    "hide 92..94",
+    "hide 103..104",
+    "hide 105..107"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     118
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 21..25"
+   ]
+  }
+ ]
+}

@@ -131,7 +131,7 @@ Writer s'appuie sur 8 règles Lezer personnalisées : frontmatter seulement à l
 
 Critères du spike : reparse en moins de 2 ms sur la note de 3 000 items du test e2e `list-enter-exit`, moins de 16 ms sur une note de 1 Mo, couverture des 8 règles sur un corpus de fixtures.
 
-**Décision (US-003, 2026-10-31, `docs/adr/0002-markdown-parser.md`) : pulldown-cmark 0.13.6 est retenu, avec reconstruction des marqueurs.** La recommandation ci-dessus est écartée sur mesures : le seul arbre de blocs de tree-sitter-md coûte 3,3 ms au p50 par édition sur la liste de 3 000 items, au-delà du budget de 2 ms, quand pulldown-cmark reparse tout en 0,73 ms (p50) et 7,9 ms sur 1 Mo. L'arbre de US-010 est donc recalculé à chaque édition, pas mis à jour de façon incrémentale.
+**Décision (US-003, 2026-10-31, `docs/adr/0002-markdown-parser.md`) : pulldown-cmark 0.13.6 est retenu, avec reconstruction des marqueurs.** La recommandation ci-dessus est écartée sur mesures : le seul arbre de blocs de tree-sitter-md coûte 3,3 ms au p50 par édition sur la liste de 3 000 items, au-delà du budget de 2 ms, quand pulldown-cmark reparse tout en 0,73 ms (p50) et 7,9 ms sur 1 Mo. L'arbre de US-010 est donc recalculé à chaque édition, pas mis à jour de façon incrémentale. Amendement US-010 (2026-11-01) : l'inline est un portage de `@lezer/markdown`, et le parse complet dépassant le budget avec l'arbre réel, seule une fenêtre de blocs autour de l'édition est reparsée (0,29 ms au p99 sur la liste, 2,0 ms sur 1 Mo), voir l'amendement de l'ADR 0002. Buffer : `docs/adr/0003-buffer.md`.
 
 ### 3.6 Mermaid et math
 

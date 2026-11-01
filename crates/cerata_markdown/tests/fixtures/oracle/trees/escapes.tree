@@ -1,0 +1,13 @@
+Document 0..25
+  BulletList 0..24
+    ListItem 0..24
+      ListMark 0..1
+      ATXHeading1 2..24
+        HeaderMark 2..3
+        Escape 6..8
+          EscapeMark 6..7
+        Link 8..11
+          LinkMark 8..9
+          LinkMark 10..11
+        Escape 15..17
+          EscapeMark 15..16

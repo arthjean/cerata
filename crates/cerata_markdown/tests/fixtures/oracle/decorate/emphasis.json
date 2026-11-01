@@ -1,0 +1,2146 @@
+{
+ "fixture": "emphasis.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 0..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 0..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     2,
+     2
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 0..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     3,
+     3
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 0..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     4,
+     4
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "mark cm-emphasis 4..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     6,
+     6
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "mark cm-emphasis 4..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "mark cm-emphasis 4..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     9,
+     9
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "mark cm-emphasis 4..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     10,
+     10
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     11,
+     11
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "mark cm-emphasis 10..17",
+    "mark cm-emphasis 11..16",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     13,
+     13
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "mark cm-emphasis 10..17",
+    "mark cm-emphasis 11..16",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     14,
+     14
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "mark cm-emphasis 10..17",
+    "mark cm-emphasis 11..16",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     16,
+     16
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "mark cm-emphasis 10..17",
+    "mark cm-emphasis 11..16",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     17,
+     17
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     18,
+     18
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "mark cm-emphasis 18..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     19,
+     19
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "mark cm-emphasis 18..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     20,
+     20
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "mark cm-emphasis 18..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     21,
+     21
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "mark cm-emphasis 18..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     22,
+     22
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "mark cm-emphasis 22..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     24,
+     24
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "mark cm-emphasis 22..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     25,
+     25
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "mark cm-emphasis 22..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     27,
+     27
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "mark cm-emphasis 22..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     28,
+     28
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     31,
+     31
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "mark cm-emphasis 31..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     32,
+     32
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "mark cm-emphasis 31..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     36,
+     36
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "mark cm-emphasis 31..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     37,
+     37
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "mark cm-emphasis 31..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     68,
+     68
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     69,
+     69
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     71,
+     71
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     76,
+     76
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "mark cm-emphasis 69..91",
+    "mark cm-emphasis 76..84",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     77,
+     77
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "mark cm-emphasis 69..91",
+    "mark cm-emphasis 76..84",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     83,
+     83
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "mark cm-emphasis 69..91",
+    "mark cm-emphasis 76..84",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     84,
+     84
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "mark cm-emphasis 69..91",
+    "mark cm-emphasis 76..84",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     89,
+     89
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     91,
+     91
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     96,
+     96
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104"
+   ]
+  },
+  {
+   "selection": [
+    [
+     97,
+     97
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "mark cm-emphasis 96..105",
+    "mark cm-emphasis 97..104"
+   ]
+  },
+  {
+   "selection": [
+    [
+     98,
+     98
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "mark cm-emphasis 96..105",
+    "mark cm-emphasis 97..104"
+   ]
+  },
+  {
+   "selection": [
+    [
+     103,
+     103
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "mark cm-emphasis 96..105",
+    "mark cm-emphasis 97..104"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     103,
+     103
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 0..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "mark cm-emphasis 96..105",
+    "mark cm-emphasis 97..104"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ],
+    [
+     98,
+     98
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 0..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "mark cm-emphasis 96..105",
+    "mark cm-emphasis 97..104"
+   ]
+  },
+  {
+   "selection": [
+    [
+     2,
+     2
+    ],
+    [
+     97,
+     97
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 0..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "mark cm-emphasis 96..105",
+    "mark cm-emphasis 97..104"
+   ]
+  },
+  {
+   "selection": [
+    [
+     3,
+     3
+    ],
+    [
+     96,
+     96
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 0..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104"
+   ]
+  },
+  {
+   "selection": [
+    [
+     4,
+     4
+    ],
+    [
+     91,
+     91
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "mark cm-emphasis 4..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     6,
+     6
+    ],
+    [
+     89,
+     89
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "mark cm-emphasis 4..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ],
+    [
+     84,
+     84
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "mark cm-emphasis 4..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "mark cm-emphasis 69..91",
+    "mark cm-emphasis 76..84",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     9,
+     9
+    ],
+    [
+     83,
+     83
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "mark cm-emphasis 4..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "mark cm-emphasis 69..91",
+    "mark cm-emphasis 76..84",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     1
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 0..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     2,
+     3
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 0..3",
+    "hide 4..6",
+    "mark cm-emphasis 4..9",
+    "hide 7..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     4,
+     6
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "mark cm-emphasis 4..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     9
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-emphasis 0..3",
+    "hide 2..3",
+    "mark cm-emphasis 4..9",
+    "hide 10..11",
+    "mark cm-emphasis 10..17",
+    "hide 11..13",
+    "mark cm-emphasis 11..16",
+    "hide 14..16",
+    "hide 16..17",
+    "hide 18..19",
+    "mark cm-emphasis 18..21",
+    "hide 20..21",
+    "hide 22..24",
+    "mark cm-emphasis 22..27",
+    "hide 25..27",
+    "hide 31..32",
+    "mark cm-emphasis 31..37",
+    "hide 36..37",
+    "hide 69..71",
+    "mark cm-emphasis 69..91",
+    "hide 76..77",
+    "mark cm-emphasis 76..84",
+    "hide 83..84",
+    "hide 89..91",
+    "hide 96..97",
+    "mark cm-emphasis 96..105",
+    "hide 97..98",
+    "mark cm-emphasis 97..104",
+    "hide 103..104",
+    "hide 104..105"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     106
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 0..3",
+    "mark cm-emphasis 4..9",
+    "mark cm-emphasis 10..17",
+    "mark cm-emphasis 11..16",
+    "mark cm-emphasis 18..21",
+    "mark cm-emphasis 22..27",
+    "mark cm-emphasis 31..37",
+    "mark cm-emphasis 69..91",
+    "mark cm-emphasis 76..84",
+    "mark cm-emphasis 96..105",
+    "mark cm-emphasis 97..104"
+   ]
+  }
+ ]
+}

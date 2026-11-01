@@ -1,0 +1,134 @@
+{
+ "fixture": "math-next-to-currency.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     4,
+     4
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     5,
+     5
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     8,
+     8
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     9,
+     9
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     17,
+     17
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     17,
+     17
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     4,
+     4
+    ],
+    [
+     9,
+     9
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     5,
+     5
+    ],
+    [
+     8,
+     8
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     4
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     5,
+     8
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     9,
+     17
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     17
+    ]
+   ],
+   "decorations": []
+  }
+ ]
+}

@@ -8,12 +8,17 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
+memchr = "2"
+pulldown-cmark = { version = "0.13.6", default-features = false }
+regex = "1.13"
+thiserror.workspace = true
+unicode-properties = { version = "0.1.3", default-features = false, features = ["general-category"] }
 
 [lints]
 workspace = true
 
 [dev-dependencies]
-pulldown-cmark = "0.13.6"
+serde_json.workspace = true
 tree-sitter = "0.27.1"
 tree-sitter-md = { version = "0.5.4", features = ["parser"] }
 

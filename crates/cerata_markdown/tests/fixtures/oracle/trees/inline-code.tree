@@ -1,0 +1,14 @@
+Document 0..48
+  Paragraph 0..47
+    InlineCode 0..3
+      CodeMark 0..1
+      CodeMark 2..3
+    InlineCode 4..13
+      CodeMark 4..6
+      CodeMark 11..13
+    InlineCode 14..21
+      CodeMark 14..17
+      CodeMark 18..21
+    InlineCode 22..40
+      CodeMark 22..23
+      CodeMark 39..40

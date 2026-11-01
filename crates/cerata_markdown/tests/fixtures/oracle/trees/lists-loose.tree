@@ -1,0 +1,12 @@
+Document 0..21
+  BulletList 0..20
+    ListItem 0..3
+      ListMark 0..1
+      Paragraph 2..3
+    ListItem 5..16
+      ListMark 5..6
+      Paragraph 7..8
+      Paragraph 12..16
+    ListItem 17..20
+      ListMark 17..18
+      Paragraph 19..20

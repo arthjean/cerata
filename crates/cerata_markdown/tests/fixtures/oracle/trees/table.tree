@@ -1,0 +1,23 @@
+Document 0..51
+  Table 0..43
+    TableHeader 0..9
+      TableDelimiter 0..1
+      TableCell 2..3
+      TableDelimiter 4..5
+      TableCell 6..7
+      TableDelimiter 8..9
+    TableDelimiter 10..23
+    TableRow 24..37
+      TableDelimiter 24..25
+      TableCell 26..27
+      TableDelimiter 28..29
+      TableCell 30..35
+        StrongEmphasis 30..35
+          EmphasisMark 30..32
+          EmphasisMark 33..35
+      TableDelimiter 36..37
+    TableRow 38..43
+      TableDelimiter 38..39
+      TableCell 40..41
+      TableDelimiter 42..43
+  Paragraph 45..50

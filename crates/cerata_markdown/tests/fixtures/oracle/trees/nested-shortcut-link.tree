@@ -1,0 +1,8 @@
+Document 0..12
+  Paragraph 0..12
+    Link 0..12
+      LinkMark 0..1
+      LinkMark 8..9
+      LinkMark 9..10
+      URL 10..11
+      LinkMark 11..12

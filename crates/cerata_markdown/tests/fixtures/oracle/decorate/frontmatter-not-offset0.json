@@ -1,0 +1,243 @@
+{
+ "fixture": "frontmatter-not-offset0.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 7..10",
+    "hide-block 20..23"
+   ]
+  },
+  {
+   "selection": [
+    [
+     5,
+     5
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 7..10",
+    "hide-block 20..23"
+   ]
+  },
+  {
+   "selection": [
+    [
+     6,
+     6
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 7..10",
+    "hide-block 20..23"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ]
+   ],
+   "decorations": [
+    "hide-block 20..23"
+   ]
+  },
+  {
+   "selection": [
+    [
+     10,
+     10
+    ]
+   ],
+   "decorations": [
+    "hide-block 20..23"
+   ]
+  },
+  {
+   "selection": [
+    [
+     11,
+     11
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 7..10"
+   ]
+  },
+  {
+   "selection": [
+    [
+     19,
+     19
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 7..10"
+   ]
+  },
+  {
+   "selection": [
+    [
+     20,
+     20
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 7..10"
+   ]
+  },
+  {
+   "selection": [
+    [
+     23,
+     23
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 7..10"
+   ]
+  },
+  {
+   "selection": [
+    [
+     24,
+     24
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 7..10",
+    "hide-block 20..23"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     24,
+     24
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 7..10",
+    "hide-block 20..23"
+   ]
+  },
+  {
+   "selection": [
+    [
+     5,
+     5
+    ],
+    [
+     23,
+     23
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 7..10"
+   ]
+  },
+  {
+   "selection": [
+    [
+     6,
+     6
+    ],
+    [
+     20,
+     20
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 7..10"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ],
+    [
+     19,
+     19
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     10,
+     10
+    ],
+    [
+     11,
+     11
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     5
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 7..10",
+    "hide-block 20..23"
+   ]
+  },
+  {
+   "selection": [
+    [
+     6,
+     7
+    ]
+   ],
+   "decorations": [
+    "hide-block 20..23"
+   ]
+  },
+  {
+   "selection": [
+    [
+     10,
+     11
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     19,
+     20
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 7..10"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     24
+    ]
+   ],
+   "decorations": []
+  }
+ ]
+}

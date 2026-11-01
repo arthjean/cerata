@@ -1,0 +1,238 @@
+{
+ "fixture": "wiki-in-code-span.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..7",
+    "hide 8..9",
+    "mark cm-rendered-link 8..13",
+    "hide 12..13"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..7",
+    "hide 8..9",
+    "mark cm-rendered-link 8..13",
+    "hide 12..13"
+   ]
+  },
+  {
+   "selection": [
+    [
+     6,
+     6
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..7",
+    "hide 8..9",
+    "mark cm-rendered-link 8..13",
+    "hide 12..13"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..7",
+    "hide 8..9",
+    "mark cm-rendered-link 8..13",
+    "hide 12..13"
+   ]
+  },
+  {
+   "selection": [
+    [
+     8,
+     8
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-inline-code 0..7",
+    "hide 6..7"
+   ]
+  },
+  {
+   "selection": [
+    [
+     9,
+     9
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-inline-code 0..7",
+    "hide 6..7"
+   ]
+  },
+  {
+   "selection": [
+    [
+     12,
+     12
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-inline-code 0..7",
+    "hide 6..7"
+   ]
+  },
+  {
+   "selection": [
+    [
+     13,
+     13
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-inline-code 0..7",
+    "hide 6..7"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     13,
+     13
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..7"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ],
+    [
+     12,
+     12
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..7"
+   ]
+  },
+  {
+   "selection": [
+    [
+     6,
+     6
+    ],
+    [
+     9,
+     9
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..7"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ],
+    [
+     8,
+     8
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..7"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     1
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..7",
+    "hide 8..9",
+    "mark cm-rendered-link 8..13",
+    "hide 12..13"
+   ]
+  },
+  {
+   "selection": [
+    [
+     6,
+     7
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..7",
+    "hide 8..9",
+    "mark cm-rendered-link 8..13",
+    "hide 12..13"
+   ]
+  },
+  {
+   "selection": [
+    [
+     8,
+     9
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-inline-code 0..7",
+    "hide 6..7"
+   ]
+  },
+  {
+   "selection": [
+    [
+     12,
+     13
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-inline-code 0..7",
+    "hide 6..7"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     13
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..7"
+   ]
+  }
+ ]
+}

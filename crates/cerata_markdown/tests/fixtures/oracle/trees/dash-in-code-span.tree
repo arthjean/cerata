@@ -1,0 +1,6 @@
+Document 0..12
+  Paragraph 0..12
+    InlineCode 0..4
+      CodeMark 0..1
+      CodeMark 3..4
+    Dash 7..10

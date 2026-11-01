@@ -1,0 +1,9 @@
+Document 0..13
+  Paragraph 0..13
+    InlineCode 0..5
+      CodeMark 0..1
+      CodeMark 4..5
+    Math 10..13
+      MathMark 10..11
+      MathFormula 11..12
+      MathMark 12..13

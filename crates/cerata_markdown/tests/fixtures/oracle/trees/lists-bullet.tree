@@ -1,0 +1,25 @@
+Document 0..26
+  BulletList 0..7
+    ListItem 0..3
+      ListMark 0..1
+      Paragraph 2..3
+    ListItem 4..7
+      ListMark 4..5
+      Paragraph 6..7
+  BulletList 8..11
+    ListItem 8..11
+      ListMark 8..9
+      Paragraph 10..11
+  BulletList 12..15
+    ListItem 12..15
+      ListMark 12..13
+      Paragraph 14..15
+  Paragraph 17..20
+    Dash 17..18
+  BulletList 21..25
+    ListItem 21..23
+      ListMark 21..22
+      Paragraph 23..23
+    ListItem 24..25
+      ListMark 24..25
+      Paragraph 25..25

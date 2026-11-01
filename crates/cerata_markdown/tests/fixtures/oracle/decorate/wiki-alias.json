@@ -1,0 +1,94 @@
+{
+ "fixture": "wiki-alias.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     13,
+     13
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     14,
+     14
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     14,
+     14
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ],
+    [
+     13,
+     13
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     1
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     13,
+     14
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     14
+    ]
+   ],
+   "decorations": []
+  }
+ ]
+}

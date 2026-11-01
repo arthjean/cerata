@@ -1,0 +1,23 @@
+Document 0..51
+  Paragraph 0..34
+    Math 0..3
+      MathMark 0..1
+      MathFormula 1..2
+      MathMark 2..3
+    Math 4..9
+      MathMark 4..6
+      MathFormula 6..7
+      MathMark 7..9
+    Math 10..25
+      MathMark 10..11
+      MathFormula 11..24
+      MathMark 24..25
+    Math 31..34
+      MathMark 31..32
+      MathFormula 32..33
+      MathMark 33..34
+  Paragraph 36..50
+    Math 36..50
+      MathMark 36..38
+      MathFormula 38..48
+      MathMark 48..50

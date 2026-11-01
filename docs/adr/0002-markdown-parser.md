@@ -142,3 +142,20 @@ Total : 1 700 à 2 000 lignes, **7 à 10 jours-personne**. Les deux lots risqué
 - Le coût de la reconstruction des marqueurs et des post-traitements est estimé, pas mesuré.
 - Mesures sur une seule machine, Windows, en partage avec d'autres builds ; rien sur macOS ni Linux.
 - tree-sitter-md régénéré (wiki links) ou patché (math, setext) n'a pas été construit : son effet sur la vitesse est inconnu, mais l'arbre de blocs, qui suffit à manquer le budget, ne serait pas concerné par ces patchs inline, sauf le setext.
+
+## Amendement US-010 (2026-11-01) : inline porté de Lezer, reparse fenêtré
+
+Mise en œuvre dans `crates/cerata_markdown/src/tree/`. Deux corrections techniques par rapport à la décision ci-dessus, sans changer le choix de pulldown-cmark.
+
+**Inline porté de `@lezer/markdown` 1.6.3.** pulldown-cmark ne fournit que la structure de blocs (événements et plages, option `ENABLE_TABLES` seule). L'inline est un portage direct du parser inline de Lezer (`InlineContext`, délimiteurs, résolution des emphases et des liens), plus Strikethrough et Autolink de GFM et les extensions inline de Writer, dans l'ordre des parsers de Writer (`tree/inline.rs`). Raison : reconstruire les marqueurs depuis les événements pulldown ne donnait pas l'arbre de Writer sur les cas limites (délimiteurs non appariés, liens imbriqués, escapes étendus) ; un portage ligne à ligne le donne par construction. Les noms et plages des nœuds sont ceux de Lezer. Preuve : `tests/tree_oracle.rs` compare l'arbre de Cerata à celui de Writer exécuté sous Bun (`scripts/oracle/oracle.ts trees`, prosemark-core au commit de référence) sur 92 fixtures (37 du corpus `tests/fixtures/corpus`, 54 du spike, plus `markers.md`) : 92/92 identiques. La section « Non prouvé » plus haut est donc levée pour l'arbre : Writer a été exécuté.
+
+**Reparse fenêtré, premier repli des Conséquences.** Le parse complet avec l'arbre réel dépasse le budget : environ 2,7 ms sur la liste de 3 000 items et 22 ms sur 1 Mo (machine chargée). `MarkdownTree::reparse` (`tree/incremental.rs`) reparse seulement les blocs de premier niveau touchés plus un voisin de chaque côté, ou, dans une grande liste, les items touchés plus un voisin ; un bloc sentinelle de chaque côté doit ressortir identique, sinon tout le document est reparsé. Les éditions qui touchent un `$`, la première ligne ou le frontmatter, ou un document finissant par un bloc `$$` non fermé, reparsent tout. `EditorState` l'utilise à chaque transaction.
+
+| Note, édition (`examples/tree_bench.rs`, 2 000 échantillons) | p50 | p99 | Budget |
+|---|---|---|---|
+| Liste 3 000, frappe après `sub item!!` | 0,201 ms | 0,294 ms | 2 ms |
+| 1 Mo, frappe au milieu d'un paragraphe | 1,390 ms | 2,022 ms | 16 ms |
+
+Justesse : `tests/tree_fuzz.rs` applique 10 000 éditions aléatoires (graine fixe, jetons de syntaxe et Unicode) et compare à chaque pas l'arbre fenêtré au parse complet ; plus de 5 000 passent par la fenêtre, toutes identiques, aucune panique.
+
+**Écart assumé avec Writer.** Un `$$` en début de paragraphe de premier niveau, sans `$$` fermant plus loin, ouvre un nœud `Math` de bloc jusqu'à la fin du document, comme l'exige le critère de US-010. Writer laisse ce texte en paragraphe.

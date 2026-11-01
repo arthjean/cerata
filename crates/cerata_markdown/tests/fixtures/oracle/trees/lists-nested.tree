@@ -1,0 +1,23 @@
+Document 0..35
+  BulletList 0..34
+    ListItem 0..23
+      ListMark 0..1
+      Paragraph 2..3
+      BulletList 6..23
+        ListItem 6..17
+          ListMark 6..7
+          Paragraph 8..9
+          BulletList 14..17
+            ListItem 14..17
+              ListMark 14..15
+              Paragraph 16..17
+        ListItem 20..23
+          ListMark 20..21
+          Paragraph 22..23
+    ListItem 24..34
+      ListMark 24..25
+      Paragraph 26..27
+      BulletList 29..34
+        ListItem 29..34
+          ListMark 29..30
+          Paragraph 31..34

@@ -1,0 +1,21 @@
+Document 0..59
+  ATXHeading1 0..28
+    HeaderMark 0..1
+    Link 2..11
+      LinkMark 2..3
+      LinkMark 7..8
+      LinkMark 8..9
+      URL 9..10
+      LinkMark 10..11
+    InlineCode 16..22
+      CodeMark 16..17
+      CodeMark 21..22
+    StrongEmphasis 23..28
+      EmphasisMark 23..25
+      EmphasisMark 26..28
+  ATXHeading2 29..58
+    HeaderMark 29..31
+    Emoji 43..50
+      EmojiMark 43..44
+      EmojiMark 49..50
+    Dash 51..53

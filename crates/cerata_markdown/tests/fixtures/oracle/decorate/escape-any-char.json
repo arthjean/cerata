@@ -1,0 +1,259 @@
+{
+ "fixture": "escape-any-char.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": [
+    "hide 2..3",
+    "hide 7..8",
+    "hide 13..14"
+   ]
+  },
+  {
+   "selection": [
+    [
+     2,
+     2
+    ]
+   ],
+   "decorations": [
+    "hide 7..8",
+    "hide 13..14"
+   ]
+  },
+  {
+   "selection": [
+    [
+     3,
+     3
+    ]
+   ],
+   "decorations": [
+    "hide 7..8",
+    "hide 13..14"
+   ]
+  },
+  {
+   "selection": [
+    [
+     4,
+     4
+    ]
+   ],
+   "decorations": [
+    "hide 7..8",
+    "hide 13..14"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ]
+   ],
+   "decorations": [
+    "hide 2..3",
+    "hide 13..14"
+   ]
+  },
+  {
+   "selection": [
+    [
+     8,
+     8
+    ]
+   ],
+   "decorations": [
+    "hide 2..3",
+    "hide 13..14"
+   ]
+  },
+  {
+   "selection": [
+    [
+     10,
+     10
+    ]
+   ],
+   "decorations": [
+    "hide 2..3",
+    "hide 13..14"
+   ]
+  },
+  {
+   "selection": [
+    [
+     13,
+     13
+    ]
+   ],
+   "decorations": [
+    "hide 2..3",
+    "hide 7..8"
+   ]
+  },
+  {
+   "selection": [
+    [
+     14,
+     14
+    ]
+   ],
+   "decorations": [
+    "hide 2..3",
+    "hide 7..8"
+   ]
+  },
+  {
+   "selection": [
+    [
+     15,
+     15
+    ]
+   ],
+   "decorations": [
+    "hide 2..3",
+    "hide 7..8"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     15,
+     15
+    ]
+   ],
+   "decorations": [
+    "hide 2..3",
+    "hide 7..8"
+   ]
+  },
+  {
+   "selection": [
+    [
+     2,
+     2
+    ],
+    [
+     14,
+     14
+    ]
+   ],
+   "decorations": [
+    "hide 7..8"
+   ]
+  },
+  {
+   "selection": [
+    [
+     3,
+     3
+    ],
+    [
+     13,
+     13
+    ]
+   ],
+   "decorations": [
+    "hide 7..8"
+   ]
+  },
+  {
+   "selection": [
+    [
+     4,
+     4
+    ],
+    [
+     10,
+     10
+    ]
+   ],
+   "decorations": [
+    "hide 13..14"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ],
+    [
+     8,
+     8
+    ]
+   ],
+   "decorations": [
+    "hide 2..3",
+    "hide 13..14"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     2
+    ]
+   ],
+   "decorations": [
+    "hide 7..8",
+    "hide 13..14"
+   ]
+  },
+  {
+   "selection": [
+    [
+     3,
+     4
+    ]
+   ],
+   "decorations": [
+    "hide 7..8",
+    "hide 13..14"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     8
+    ]
+   ],
+   "decorations": [
+    "hide 2..3",
+    "hide 13..14"
+   ]
+  },
+  {
+   "selection": [
+    [
+     10,
+     13
+    ]
+   ],
+   "decorations": [
+    "hide 2..3"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     15
+    ]
+   ],
+   "decorations": []
+  }
+ ]
+}

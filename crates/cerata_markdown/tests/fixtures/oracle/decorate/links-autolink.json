@@ -1,0 +1,426 @@
+{
+ "fixture": "links-autolink.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": [
+    "hide 14..15",
+    "hide 23..24"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ]
+   ],
+   "decorations": [
+    "hide 14..15",
+    "hide 23..24"
+   ]
+  },
+  {
+   "selection": [
+    [
+     12,
+     12
+    ]
+   ],
+   "decorations": [
+    "hide 14..15",
+    "hide 23..24"
+   ]
+  },
+  {
+   "selection": [
+    [
+     13,
+     13
+    ]
+   ],
+   "decorations": [
+    "hide 14..15",
+    "hide 23..24"
+   ]
+  },
+  {
+   "selection": [
+    [
+     14,
+     14
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "hide 12..13"
+   ]
+  },
+  {
+   "selection": [
+    [
+     15,
+     15
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "hide 12..13"
+   ]
+  },
+  {
+   "selection": [
+    [
+     23,
+     23
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "hide 12..13"
+   ]
+  },
+  {
+   "selection": [
+    [
+     24,
+     24
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "hide 12..13"
+   ]
+  },
+  {
+   "selection": [
+    [
+     25,
+     25
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "hide 12..13",
+    "hide 14..15",
+    "hide 23..24"
+   ]
+  },
+  {
+   "selection": [
+    [
+     46,
+     46
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "hide 12..13",
+    "hide 14..15",
+    "hide 23..24"
+   ]
+  },
+  {
+   "selection": [
+    [
+     48,
+     48
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "hide 12..13",
+    "hide 14..15",
+    "hide 23..24"
+   ]
+  },
+  {
+   "selection": [
+    [
+     57,
+     57
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "hide 12..13",
+    "hide 14..15",
+    "hide 23..24"
+   ]
+  },
+  {
+   "selection": [
+    [
+     58,
+     58
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "hide 12..13",
+    "hide 14..15",
+    "hide 23..24"
+   ]
+  },
+  {
+   "selection": [
+    [
+     68,
+     68
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "hide 12..13",
+    "hide 14..15",
+    "hide 23..24"
+   ]
+  },
+  {
+   "selection": [
+    [
+     70,
+     70
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "hide 12..13",
+    "hide 14..15",
+    "hide 23..24"
+   ]
+  },
+  {
+   "selection": [
+    [
+     81,
+     81
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "hide 12..13",
+    "hide 14..15",
+    "hide 23..24"
+   ]
+  },
+  {
+   "selection": [
+    [
+     82,
+     82
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "hide 12..13",
+    "hide 14..15",
+    "hide 23..24"
+   ]
+  },
+  {
+   "selection": [
+    [
+     83,
+     83
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "hide 12..13",
+    "hide 14..15",
+    "hide 23..24"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     83,
+     83
+    ]
+   ],
+   "decorations": [
+    "hide 14..15",
+    "hide 23..24"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ],
+    [
+     82,
+     82
+    ]
+   ],
+   "decorations": [
+    "hide 14..15",
+    "hide 23..24"
+   ]
+  },
+  {
+   "selection": [
+    [
+     12,
+     12
+    ],
+    [
+     81,
+     81
+    ]
+   ],
+   "decorations": [
+    "hide 14..15",
+    "hide 23..24"
+   ]
+  },
+  {
+   "selection": [
+    [
+     13,
+     13
+    ],
+    [
+     70,
+     70
+    ]
+   ],
+   "decorations": [
+    "hide 14..15",
+    "hide 23..24"
+   ]
+  },
+  {
+   "selection": [
+    [
+     14,
+     14
+    ],
+    [
+     68,
+     68
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "hide 12..13"
+   ]
+  },
+  {
+   "selection": [
+    [
+     15,
+     15
+    ],
+    [
+     58,
+     58
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "hide 12..13"
+   ]
+  },
+  {
+   "selection": [
+    [
+     23,
+     23
+    ],
+    [
+     57,
+     57
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "hide 12..13"
+   ]
+  },
+  {
+   "selection": [
+    [
+     24,
+     24
+    ],
+    [
+     48,
+     48
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "hide 12..13"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     1
+    ]
+   ],
+   "decorations": [
+    "hide 14..15",
+    "hide 23..24"
+   ]
+  },
+  {
+   "selection": [
+    [
+     12,
+     13
+    ]
+   ],
+   "decorations": [
+    "hide 14..15",
+    "hide 23..24"
+   ]
+  },
+  {
+   "selection": [
+    [
+     14,
+     15
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "hide 12..13"
+   ]
+  },
+  {
+   "selection": [
+    [
+     23,
+     24
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "hide 12..13"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     83
+    ]
+   ],
+   "decorations": []
+  }
+ ]
+}

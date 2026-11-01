@@ -1,0 +1,19 @@
+Document 0..52
+  Blockquote 0..24
+    QuoteMark 0..1
+    Paragraph 2..13
+      Emphasis 4..11
+        EmphasisMark 4..5
+        QuoteMark 7..8
+        EmphasisMark 10..11
+    QuoteMark 14..15
+    QuoteMark 16..17
+    Paragraph 18..24
+  Blockquote 26..51
+    QuoteMark 26..27
+    Blockquote 28..51
+      QuoteMark 28..29
+      Paragraph 30..51
+        QuoteMark 36..37
+        QuoteMark 38..39
+        QuoteMark 45..46

@@ -1,0 +1,203 @@
+{
+ "fixture": "frontmatter-leading-blank-line.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 1..4",
+    "hide-block 14..17"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ]
+   ],
+   "decorations": [
+    "hide-block 14..17"
+   ]
+  },
+  {
+   "selection": [
+    [
+     4,
+     4
+    ]
+   ],
+   "decorations": [
+    "hide-block 14..17"
+   ]
+  },
+  {
+   "selection": [
+    [
+     5,
+     5
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 1..4"
+   ]
+  },
+  {
+   "selection": [
+    [
+     13,
+     13
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 1..4"
+   ]
+  },
+  {
+   "selection": [
+    [
+     14,
+     14
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 1..4"
+   ]
+  },
+  {
+   "selection": [
+    [
+     17,
+     17
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 1..4"
+   ]
+  },
+  {
+   "selection": [
+    [
+     18,
+     18
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 1..4",
+    "hide-block 14..17"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     18,
+     18
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 1..4",
+    "hide-block 14..17"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ],
+    [
+     17,
+     17
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     4,
+     4
+    ],
+    [
+     14,
+     14
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     5,
+     5
+    ],
+    [
+     13,
+     13
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 1..4"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     1
+    ]
+   ],
+   "decorations": [
+    "hide-block 14..17"
+   ]
+  },
+  {
+   "selection": [
+    [
+     4,
+     5
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     13,
+     14
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 1..4"
+   ]
+  },
+  {
+   "selection": [
+    [
+     17,
+     18
+    ]
+   ],
+   "decorations": [
+    "replace block HorizontalRuleWidget 1..4"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     18
+    ]
+   ],
+   "decorations": []
+  }
+ ]
+}

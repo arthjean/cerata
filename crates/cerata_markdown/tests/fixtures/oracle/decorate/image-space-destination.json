@@ -1,0 +1,159 @@
+{
+ "fixture": "image-space-destination.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": [
+    "widget block ImageWidget Writer TODOs-assets/20260525 image.png 54..54"
+   ]
+  },
+  {
+   "selection": [
+    [
+     2,
+     2
+    ]
+   ],
+   "decorations": [
+    "widget block ImageWidget Writer TODOs-assets/20260525 image.png 54..54"
+   ]
+  },
+  {
+   "selection": [
+    [
+     13,
+     13
+    ]
+   ],
+   "decorations": [
+    "widget block ImageWidget Writer TODOs-assets/20260525 image.png 54..54"
+   ]
+  },
+  {
+   "selection": [
+    [
+     14,
+     14
+    ]
+   ],
+   "decorations": [
+    "widget block ImageWidget Writer TODOs-assets/20260525 image.png 54..54"
+   ]
+  },
+  {
+   "selection": [
+    [
+     15,
+     15
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     53,
+     53
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     54,
+     54
+    ]
+   ],
+   "decorations": [
+    "widget block ImageWidget Writer TODOs-assets/20260525 image.png 54..54"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     54,
+     54
+    ]
+   ],
+   "decorations": [
+    "widget block ImageWidget Writer TODOs-assets/20260525 image.png 54..54"
+   ]
+  },
+  {
+   "selection": [
+    [
+     2,
+     2
+    ],
+    [
+     53,
+     53
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     13,
+     13
+    ],
+    [
+     15,
+     15
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     2
+    ]
+   ],
+   "decorations": [
+    "widget block ImageWidget Writer TODOs-assets/20260525 image.png 54..54"
+   ]
+  },
+  {
+   "selection": [
+    [
+     13,
+     14
+    ]
+   ],
+   "decorations": [
+    "widget block ImageWidget Writer TODOs-assets/20260525 image.png 54..54"
+   ]
+  },
+  {
+   "selection": [
+    [
+     15,
+     53
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     54
+    ]
+   ],
+   "decorations": []
+  }
+ ]
+}

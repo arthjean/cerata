@@ -1,0 +1,2065 @@
+{
+ "fixture": "markers.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": [
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ]
+   ],
+   "decorations": [
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     10,
+     10
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 10..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     11,
+     11
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 10..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     14,
+     14
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 10..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     15,
+     15
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 10..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     16,
+     16
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     17,
+     17
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     23,
+     23
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     24,
+     24
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     27,
+     27
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     28,
+     28
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     29,
+     29
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "mark cm-emphasis 29..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     31,
+     31
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "mark cm-emphasis 29..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     35,
+     35
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "mark cm-emphasis 29..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     37,
+     37
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "mark cm-emphasis 29..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     38,
+     38
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "mark cm-emphasis 38..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     39,
+     39
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "mark cm-emphasis 38..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     41,
+     41
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "mark cm-emphasis 38..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     42,
+     42
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "mark cm-emphasis 38..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     43,
+     43
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "mark cm-strikethrough 43..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     45,
+     45
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "mark cm-strikethrough 43..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     48,
+     48
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "mark cm-strikethrough 43..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     50,
+     50
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "mark cm-strikethrough 43..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     51,
+     51
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "mark cm-inline-code 51..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     52,
+     52
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "mark cm-inline-code 51..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     56,
+     56
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "mark cm-inline-code 51..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     57,
+     57
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "mark cm-inline-code 51..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     58,
+     58
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     59,
+     59
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     63,
+     63
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     64,
+     64
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     65,
+     65
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     76,
+     76
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     77,
+     77
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     80,
+     80
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     81,
+     81
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     82,
+     82
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "widget inline ImageWidget i.png 95..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     84,
+     84
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "widget inline ImageWidget i.png 95..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     87,
+     87
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "widget inline ImageWidget i.png 95..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     87,
+     87
+    ]
+   ],
+   "decorations": [
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "widget inline ImageWidget i.png 95..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ],
+    [
+     84,
+     84
+    ]
+   ],
+   "decorations": [
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "widget inline ImageWidget i.png 95..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     10,
+     10
+    ],
+    [
+     82,
+     82
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 10..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "widget inline ImageWidget i.png 95..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     11,
+     11
+    ],
+    [
+     81,
+     81
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 10..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     14,
+     14
+    ],
+    [
+     80,
+     80
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 10..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     15,
+     15
+    ],
+    [
+     77,
+     77
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 10..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     16,
+     16
+    ],
+    [
+     76,
+     76
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     17,
+     17
+    ],
+    [
+     65,
+     65
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     1
+    ]
+   ],
+   "decorations": [
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     10,
+     11
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 10..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     14,
+     15
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 10..15",
+    "hide-block 24..27",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     16,
+     17
+    ]
+   ],
+   "decorations": [
+    "hide 0..2",
+    "hide 10..11",
+    "mark cm-emphasis 10..15",
+    "hide 14..15",
+    "hide 29..31",
+    "mark cm-emphasis 29..37",
+    "hide 35..37",
+    "hide 38..39",
+    "mark cm-emphasis 38..42",
+    "hide 41..42",
+    "hide 43..45",
+    "mark cm-strikethrough 43..50",
+    "hide 48..50",
+    "hide 51..52",
+    "mark cm-inline-code 51..57",
+    "hide 56..57",
+    "hide 58..59",
+    "mark cm-rendered-link 58..81",
+    "hide 63..64",
+    "hide 64..65",
+    "hide 65..76",
+    "hide 77..80",
+    "hide 80..81",
+    "replace inline ImageWidget i.png 82..95",
+    "hide 96..97",
+    "hide 108..109",
+    "hide 110..111",
+    "invisible 150..151",
+    "invisible 159..162",
+    "invisible 162..166",
+    "invisible 177..180"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     212
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 10..15",
+    "mark cm-emphasis 29..37",
+    "mark cm-emphasis 38..42",
+    "mark cm-strikethrough 43..50",
+    "mark cm-inline-code 51..57"
+   ]
+  }
+ ]
+}

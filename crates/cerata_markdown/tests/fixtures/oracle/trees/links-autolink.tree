@@ -1,0 +1,14 @@
+Document 0..83
+  Paragraph 0..82
+    Autolink 0..13
+      LinkMark 0..1
+      URL 1..12
+      LinkMark 12..13
+    Autolink 14..24
+      LinkMark 14..15
+      URL 15..23
+      LinkMark 23..24
+    URL 25..46
+    URL 48..57
+    URL 58..68
+    URL 70..81

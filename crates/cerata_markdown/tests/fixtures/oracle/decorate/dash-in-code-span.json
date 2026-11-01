@@ -1,0 +1,187 @@
+{
+ "fixture": "dash-in-code-span.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..4",
+    "replace inline DashWidget 3 7..10"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..4",
+    "replace inline DashWidget 3 7..10"
+   ]
+  },
+  {
+   "selection": [
+    [
+     3,
+     3
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..4",
+    "replace inline DashWidget 3 7..10"
+   ]
+  },
+  {
+   "selection": [
+    [
+     4,
+     4
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..4",
+    "replace inline DashWidget 3 7..10"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-inline-code 0..4",
+    "hide 3..4"
+   ]
+  },
+  {
+   "selection": [
+    [
+     10,
+     10
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-inline-code 0..4",
+    "hide 3..4"
+   ]
+  },
+  {
+   "selection": [
+    [
+     12,
+     12
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-inline-code 0..4",
+    "hide 3..4",
+    "replace inline DashWidget 3 7..10"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     12,
+     12
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..4",
+    "replace inline DashWidget 3 7..10"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ],
+    [
+     10,
+     10
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..4"
+   ]
+  },
+  {
+   "selection": [
+    [
+     3,
+     3
+    ],
+    [
+     7,
+     7
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..4"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     1
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..4",
+    "replace inline DashWidget 3 7..10"
+   ]
+  },
+  {
+   "selection": [
+    [
+     3,
+     4
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..4",
+    "replace inline DashWidget 3 7..10"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     10
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-inline-code 0..4",
+    "hide 3..4"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     12
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..4"
+   ]
+  }
+ ]
+}

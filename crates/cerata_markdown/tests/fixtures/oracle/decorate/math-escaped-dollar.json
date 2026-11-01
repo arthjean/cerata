@@ -1,0 +1,201 @@
+{
+ "fixture": "math-escaped-dollar.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": [
+    "hide 6..7",
+    "hide 14..15"
+   ]
+  },
+  {
+   "selection": [
+    [
+     6,
+     6
+    ]
+   ],
+   "decorations": [
+    "hide 14..15"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ]
+   ],
+   "decorations": [
+    "hide 14..15"
+   ]
+  },
+  {
+   "selection": [
+    [
+     8,
+     8
+    ]
+   ],
+   "decorations": [
+    "hide 14..15"
+   ]
+  },
+  {
+   "selection": [
+    [
+     14,
+     14
+    ]
+   ],
+   "decorations": [
+    "hide 6..7"
+   ]
+  },
+  {
+   "selection": [
+    [
+     15,
+     15
+    ]
+   ],
+   "decorations": [
+    "hide 6..7"
+   ]
+  },
+  {
+   "selection": [
+    [
+     16,
+     16
+    ]
+   ],
+   "decorations": [
+    "hide 6..7"
+   ]
+  },
+  {
+   "selection": [
+    [
+     18,
+     18
+    ]
+   ],
+   "decorations": [
+    "hide 6..7"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     18,
+     18
+    ]
+   ],
+   "decorations": [
+    "hide 6..7"
+   ]
+  },
+  {
+   "selection": [
+    [
+     6,
+     6
+    ],
+    [
+     16,
+     16
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ],
+    [
+     15,
+     15
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     8,
+     8
+    ],
+    [
+     14,
+     14
+    ]
+   ],
+   "decorations": []
+  },
+  {
+   "selection": [
+    [
+     0,
+     6
+    ]
+   ],
+   "decorations": [
+    "hide 14..15"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     8
+    ]
+   ],
+   "decorations": [
+    "hide 14..15"
+   ]
+  },
+  {
+   "selection": [
+    [
+     14,
+     15
+    ]
+   ],
+   "decorations": [
+    "hide 6..7"
+   ]
+  },
+  {
+   "selection": [
+    [
+     16,
+     18
+    ]
+   ],
+   "decorations": [
+    "hide 6..7"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     18
+    ]
+   ],
+   "decorations": []
+  }
+ ]
+}

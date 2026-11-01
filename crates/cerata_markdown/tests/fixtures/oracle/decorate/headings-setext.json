@@ -1,0 +1,512 @@
+{
+ "fixture": "headings-setext.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": [
+    "hide 21..22",
+    "mark cm-emphasis 21..26",
+    "hide 25..26",
+    "hide-block 27..30",
+    "hide-block 43..48"
+   ]
+  },
+  {
+   "selection": [
+    [
+     9,
+     9
+    ]
+   ],
+   "decorations": [
+    "hide 21..22",
+    "mark cm-emphasis 21..26",
+    "hide 25..26",
+    "hide-block 27..30",
+    "hide-block 43..48"
+   ]
+  },
+  {
+   "selection": [
+    [
+     10,
+     10
+    ]
+   ],
+   "decorations": [
+    "hide 21..22",
+    "mark cm-emphasis 21..26",
+    "hide 25..26",
+    "hide-block 27..30",
+    "hide-block 43..48"
+   ]
+  },
+  {
+   "selection": [
+    [
+     13,
+     13
+    ]
+   ],
+   "decorations": [
+    "hide 21..22",
+    "mark cm-emphasis 21..26",
+    "hide 25..26",
+    "hide-block 27..30",
+    "hide-block 43..48"
+   ]
+  },
+  {
+   "selection": [
+    [
+     14,
+     14
+    ]
+   ],
+   "decorations": [
+    "hide-block 10..13",
+    "hide 21..22",
+    "mark cm-emphasis 21..26",
+    "hide 25..26",
+    "hide-block 27..30",
+    "hide-block 43..48"
+   ]
+  },
+  {
+   "selection": [
+    [
+     15,
+     15
+    ]
+   ],
+   "decorations": [
+    "hide-block 10..13",
+    "hide 21..22",
+    "mark cm-emphasis 21..26",
+    "hide 25..26",
+    "hide-block 43..48"
+   ]
+  },
+  {
+   "selection": [
+    [
+     21,
+     21
+    ]
+   ],
+   "decorations": [
+    "hide-block 10..13",
+    "mark cm-emphasis 21..26",
+    "hide-block 43..48"
+   ]
+  },
+  {
+   "selection": [
+    [
+     22,
+     22
+    ]
+   ],
+   "decorations": [
+    "hide-block 10..13",
+    "mark cm-emphasis 21..26",
+    "hide-block 43..48"
+   ]
+  },
+  {
+   "selection": [
+    [
+     25,
+     25
+    ]
+   ],
+   "decorations": [
+    "hide-block 10..13",
+    "mark cm-emphasis 21..26",
+    "hide-block 43..48"
+   ]
+  },
+  {
+   "selection": [
+    [
+     26,
+     26
+    ]
+   ],
+   "decorations": [
+    "hide-block 10..13",
+    "mark cm-emphasis 21..26",
+    "hide-block 43..48"
+   ]
+  },
+  {
+   "selection": [
+    [
+     27,
+     27
+    ]
+   ],
+   "decorations": [
+    "hide-block 10..13",
+    "hide 21..22",
+    "mark cm-emphasis 21..26",
+    "hide 25..26",
+    "hide-block 43..48"
+   ]
+  },
+  {
+   "selection": [
+    [
+     30,
+     30
+    ]
+   ],
+   "decorations": [
+    "hide-block 10..13",
+    "hide 21..22",
+    "mark cm-emphasis 21..26",
+    "hide 25..26",
+    "hide-block 43..48"
+   ]
+  },
+  {
+   "selection": [
+    [
+     31,
+     31
+    ]
+   ],
+   "decorations": [
+    "hide-block 10..13",
+    "hide 21..22",
+    "mark cm-emphasis 21..26",
+    "hide 25..26",
+    "hide-block 27..30",
+    "hide-block 43..48"
+   ]
+  },
+  {
+   "selection": [
+    [
+     32,
+     32
+    ]
+   ],
+   "decorations": [
+    "hide-block 10..13",
+    "hide 21..22",
+    "mark cm-emphasis 21..26",
+    "hide 25..26",
+    "hide-block 27..30"
+   ]
+  },
+  {
+   "selection": [
+    [
+     37,
+     37
+    ]
+   ],
+   "decorations": [
+    "hide-block 10..13",
+    "hide 21..22",
+    "mark cm-emphasis 21..26",
+    "hide 25..26",
+    "hide-block 27..30"
+   ]
+  },
+  {
+   "selection": [
+    [
+     38,
+     38
+    ]
+   ],
+   "decorations": [
+    "hide-block 10..13",
+    "hide 21..22",
+    "mark cm-emphasis 21..26",
+    "hide 25..26",
+    "hide-block 27..30"
+   ]
+  },
+  {
+   "selection": [
+    [
+     42,
+     42
+    ]
+   ],
+   "decorations": [
+    "hide-block 10..13",
+    "hide 21..22",
+    "mark cm-emphasis 21..26",
+    "hide 25..26",
+    "hide-block 27..30"
+   ]
+  },
+  {
+   "selection": [
+    [
+     43,
+     43
+    ]
+   ],
+   "decorations": [
+    "hide-block 10..13",
+    "hide 21..22",
+    "mark cm-emphasis 21..26",
+    "hide 25..26",
+    "hide-block 27..30"
+   ]
+  },
+  {
+   "selection": [
+    [
+     48,
+     48
+    ]
+   ],
+   "decorations": [
+    "hide-block 10..13",
+    "hide 21..22",
+    "mark cm-emphasis 21..26",
+    "hide 25..26",
+    "hide-block 27..30"
+   ]
+  },
+  {
+   "selection": [
+    [
+     49,
+     49
+    ]
+   ],
+   "decorations": [
+    "hide-block 10..13",
+    "hide 21..22",
+    "mark cm-emphasis 21..26",
+    "hide 25..26",
+    "hide-block 27..30",
+    "hide-block 43..48"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     49,
+     49
+    ]
+   ],
+   "decorations": [
+    "hide 21..22",
+    "mark cm-emphasis 21..26",
+    "hide 25..26",
+    "hide-block 27..30",
+    "hide-block 43..48"
+   ]
+  },
+  {
+   "selection": [
+    [
+     9,
+     9
+    ],
+    [
+     48,
+     48
+    ]
+   ],
+   "decorations": [
+    "hide 21..22",
+    "mark cm-emphasis 21..26",
+    "hide 25..26",
+    "hide-block 27..30"
+   ]
+  },
+  {
+   "selection": [
+    [
+     10,
+     10
+    ],
+    [
+     43,
+     43
+    ]
+   ],
+   "decorations": [
+    "hide 21..22",
+    "mark cm-emphasis 21..26",
+    "hide 25..26",
+    "hide-block 27..30"
+   ]
+  },
+  {
+   "selection": [
+    [
+     13,
+     13
+    ],
+    [
+     42,
+     42
+    ]
+   ],
+   "decorations": [
+    "hide 21..22",
+    "mark cm-emphasis 21..26",
+    "hide 25..26",
+    "hide-block 27..30"
+   ]
+  },
+  {
+   "selection": [
+    [
+     14,
+     14
+    ],
+    [
+     38,
+     38
+    ]
+   ],
+   "decorations": [
+    "hide-block 10..13",
+    "hide 21..22",
+    "mark cm-emphasis 21..26",
+    "hide 25..26",
+    "hide-block 27..30"
+   ]
+  },
+  {
+   "selection": [
+    [
+     15,
+     15
+    ],
+    [
+     37,
+     37
+    ]
+   ],
+   "decorations": [
+    "hide-block 10..13",
+    "hide 21..22",
+    "mark cm-emphasis 21..26",
+    "hide 25..26"
+   ]
+  },
+  {
+   "selection": [
+    [
+     21,
+     21
+    ],
+    [
+     32,
+     32
+    ]
+   ],
+   "decorations": [
+    "hide-block 10..13",
+    "mark cm-emphasis 21..26"
+   ]
+  },
+  {
+   "selection": [
+    [
+     22,
+     22
+    ],
+    [
+     31,
+     31
+    ]
+   ],
+   "decorations": [
+    "hide-block 10..13",
+    "mark cm-emphasis 21..26",
+    "hide-block 43..48"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     9
+    ]
+   ],
+   "decorations": [
+    "hide 21..22",
+    "mark cm-emphasis 21..26",
+    "hide 25..26",
+    "hide-block 27..30",
+    "hide-block 43..48"
+   ]
+  },
+  {
+   "selection": [
+    [
+     10,
+     13
+    ]
+   ],
+   "decorations": [
+    "hide 21..22",
+    "mark cm-emphasis 21..26",
+    "hide 25..26",
+    "hide-block 27..30",
+    "hide-block 43..48"
+   ]
+  },
+  {
+   "selection": [
+    [
+     14,
+     15
+    ]
+   ],
+   "decorations": [
+    "hide-block 10..13",
+    "hide 21..22",
+    "mark cm-emphasis 21..26",
+    "hide 25..26",
+    "hide-block 43..48"
+   ]
+  },
+  {
+   "selection": [
+    [
+     21,
+     22
+    ]
+   ],
+   "decorations": [
+    "hide-block 10..13",
+    "mark cm-emphasis 21..26",
+    "hide-block 43..48"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     49
+    ]
+   ],
+   "decorations": [
+    "mark cm-emphasis 21..26"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,25 @@
+Document 0..118
+  ATXHeading1 0..4
+    HeaderMark 0..1
+  ATXHeading2 5..13
+    HeaderMark 5..7
+    HeaderMark 11..13
+  ATXHeading3 14..25
+    HeaderMark 14..17
+    Emphasis 21..25
+      EmphasisMark 21..22
+      EmphasisMark 24..25
+  ATXHeading4 26..46
+    HeaderMark 26..30
+    Dash 38..39
+  ATXHeading5 47..55
+    HeaderMark 47..52
+  ATXHeading6 56..65
+    HeaderMark 56..62
+  Paragraph 66..89
+  ATXHeading1 92..102
+    HeaderMark 92..93
+  ATXHeading1 103..104
+    HeaderMark 103..104
+  ATXHeading1 105..118
+    HeaderMark 105..106

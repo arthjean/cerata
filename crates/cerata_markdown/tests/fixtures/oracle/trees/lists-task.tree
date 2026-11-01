@@ -1,0 +1,25 @@
+Document 0..67
+  BulletList 0..46
+    ListItem 0..10
+      ListMark 0..1
+      Task 2..10
+        TaskMarker 2..5
+    ListItem 11..21
+      ListMark 11..12
+      Task 13..21
+        TaskMarker 13..16
+    ListItem 22..32
+      ListMark 22..23
+      Task 24..32
+        TaskMarker 24..27
+    ListItem 33..38
+      ListMark 33..34
+      Paragraph 35..38
+    ListItem 39..46
+      ListMark 39..40
+      Paragraph 41..46
+  OrderedList 47..66
+    ListItem 47..66
+      ListMark 47..49
+      Task 50..66
+        TaskMarker 50..53

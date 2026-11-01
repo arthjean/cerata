@@ -1,0 +1,220 @@
+{
+ "fixture": "math-in-code-span.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     4,
+     4
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     5,
+     5
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     10,
+     10
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-inline-code 0..5",
+    "hide 4..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     11,
+     11
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-inline-code 0..5",
+    "hide 4..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     12,
+     12
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-inline-code 0..5",
+    "hide 4..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     13,
+     13
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-inline-code 0..5",
+    "hide 4..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     13,
+     13
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ],
+    [
+     12,
+     12
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     4,
+     4
+    ],
+    [
+     11,
+     11
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     5,
+     5
+    ],
+    [
+     10,
+     10
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     1
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     4,
+     5
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     10,
+     11
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-inline-code 0..5",
+    "hide 4..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     12,
+     13
+    ]
+   ],
+   "decorations": [
+    "hide 0..1",
+    "mark cm-inline-code 0..5",
+    "hide 4..5"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     13
+    ]
+   ],
+   "decorations": [
+    "mark cm-inline-code 0..5"
+   ]
+  }
+ ]
+}

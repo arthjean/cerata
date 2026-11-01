@@ -1,0 +1,385 @@
+{
+ "fixture": "escapes.md",
+ "cases": [
+  {
+   "selection": [
+    [
+     0,
+     0
+    ]
+   ],
+   "decorations": [
+    "hide 2..4",
+    "hide 8..9",
+    "mark cm-rendered-link 8..11",
+    "hide 10..11",
+    "hide 15..16"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ]
+   ],
+   "decorations": [
+    "hide 2..4",
+    "hide 8..9",
+    "mark cm-rendered-link 8..11",
+    "hide 10..11",
+    "hide 15..16"
+   ]
+  },
+  {
+   "selection": [
+    [
+     2,
+     2
+    ]
+   ],
+   "decorations": [
+    "hide 8..9",
+    "mark cm-rendered-link 8..11",
+    "hide 10..11",
+    "hide 15..16"
+   ]
+  },
+  {
+   "selection": [
+    [
+     3,
+     3
+    ]
+   ],
+   "decorations": [
+    "hide 8..9",
+    "mark cm-rendered-link 8..11",
+    "hide 10..11",
+    "hide 15..16"
+   ]
+  },
+  {
+   "selection": [
+    [
+     6,
+     6
+    ]
+   ],
+   "decorations": [
+    "hide 8..9",
+    "mark cm-rendered-link 8..11",
+    "hide 10..11",
+    "hide 15..16"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ]
+   ],
+   "decorations": [
+    "hide 8..9",
+    "mark cm-rendered-link 8..11",
+    "hide 10..11",
+    "hide 15..16"
+   ]
+  },
+  {
+   "selection": [
+    [
+     8,
+     8
+    ]
+   ],
+   "decorations": [
+    "hide 15..16"
+   ]
+  },
+  {
+   "selection": [
+    [
+     9,
+     9
+    ]
+   ],
+   "decorations": [
+    "hide 15..16"
+   ]
+  },
+  {
+   "selection": [
+    [
+     10,
+     10
+    ]
+   ],
+   "decorations": [
+    "hide 15..16"
+   ]
+  },
+  {
+   "selection": [
+    [
+     11,
+     11
+    ]
+   ],
+   "decorations": [
+    "hide 15..16"
+   ]
+  },
+  {
+   "selection": [
+    [
+     15,
+     15
+    ]
+   ],
+   "decorations": [
+    "hide 8..9",
+    "mark cm-rendered-link 8..11",
+    "hide 10..11"
+   ]
+  },
+  {
+   "selection": [
+    [
+     16,
+     16
+    ]
+   ],
+   "decorations": [
+    "hide 8..9",
+    "mark cm-rendered-link 8..11",
+    "hide 10..11"
+   ]
+  },
+  {
+   "selection": [
+    [
+     17,
+     17
+    ]
+   ],
+   "decorations": [
+    "hide 8..9",
+    "mark cm-rendered-link 8..11",
+    "hide 10..11"
+   ]
+  },
+  {
+   "selection": [
+    [
+     24,
+     24
+    ]
+   ],
+   "decorations": [
+    "hide 8..9",
+    "mark cm-rendered-link 8..11",
+    "hide 10..11",
+    "hide 15..16"
+   ]
+  },
+  {
+   "selection": [
+    [
+     25,
+     25
+    ]
+   ],
+   "decorations": [
+    "hide 2..4",
+    "hide 6..7",
+    "hide 8..9",
+    "mark cm-rendered-link 8..11",
+    "hide 10..11",
+    "hide 15..16"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     0
+    ],
+    [
+     25,
+     25
+    ]
+   ],
+   "decorations": [
+    "hide 2..4",
+    "hide 8..9",
+    "mark cm-rendered-link 8..11",
+    "hide 10..11",
+    "hide 15..16"
+   ]
+  },
+  {
+   "selection": [
+    [
+     1,
+     1
+    ],
+    [
+     24,
+     24
+    ]
+   ],
+   "decorations": [
+    "hide 8..9",
+    "mark cm-rendered-link 8..11",
+    "hide 10..11",
+    "hide 15..16"
+   ]
+  },
+  {
+   "selection": [
+    [
+     2,
+     2
+    ],
+    [
+     17,
+     17
+    ]
+   ],
+   "decorations": [
+    "hide 8..9",
+    "mark cm-rendered-link 8..11",
+    "hide 10..11"
+   ]
+  },
+  {
+   "selection": [
+    [
+     3,
+     3
+    ],
+    [
+     16,
+     16
+    ]
+   ],
+   "decorations": [
+    "hide 8..9",
+    "mark cm-rendered-link 8..11",
+    "hide 10..11"
+   ]
+  },
+  {
+   "selection": [
+    [
+     6,
+     6
+    ],
+    [
+     15,
+     15
+    ]
+   ],
+   "decorations": [
+    "hide 8..9",
+    "mark cm-rendered-link 8..11",
+    "hide 10..11"
+   ]
+  },
+  {
+   "selection": [
+    [
+     7,
+     7
+    ],
+    [
+     11,
+     11
+    ]
+   ],
+   "decorations": [
+    "hide 15..16"
+   ]
+  },
+  {
+   "selection": [
+    [
+     8,
+     8
+    ],
+    [
+     10,
+     10
+    ]
+   ],
+   "decorations": [
+    "hide 15..16"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     1
+    ]
+   ],
+   "decorations": [
+    "hide 2..4",
+    "hide 8..9",
+    "mark cm-rendered-link 8..11",
+    "hide 10..11",
+    "hide 15..16"
+   ]
+  },
+  {
+   "selection": [
+    [
+     2,
+     3
+    ]
+   ],
+   "decorations": [
+    "hide 8..9",
+    "mark cm-rendered-link 8..11",
+    "hide 10..11",
+    "hide 15..16"
+   ]
+  },
+  {
+   "selection": [
+    [
+     6,
+     7
+    ]
+   ],
+   "decorations": [
+    "hide 8..9",
+    "mark cm-rendered-link 8..11",
+    "hide 10..11",
+    "hide 15..16"
+   ]
+  },
+  {
+   "selection": [
+    [
+     8,
+     9
+    ]
+   ],
+   "decorations": [
+    "hide 15..16"
+   ]
+  },
+  {
+   "selection": [
+    [
+     0,
+     25
+    ]
+   ],
+   "decorations": []
+  }
+ ]
+}

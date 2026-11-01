@@ -1,0 +1,6 @@
+Document 0..9
+  Paragraph 0..9
+    Math 0..9
+      MathMark 0..2
+      MathFormula 2..7
+      MathMark 7..9

@@ -1,0 +1,17 @@
+Document 0..53
+  Paragraph 0..52
+    Emoji 0..7
+      EmojiMark 0..1
+      EmojiMark 6..7
+    Emoji 8..22
+      EmojiMark 8..9
+      EmojiMark 21..22
+    Emoji 34..40
+      EmojiMark 34..35
+      EmojiMark 39..40
+    Emoji 40..46
+      EmojiMark 40..41
+      EmojiMark 45..46
+    Emoji 48..51
+      EmojiMark 48..49
+      EmojiMark 50..51

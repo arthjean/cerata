@@ -1,0 +1,10 @@
+Document 0..49
+  SetextHeading1 0..13
+    HeaderMark 10..13
+  SetextHeading2 15..30
+    Emphasis 21..26
+      EmphasisMark 21..22
+      EmphasisMark 25..26
+    HeaderMark 27..30
+  SetextHeading1 32..48
+    HeaderMark 43..48
