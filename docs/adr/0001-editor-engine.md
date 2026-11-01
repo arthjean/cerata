@@ -84,6 +84,10 @@ Mesures Windows rapportées à ce critère (médiane des cinq exécutions) :
 
 **Verdict sous Windows : critère tenu.**
 
+### Vrai éditeur (EP-003, Windows, 2026-11-01)
+
+`cargo run -p cerata --example editor_bench --release` reprend la méthode sur l'éditeur d'EP-003 (`crates/cerata/src/editor`) dans une vraie fenêtre : début de frame marqué par `Window::on_next_frame`, frame présentée par une tâche lancée depuis ce callback, rendu de la vue racine vérifié entre les deux. Sur cinq exécutions : frappe, travail de l'application p99 1,50 à 1,68 ms ; gestionnaire d'entrée isolé p99 1,88 à 2,14 ms ; aucune frappe hors de la frame suivante ; saut de défilement à froid p99 3,55 à 4,02 ms ; ouverture de la note de 1 Mo jusqu'à la première frame présentée 18,6 à 21,0 ms. Le critère retenu est tenu avec la même marge que le spike.
+
 ## Critères
 
 | # | Critère | Preuve | Verdict |

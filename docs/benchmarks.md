@@ -52,6 +52,12 @@ Writer ne tourne pas sous Windows ni sous Linux : ces colonnes n'existent pas po
 |---|---|---|---|---|
 | Indexation, 10 000 fichiers (cache disque chaud) | médiane 32 ms (min 30, max 33, 7 runs) | US-046 | US-045 | `index_bench index <ws10k> 7` |
 | Indexation, 50 000 fichiers (cache disque chaud) | médiane 457 ms (min 379, max 492, 5 runs) | US-046 | US-045 | `index_bench index <ws50k> 5` |
+| Éditeur, 1 Mo : ouverture jusqu'à la première frame présentée | 18,6 à 21,0 ms (5 runs) | US-046 | US-045 | `cargo run -p cerata --example editor_bench --release` |
+| Éditeur, 1 Mo : frappe, travail de l'application (frame vers présentée) | p99 1,50 à 1,68 ms, aucune frappe hors de la frame suivante (5 × 200 frappes) | US-046 | US-045 | idem |
+| Éditeur, 1 Mo : frappe, gestionnaire d'entrée seul | p99 1,88 à 2,14 ms | US-046 | US-045 | idem |
+| Éditeur, 1 Mo : saut de défilement à froid, travail de la frame | p99 3,55 à 4,02 ms (5 × 60 sauts) | US-046 | US-045 | idem |
 | Démarrage, mémoire | sans objet tant que l'interface n'existe pas (EP-004) | | | |
 
 Mesures Windows du 2026-10-31, build release, workspace généré dans le dossier temporaire de l'utilisateur sur le SSD NVMe. Les valeurs à froid demandent un redémarrage et n'ont pas encore été prises.
+
+Mesures de l'éditeur (EP-003) du 2026-11-01, build release, fixture de 1 Mo du spike (`fixture::generate`). `editor_bench` ouvre la note dans une fenêtre déjà affichée, tape 200 caractères par `EntityInputHandler::replace_text_in_range` à une phase aléatoire du rafraîchissement, puis fait 60 sauts de 2,5 hauteurs de vue. La métrique est celle de l'ADR 0001 (attente du vsync exclue) ; le coût du gestionnaire d'entrée y est isolé.
