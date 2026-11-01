@@ -373,6 +373,15 @@ impl Sidebar {
             self.cancel_rename(window, cx);
             return;
         }
+        // A typed separator or `..` would move the entry, not rename it.
+        if let Err(FsError::InvalidName { reason, .. }) = cerata_core::fs::validate_file_name(&name)
+        {
+            if let Some(renaming) = &mut self.renaming {
+                renaming.error = Some(format!("\"{typed}\" cannot be used: {reason}."));
+            }
+            cx.notify();
+            return;
+        }
         let Some(runtime) = self.runtime().cloned() else {
             return;
         };

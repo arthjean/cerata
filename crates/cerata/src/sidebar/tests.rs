@@ -329,6 +329,36 @@ fn entry(
     })
 }
 
+/// A typed `..` or separator is refused in place: a rename never moves
+/// the entry to another folder.
+#[gpui::test]
+fn renaming_refuses_a_name_that_leaves_the_folder(cx: &mut TestAppContext) {
+    let env = setup(cx);
+    let a = env.file("a.md", "a");
+    env.file("other/x.md", "x");
+    let (handle, sidebar) = open(cx, &env);
+    for typed in ["other/a", "../a"] {
+        with_window(cx, handle, &sidebar, |s, window, cx| {
+            s.start_rename(&a, window, cx)
+        });
+        let field = sidebar.read_with(cx, |s, _| s.renaming.as_ref().unwrap().field.clone());
+        field.update(cx, |f, cx| f.set_text(typed, cx));
+        with_window(cx, handle, &sidebar, |s, window, cx| {
+            s.commit_rename(window, cx)
+        });
+        let error = sidebar.read_with(cx, |s, _| s.renaming.as_ref().and_then(|r| r.error.clone()));
+        assert!(
+            error.is_some_and(|e| e.starts_with(&format!("\"{typed}\" cannot be used"))),
+            "{typed}"
+        );
+        assert!(a.exists(), "{typed}");
+        with_window(cx, handle, &sidebar, |s, window, cx| {
+            s.cancel_rename(window, cx)
+        });
+    }
+    assert!(!env.root().join("other/a.md").exists());
+}
+
 #[gpui::test]
 fn renaming_edits_the_stem_in_place_and_refuses_a_taken_name(cx: &mut TestAppContext) {
     let env = setup(cx);
