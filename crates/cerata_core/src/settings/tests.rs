@@ -106,18 +106,28 @@ fn schema_keeps_writer_typography_and_terminal_contracts() {
     let prose = r#"-apple-system-body, ui-sans-serif, -apple-system, system-ui, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol""#;
     let mono = r#"ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace"#;
     let default_of = |key: &str| schema.get(key).unwrap().default.clone();
-    assert_eq!(
-        default_of("fonts.ui"),
-        text(&format!("\"SF Pro\", {prose}"))
-    );
+    // Writer's stacks on macOS; elsewhere without the San Francisco
+    // families (US-029).
+    let os = |stack: String| {
+        text(&crate::settings::schema::platform_font_stack(
+            &stack,
+            cfg!(target_os = "macos"),
+        ))
+    };
+    assert_eq!(default_of("fonts.ui"), os(format!("\"SF Pro\", {prose}")));
     assert_eq!(
         default_of("fonts.editor"),
-        text(&format!("\"SF Pro\", {prose}"))
+        os(format!("\"SF Pro\", {prose}"))
     );
-    assert_eq!(
-        default_of("fonts.mono"),
-        text(&format!("\"SF Mono\", {mono}"))
-    );
+    assert_eq!(default_of("fonts.mono"), os(format!("\"SF Mono\", {mono}")));
+    if !cfg!(target_os = "macos") {
+        assert_eq!(
+            default_of("fonts.mono"),
+            text(
+                r#"ui-monospace, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace"#
+            )
+        );
+    }
 
     let terminal = schema.get("workspace.default-terminal").unwrap();
     assert_eq!(terminal.value_type, ValueType::String);

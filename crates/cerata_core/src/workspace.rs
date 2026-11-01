@@ -119,6 +119,13 @@ impl WindowState {
         runtime
     }
 
+    /// `true` while a reader such as [`WindowState::with_snapshot`] holds
+    /// the workspace lock (no transition can start).
+    #[cfg(test)]
+    pub(crate) fn workspace_is_locked(&self) -> bool {
+        self.runtime.try_write().is_none()
+    }
+
     /// Closes the workspace if it is still `root`.
     pub fn clear_workspace_if_current(&self, root: &Path) -> bool {
         let mut slot = self.runtime.write();

@@ -81,8 +81,8 @@
     },
     {
       "key": "appearance.theme",
-      "label": "Schema",
-      "description": "Light or dark color schema",
+      "label": "Color Scheme",
+      "description": "Light, dark, or the system setting",
       "category": "Appearance",
       "type": "enum",
       "options": ["system", "light", "dark"],
@@ -187,7 +187,7 @@
       "category": "Theme",
       "$comment": "Valid values are populated at runtime from shared/themes/*.json plus the special \"custom\" sentinel; we intentionally don't enum-constrain the contract so adding a preset doesn't require a schema edit.",
       "type": "string",
-      "default": "Writer"
+      "default": "Cerata"
     },
     {
       "key": "theme.light.accent",
@@ -230,7 +230,7 @@
     {
       "key": "theme.light.contrast",
       "label": "Contrast",
-      "description": "alpha multiplier on borders, cards, hover bgs.",
+      "description": "Strength of borders, cards and hover backgrounds",
       "category": "Theme",
       "type": "range",
       "min": 0,
@@ -245,7 +245,7 @@
       "category": "Theme",
       "$comment": "Valid values are populated at runtime from shared/themes/*.json plus the special \"custom\" sentinel; we intentionally don't enum-constrain the contract so adding a preset doesn't require a schema edit.",
       "type": "string",
-      "default": "Writer"
+      "default": "Cerata"
     },
     {
       "key": "theme.dark.accent",
@@ -288,7 +288,7 @@
     {
       "key": "theme.dark.contrast",
       "label": "Contrast",
-      "description": "alpha multiplier on borders, cards, hover bgs.",
+      "description": "Strength of borders, cards and hover backgrounds",
       "category": "Theme",
       "type": "range",
       "min": 0,
@@ -347,7 +347,7 @@
     {
       "key": "workspace.default-terminal",
       "label": "Default Terminal",
-      "description": "Terminal application name on macOS, or executable name/full path on Windows and Linux. Leave blank for Writer's platform default; arguments are not supported.",
+      "description": "Terminal application name on macOS, or executable name/full path on Windows and Linux. Leave blank for the platform default; arguments are not supported.",
       "category": "Workspace",
       "type": "string",
       "placeholder": "Platform default",

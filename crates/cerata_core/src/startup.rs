@@ -9,6 +9,7 @@ use crate::fs::{DirEntry, FileContent, WorkspaceFs};
 use crate::ignore::WorkspaceIgnore;
 use crate::open_target::OpenTarget;
 use crate::paths;
+use crate::pins::PinStore;
 use crate::recents::{RecentEntry, RecentsStore};
 use crate::session::{SessionData, SessionStore};
 use crate::settings::{ConfigValue, ConfigWarning, Settings, SettingsError};
@@ -36,12 +37,14 @@ pub struct CoreApp {
     pub windows: WindowRegistry,
     pub sessions: SessionStore,
     pub recents: RecentsStore,
+    pub pins: PinStore,
 }
 
 impl CoreApp {
     pub fn new(config_dir: PathBuf, data_dir: PathBuf) -> Self {
         Self {
             sessions: SessionStore::new(&data_dir),
+            pins: PinStore::new(&data_dir),
             recents: RecentsStore::new(&data_dir),
             windows: WindowRegistry::new(),
             config_dir,

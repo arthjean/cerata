@@ -102,6 +102,26 @@ impl SettingDef {
     }
 }
 
+/// A font default for this OS: outside macOS the San Francisco families
+/// and Apple's system aliases are dropped, so the stack starts with a font
+/// the system has.
+pub fn platform_font_stack(stack: &str, macos: bool) -> String {
+    if macos {
+        return stack.to_owned();
+    }
+    stack
+        .split(',')
+        .map(str::trim)
+        .filter(|family| {
+            let name = family.trim_matches(|c| c == '"' || c == '\'');
+            !(name.starts_with("SF ")
+                || name.starts_with("SFMono")
+                || name.starts_with("-apple-system"))
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// The parsed schema, in file order.
 #[derive(Debug)]
 pub struct Schema {
@@ -125,7 +145,15 @@ impl Schema {
     }
 
     fn parse(json: &str) -> Result<Self, serde_json::Error> {
-        let file: SchemaFile = serde_json::from_str(json)?;
+        let mut file: SchemaFile = serde_json::from_str(json)?;
+        for definition in &mut file.settings {
+            if let (ValueType::Font, ConfigValue::String(stack)) =
+                (definition.value_type, &definition.default)
+            {
+                definition.default =
+                    ConfigValue::String(platform_font_stack(stack, cfg!(target_os = "macos")));
+            }
+        }
         let positions = file
             .settings
             .iter()
@@ -151,5 +179,44 @@ impl Schema {
     /// Index of `key` in schema order.
     pub(crate) fn position(&self, key: &str) -> Option<usize> {
         self.positions.get(key).copied()
+    }
+}
+
+#[cfg(test)]
+mod platform_tests {
+    use super::*;
+
+    #[test]
+    fn font_defaults_have_no_sf_family_outside_macos() {
+        let stack =
+            r#""SF Pro", -apple-system-body, ui-sans-serif, -apple-system, system-ui, "Segoe UI""#;
+        assert_eq!(
+            platform_font_stack(stack, false),
+            "ui-sans-serif, system-ui, \"Segoe UI\""
+        );
+        assert_eq!(platform_font_stack(stack, true), stack);
+        assert_eq!(
+            platform_font_stack(
+                r#""SF Mono", ui-monospace, SFMono-Regular, Consolas"#,
+                false
+            ),
+            "ui-monospace, Consolas"
+        );
+    }
+
+    #[test]
+    fn the_embedded_font_defaults_follow_the_os() {
+        let schema = Schema::embedded().unwrap();
+        for key in ["fonts.ui", "fonts.editor", "fonts.mono"] {
+            let Some(ConfigValue::String(stack)) = schema.get(key).map(|d| d.default.clone())
+            else {
+                panic!("{key} has no string default");
+            };
+            assert_eq!(
+                stack.contains("SF "),
+                cfg!(target_os = "macos"),
+                "{key}: {stack}"
+            );
+        }
     }
 }

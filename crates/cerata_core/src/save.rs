@@ -135,6 +135,53 @@ impl AutoSaver {
     pub fn set_options(&self, options: SaveOptions) {
         *self.shared.options.lock() = options;
     }
+
+    /// Writes every pending save now, throttle ignored, and waits for the
+    /// writes in flight, up to `timeout`. Called before the saver or its
+    /// documents go away (window close, workspace change, quit): dropping
+    /// the saver forgets the saves the throttle still holds. `false` if
+    /// writes were still running at the deadline.
+    pub fn flush(&self, timeout: Duration) -> bool {
+        let deadline = Instant::now() + timeout;
+        let mut controllers = self.shared.controllers.lock();
+        loop {
+            let due: Vec<PathBuf> = controllers
+                .iter()
+                .filter(|(_, c)| !c.in_flight && c.due.is_some())
+                .map(|(path, _)| path.clone())
+                .collect();
+            if !due.is_empty() && Instant::now() < deadline {
+                let now = Instant::now();
+                for path in &due {
+                    if let Some(controller) = controllers.get_mut(path) {
+                        controller.due = None;
+                        controller.in_flight = true;
+                        controller.pending = false;
+                        controller.last_save = Some(now);
+                    }
+                }
+                drop(controllers);
+                for path in due {
+                    perform_save(&self.shared, path);
+                }
+                controllers = self.shared.controllers.lock();
+                continue;
+            }
+            let busy = controllers.values().any(|c| c.in_flight || c.due.is_some());
+            if !busy {
+                return true;
+            }
+            if Instant::now() >= deadline
+                || self
+                    .shared
+                    .wake
+                    .wait_until(&mut controllers, deadline)
+                    .timed_out()
+            {
+                return !controllers.values().any(|c| c.in_flight || c.due.is_some());
+            }
+        }
+    }
 }
 
 impl Drop for AutoSaver {
@@ -402,6 +449,25 @@ mod tests {
         let doc = editor.doc.lock();
         assert_eq!(doc.saved_revision, doc.revision);
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "second draft");
+    }
+
+    /// An edit the throttle is still holding reaches the disk on flush,
+    /// before the saver is dropped (window close, quit).
+    #[test]
+    fn flush_writes_the_save_the_throttle_holds() {
+        let (_dir, path, editor, saver, saved) = setup();
+        editor.edit("a");
+        saver.schedule(&path);
+        assert_eq!(saved.recv_timeout(WAIT).unwrap(), 1);
+        editor.edit("b");
+        saver.schedule(&path);
+        let started = Instant::now();
+        assert!(saver.flush(WAIT));
+        assert!(started.elapsed() < THROTTLE, "flush ignores the throttle");
+        drop(saver);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "b");
+        let doc = editor.doc.lock();
+        assert_eq!(doc.saved_revision, doc.revision);
     }
 
     #[test]

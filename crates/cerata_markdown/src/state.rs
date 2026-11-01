@@ -292,6 +292,19 @@ impl EditorState {
         self.saved_revision = self.revision;
     }
 
+    /// Increases on every edit and reload: identifies a text for autosave.
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    /// `revision` reached the disk: the document is clean if it has not
+    /// changed since, and stays dirty otherwise.
+    pub fn mark_saved_at(&mut self, revision: u64) {
+        if revision <= self.revision {
+            self.saved_revision = self.saved_revision.max(revision);
+        }
+    }
+
     pub fn scroll_anchor(&self) -> ScrollAnchor {
         self.scroll
     }

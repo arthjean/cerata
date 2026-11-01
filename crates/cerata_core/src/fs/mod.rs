@@ -185,12 +185,12 @@ impl WorkspaceFs {
             let name = entry.file_name().to_string_lossy().into_owned();
             if file_type.is_dir() {
                 match directory_is_visible(&path, ignore, dirs_with_markdown) {
-                    Ok(true) => dirs.push(dir_entry(name, path, true)),
+                    Ok(true) => dirs.push(listed_entry(name, path, true, entry.metadata())),
                     Ok(false) => {}
                     Err(error) => log::warn!("hiding unreadable folder: {error}"),
                 }
             } else if file_type.is_file() && is_markdown_path(&path) {
-                files.push(dir_entry(name, path, false));
+                files.push(listed_entry(name, path, false, entry.metadata()));
             }
         }
         dirs.sort_by_key(|entry| entry.name.to_lowercase());
@@ -325,6 +325,19 @@ impl WorkspaceFs {
         }
         fs::rename(&old, &new).map_err(|e| FsError::io(&old, e))?;
         Ok(new)
+    }
+
+    /// Sidebar rows for `paths` (the Pinned section), in input order: only
+    /// existing Markdown files inside the root (Writer `read_file_entries`,
+    /// `fs.rs:442-462`).
+    pub fn file_entries(&self, paths: &[PathBuf]) -> Vec<DirEntry> {
+        paths
+            .iter()
+            .filter(|path| path.starts_with(&self.root) && path.is_file())
+            .filter(|path| is_markdown_path(path))
+            .filter(|path| self.confine_existing(path).is_ok())
+            .map(|path| dir_entry(file_name_of(path), path.clone(), false))
+            .collect()
     }
 
     /// Moves a file or folder to the OS trash.
@@ -495,6 +508,30 @@ fn tree_is_empty(path: &Path, ignore: &WorkspaceIgnore) -> Result<bool, FsError>
         }
     }
     Ok(true)
+}
+
+/// [`dir_entry`] from the metadata a directory read already holds: one
+/// call fewer per entry on Unix, none on Windows, where the listing carries
+/// the times. Symlinks never reach here (their file type is neither).
+fn listed_entry(
+    name: String,
+    path: PathBuf,
+    is_dir: bool,
+    metadata: io::Result<fs::Metadata>,
+) -> DirEntry {
+    let Ok(meta) = metadata else {
+        return dir_entry(name, path, is_dir);
+    };
+    let modified_at = epoch_secs(meta.modified()).unwrap_or(0);
+    DirEntry {
+        is_markdown: !is_dir && is_markdown_path(&path),
+        modified_at,
+        created_at: epoch_secs(meta.created()).unwrap_or(modified_at),
+        title: None,
+        name,
+        path,
+        is_dir,
+    }
 }
 
 fn dir_entry(name: String, path: PathBuf, is_dir: bool) -> DirEntry {
@@ -1004,5 +1041,25 @@ mod tests {
         let second = ws.duplicate(&source, Some("# Unsaved")).unwrap();
         assert!(second.ends_with("hello copy 2.md"));
         assert_eq!(fs::read_to_string(&second).unwrap(), "# Unsaved");
+    }
+
+    // Ported from Writer `commands/fs.rs`, attached to US-026.
+    #[test]
+    fn test_read_file_entries_filters_missing_non_markdown_and_outside_root() {
+        let dir = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let fs = WorkspaceFs::new(dir.path()).unwrap();
+        let root = fs.root().to_path_buf();
+        std::fs::write(root.join("kept.md"), "x").unwrap();
+        std::fs::write(root.join("note.txt"), "x").unwrap();
+        std::fs::write(outside.path().join("outside.md"), "x").unwrap();
+        let entries = fs.file_entries(&[
+            root.join("kept.md"),
+            root.join("missing.md"),
+            root.join("note.txt"),
+            outside.path().join("outside.md"),
+        ]);
+        let names: Vec<_> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, ["kept.md"]);
     }
 }

@@ -259,6 +259,35 @@ impl LiveIndex {
         let files: Vec<IndexedFile> = self.files.values().cloned().collect();
         fuzzy_search(query, &files, limit)
     }
+
+    /// The sidebar's Recents: one page of the indexed files, newest
+    /// modification first then by relative path, keeping only Markdown
+    /// files that still exist (Writer `read_recent_files`, `fs.rs:407-440`).
+    /// `limit` is clamped to 1..=100. Sorted on each call from the live
+    /// index, so an mtime update reorders the next page (Writer kept a
+    /// cache it invalidated on mtime changes).
+    pub fn recent(&self, limit: usize, offset: usize) -> Vec<IndexedFile> {
+        let mut files: Vec<&IndexedFile> = self.files.values().collect();
+        files.sort_by(|a, b| {
+            b.modified_at
+                .cmp(&a.modified_at)
+                .then_with(|| a.relative_path.cmp(&b.relative_path))
+        });
+        files
+            .into_iter()
+            .skip(offset)
+            .take(limit.clamp(1, 100))
+            .filter(|file| is_markdown_path(&file.path) && file.path.is_file())
+            .cloned()
+            .collect()
+    }
+
+    /// Records a new modification time for an indexed file.
+    pub fn touch(&mut self, path: &Path, modified_at: u64) {
+        if let Some(file) = self.files.get_mut(path) {
+            file.modified_at = modified_at;
+        }
+    }
 }
 
 /// Folder visibility source for sidebar listings once indexing is done.
@@ -987,5 +1016,54 @@ mod tests {
             "{:?}",
             started.elapsed()
         );
+    }
+
+    // Ported from Writer `commands/fs.rs`, attached to US-026.
+
+    fn indexed(root: &Path, name: &str, modified_at: u64) -> IndexedFile {
+        let path = root.join(name);
+        fs::write(&path, "x").unwrap();
+        IndexedFile {
+            relative_path: name.into(),
+            name: name.into(),
+            path,
+            modified_at,
+        }
+    }
+
+    #[test]
+    fn test_read_recent_files_sorts_by_index_mtime_and_pages() {
+        let dir = TempDir::new().unwrap();
+        let mut live = LiveIndex::new(dir.path());
+        live.upsert(indexed(dir.path(), "old.md", 1));
+        live.upsert(indexed(dir.path(), "new.md", 3));
+        live.upsert(indexed(dir.path(), "middle.md", 2));
+        let names = |files: Vec<IndexedFile>| files.into_iter().map(|f| f.name).collect::<Vec<_>>();
+        assert_eq!(names(live.recent(2, 0)), ["new.md", "middle.md"]);
+        assert_eq!(names(live.recent(2, 2)), ["old.md"]);
+    }
+
+    #[test]
+    fn test_read_recent_files_cache_invalidates_on_mtime_update() {
+        let dir = TempDir::new().unwrap();
+        let mut live = LiveIndex::new(dir.path());
+        live.upsert(indexed(dir.path(), "old.md", 1));
+        live.upsert(indexed(dir.path(), "new.md", 3));
+        assert_eq!(live.recent(1, 0)[0].name, "new.md");
+        live.touch(&dir.path().join("old.md"), 5);
+        assert_eq!(live.recent(1, 0)[0].name, "old.md");
+    }
+
+    #[test]
+    fn recent_files_skip_missing_and_non_markdown_entries() {
+        let dir = TempDir::new().unwrap();
+        let mut live = LiveIndex::new(dir.path());
+        live.upsert(indexed(dir.path(), "kept.md", 2));
+        let gone = indexed(dir.path(), "gone.md", 3);
+        fs::remove_file(&gone.path).unwrap();
+        live.upsert(gone);
+        live.upsert(indexed(dir.path(), "note.txt", 4));
+        let names: Vec<_> = live.recent(100, 0).into_iter().map(|f| f.name).collect();
+        assert_eq!(names, ["kept.md"]);
     }
 }

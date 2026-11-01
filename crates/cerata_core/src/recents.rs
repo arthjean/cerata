@@ -249,4 +249,23 @@ mod tests {
         assert_eq!(recents[0], canonical_string(roots[5].path()));
         assert_eq!(recents[1], canonical_string(roots[11].path()));
     }
+
+    /// Ports Writer `stores.test.ts:881`: removing a recent workspace drops
+    /// only that entry and keeps the order of the others.
+    #[test]
+    fn removing_a_recent_workspace_keeps_the_others_in_order() {
+        let data = TempDir::new().unwrap();
+        let roots: Vec<TempDir> = (0..3).map(|_| TempDir::new().unwrap()).collect();
+        let store = RecentsStore::new(data.path());
+        for root in roots.iter().rev() {
+            store.record_workspace(root.path()).unwrap();
+        }
+        let [a, b, c] = [0, 1, 2].map(|ix| canonical_string(roots[ix].path()));
+        assert_eq!(
+            store.workspaces().unwrap(),
+            [a.clone(), b.clone(), c.clone()]
+        );
+        store.remove_workspace(&b).unwrap();
+        assert_eq!(store.workspaces().unwrap(), [a, c]);
+    }
 }
