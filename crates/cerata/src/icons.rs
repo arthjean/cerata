@@ -22,6 +22,13 @@ pub enum Icon {
     More,
     File,
     Settings,
+    Dashboard,
+    Folder,
+    PaintBoard,
+    Pencil,
+    SidebarLeft,
+    TextFont,
+    UnfoldMore,
 }
 
 impl Icon {
@@ -40,6 +47,13 @@ impl Icon {
             Icon::More => include_bytes!("../assets/icons/more-horizontal.svg"),
             Icon::File => include_bytes!("../assets/icons/file-02.svg"),
             Icon::Settings => include_bytes!("../assets/icons/settings.svg"),
+            Icon::Dashboard => include_bytes!("../assets/icons/dashboard-square-01.svg"),
+            Icon::Folder => include_bytes!("../assets/icons/folder-01.svg"),
+            Icon::PaintBoard => include_bytes!("../assets/icons/paint-board.svg"),
+            Icon::Pencil => include_bytes!("../assets/icons/pencil-edit-02.svg"),
+            Icon::SidebarLeft => include_bytes!("../assets/icons/sidebar-left.svg"),
+            Icon::TextFont => include_bytes!("../assets/icons/text-font.svg"),
+            Icon::UnfoldMore => include_bytes!("../assets/icons/unfold-more.svg"),
         }
     }
 
@@ -58,6 +72,13 @@ impl Icon {
             Icon::More => "icons/more-horizontal.svg",
             Icon::File => "icons/file-02.svg",
             Icon::Settings => "icons/settings.svg",
+            Icon::Dashboard => "icons/dashboard-square-01.svg",
+            Icon::Folder => "icons/folder-01.svg",
+            Icon::PaintBoard => "icons/paint-board.svg",
+            Icon::Pencil => "icons/pencil-edit-02.svg",
+            Icon::SidebarLeft => "icons/sidebar-left.svg",
+            Icon::TextFont => "icons/text-font.svg",
+            Icon::UnfoldMore => "icons/unfold-more.svg",
         }
     }
 }
@@ -90,6 +111,14 @@ mod tests {
             Icon::Search,
             Icon::More,
             Icon::File,
+            Icon::Settings,
+            Icon::Dashboard,
+            Icon::Folder,
+            Icon::PaintBoard,
+            Icon::Pencil,
+            Icon::SidebarLeft,
+            Icon::TextFont,
+            Icon::UnfoldMore,
         ];
         for icon in all {
             let text = std::str::from_utf8(icon.data()).unwrap();

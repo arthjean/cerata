@@ -16,7 +16,6 @@ use super::WindowView;
 use crate::editor::text_field::{FieldEvent, TextField};
 use crate::editor::theme;
 use crate::icons::{Icon, icon};
-use crate::tabs::Location;
 
 const HEIGHT: f32 = 36.0;
 
@@ -54,7 +53,7 @@ impl WindowView {
     }
 
     /// The focus goes back to the active note, else to the window.
-    fn focus_page(&self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn focus_page(&self, window: &mut Window, cx: &mut Context<Self>) {
         match self.active_doc() {
             Some(doc) => window.focus(&doc.editor.focus_handle(cx), cx),
             None => window.focus(&self.focus_handle, cx),
@@ -69,8 +68,6 @@ pub fn render(view: &WindowView, window: &Window, cx: &mut Context<WindowView>) 
         .get(crate::sidebar::SHOW_SEARCH_KEY)
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
-    let settings_open = view.tabs.active().location == Location::Settings;
-
     let settings = crate::a11y::button(div().id("sidebar-settings"), "Settings")
         .flex_none()
         .size(px(HEIGHT))
@@ -79,13 +76,7 @@ pub fn render(view: &WindowView, window: &Window, cx: &mut Context<WindowView>) 
         .justify_center()
         .rounded(px(12.0))
         .cursor_pointer()
-        .map(|d| {
-            if settings_open {
-                d.bg(theme::row_active())
-            } else {
-                d.hover(|s| s.bg(theme::row_hover()))
-            }
-        })
+        .hover(|s| s.bg(theme::row_hover()))
         .child(icon(Icon::Settings, 18.0, theme::muted()))
         .on_click(cx.listener(|this, _, window, cx| this.open_settings(window, cx)));
 

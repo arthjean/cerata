@@ -36,7 +36,6 @@ fn label(location: &Location) -> String {
             .map(|stem| stem.to_string_lossy().into_owned())
             .unwrap_or_else(|| file_name(path)),
         Location::Launcher => "New Tab".into(),
-        Location::Settings => "Settings".into(),
     }
 }
 

@@ -2,16 +2,27 @@
 //! clipboard, and Enter, Shift+Enter and Escape reported to its owner.
 
 use std::ops::Range;
+use std::time::{Duration, Instant};
 
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, Element, ElementId, ElementInputHandler,
     Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, GlobalElementId,
     InspectorElementId, IntoElement, KeyBinding, LayoutId, MouseButton, MouseDownEvent,
-    ParentElement, Pixels, Point, Render, ShapedLine, SharedString, Style, Styled, TextRun,
+    ParentElement, Pixels, Point, Render, ShapedLine, SharedString, Style, Styled, Task, TextRun,
     UTF16Selection, Window, actions, div, fill, point, prelude::*, px, relative, size,
 };
 
 use super::theme;
+
+/// The caret is shown, then hidden, this long each (Paneflow's
+/// `text_input.rs`); typing or moving it shows it again at once.
+const BLINK: Duration = Duration::from_millis(500);
+const CARET_WIDTH: f32 = 1.0;
+
+/// Whether the caret shows `since` the last edit or move.
+fn caret_visible(since: Duration) -> bool {
+    (since.as_millis() / BLINK.as_millis()).is_multiple_of(2)
+}
 
 actions!(
     text_field,
@@ -75,6 +86,13 @@ pub struct TextField {
     bare: bool,
     text_size: Pixels,
     last_layout: Option<(ShapedLine, Bounds<Pixels>)>,
+    /// The last edit or caret move, which the blink counts from.
+    blink_anchor: Instant,
+    /// Repaints the blink while the field has the focus.
+    blink_task: Option<Task<()>>,
+    caret_shown: bool,
+    /// When the field took the focus, for its frame's focus animation.
+    focused_since: Option<Instant>,
 }
 
 impl EventEmitter<FieldEvent> for TextField {}
@@ -91,6 +109,10 @@ impl TextField {
             bare: false,
             text_size: px(13.0),
             last_layout: None,
+            blink_anchor: Instant::now(),
+            blink_task: None,
+            caret_shown: false,
+            focused_since: None,
         }
     }
 
@@ -106,7 +128,49 @@ impl TextField {
         self.text = text.to_owned();
         self.selection = 0..self.text.len();
         self.marked = None;
+        self.blink_anchor = Instant::now();
         cx.notify();
+    }
+
+    /// When the field took the focus, while it has it.
+    pub fn focused_since(&self) -> Option<Instant> {
+        self.focused_since
+    }
+
+    /// Whether the caret shows now; while the field has the focus in an
+    /// active window, a task repaints it at each blink.
+    fn update_caret(&mut self, window: &Window, cx: &mut Context<Self>) {
+        let focused = self.focus_handle.is_focused(window);
+        if focused != self.focused_since.is_some() {
+            self.focused_since = focused.then(Instant::now);
+            self.blink_anchor = Instant::now();
+        }
+        if !focused || !window.is_window_active() {
+            self.blink_task = None;
+            self.caret_shown = false;
+            return;
+        }
+        if self.blink_task.is_none() {
+            self.blink_task = Some(cx.spawn_in(window, async move |this, cx| {
+                loop {
+                    cx.background_executor().timer(BLINK).await;
+                    let alive = this.update_in(cx, |this, window, cx| {
+                        let alive =
+                            this.focus_handle.is_focused(window) && window.is_window_active();
+                        if alive {
+                            cx.notify();
+                        } else {
+                            this.blink_task = None;
+                        }
+                        alive
+                    });
+                    if !matches!(alive, Ok(true)) {
+                        break;
+                    }
+                }
+            }));
+        }
+        self.caret_shown = caret_visible(self.blink_anchor.elapsed());
     }
 
     fn replace(&mut self, range: Range<usize>, text: &str, cx: &mut Context<Self>) {
@@ -114,6 +178,7 @@ impl TextField {
         self.text.replace_range(range.clone(), text);
         let caret = range.start + text.len();
         self.selection = caret..caret;
+        self.blink_anchor = Instant::now();
         cx.emit(FieldEvent::Changed);
         cx.notify();
     }
@@ -181,6 +246,7 @@ impl TextField {
 
     fn move_to(&mut self, pos: usize, cx: &mut Context<Self>) {
         self.selection = pos..pos;
+        self.blink_anchor = Instant::now();
         cx.notify();
     }
 
@@ -192,6 +258,7 @@ impl TextField {
             self.selection.start
         };
         self.selection = anchor.min(pos)..anchor.max(pos);
+        self.blink_anchor = Instant::now();
         cx.notify();
     }
 }
@@ -203,7 +270,8 @@ impl Focusable for TextField {
 }
 
 impl Render for TextField {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.update_caret(window, cx);
         let border = if self.invalid {
             theme::danger()
         } else {
@@ -303,9 +371,7 @@ impl Render for TextField {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|f: &mut Self, event: &MouseDownEvent, window, cx| {
-                    window.focus(&f.focus_handle, cx);
-                    let pos = f.index_for_point(event.position);
-                    f.move_to(pos, cx);
+                    f.click_at(event.position, window, cx)
                 }),
             )
             .child(FieldElement { field: cx.entity() });
@@ -319,6 +385,19 @@ impl Render for TextField {
 }
 
 impl TextField {
+    /// A press at `position`, on the field or on a frame around it: the
+    /// focus, and the caret at the closest character.
+    pub fn click_at(
+        &mut self,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        window.focus(&self.focus_handle, cx);
+        let pos = self.index_for_point(position);
+        self.move_to(pos, cx);
+    }
+
     fn index_for_point(&self, position: Point<Pixels>) -> usize {
         match &self.last_layout {
             Some((line, bounds)) => line.closest_index_for_x(position.x - bounds.left()),
@@ -441,16 +520,25 @@ impl Element for FieldElement {
             window,
             cx,
         );
-        if focus.is_focused(window) && selection.is_empty() {
+        let (caret_shown, text_size) = {
+            let field = self.field.read(cx);
+            (field.caret_shown, field.text_size)
+        };
+        if focus.is_focused(window) && selection.is_empty() && caret_shown {
             let x = if empty {
                 px(0.0)
             } else {
                 line.x_for_index(selection.start)
             };
+            // As tall as the text plus 2 px, centered on the line.
+            let height = (text_size + px(2.0)).min(line_height);
             window.paint_quad(fill(
                 Bounds::new(
-                    point(bounds.left() + x, bounds.top() + px(4.0)),
-                    size(px(1.5), line_height - px(8.0)),
+                    point(
+                        bounds.left() + x,
+                        bounds.top() + (line_height - height) / 2.0,
+                    ),
+                    size(px(CARET_WIDTH), height),
                 ),
                 theme::accent(),
             ));
@@ -532,6 +620,7 @@ impl EntityInputHandler for TextField {
         self.marked = (!text.is_empty()).then(|| range.start..range.start + text.len());
         let caret = range.start + text.len();
         self.selection = caret..caret;
+        self.blink_anchor = Instant::now();
         cx.emit(FieldEvent::Changed);
         cx.notify();
     }
@@ -559,5 +648,18 @@ impl EntityInputHandler for TextField {
         _cx: &mut Context<Self>,
     ) -> Option<usize> {
         Some(self.to_utf16(self.index_for_point(point)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_caret_blinks_every_half_second_from_the_last_edit() {
+        assert!(caret_visible(Duration::ZERO));
+        assert!(caret_visible(Duration::from_millis(499)));
+        assert!(!caret_visible(Duration::from_millis(500)));
+        assert!(caret_visible(Duration::from_millis(1000)));
     }
 }

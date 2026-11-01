@@ -9,7 +9,7 @@
 mod filter;
 pub mod ops;
 mod render;
-mod reveal;
+pub(crate) mod reveal;
 pub mod tree;
 
 #[cfg(test)]

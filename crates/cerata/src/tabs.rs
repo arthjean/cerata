@@ -17,7 +17,6 @@ use serde::{Deserialize, Serialize};
 pub enum Location {
     File { path: PathBuf },
     Launcher,
-    Settings,
 }
 
 impl Location {
@@ -28,7 +27,7 @@ impl Location {
     pub fn path(&self) -> Option<&Path> {
         match self {
             Self::File { path } => Some(path),
-            Self::Launcher | Self::Settings => None,
+            Self::Launcher => None,
         }
     }
 
@@ -211,7 +210,6 @@ impl Tabs {
             }
             Location::File { path: current } if current == path => None,
             Location::File { .. } => Some(self.navigate(location)),
-            Location::Settings => Some(self.open_in_new_tab(path)),
         }
     }
 
@@ -231,21 +229,6 @@ impl Tabs {
 
     pub fn open_launcher(&mut self) {
         let tab = self.tab(Location::Launcher);
-        self.tabs.push(tab);
-        self.active = self.tabs.len() - 1;
-    }
-
-    /// Activates the settings tab, adding one if none exists.
-    pub fn open_settings(&mut self) {
-        if let Some(ix) = self
-            .tabs
-            .iter()
-            .position(|tab| tab.location == Location::Settings)
-        {
-            self.active = ix;
-            return;
-        }
-        let tab = self.tab(Location::Settings);
         self.tabs.push(tab);
         self.active = self.tabs.len() - 1;
     }
@@ -626,18 +609,6 @@ mod tests {
     }
 
     #[test]
-    fn settings_has_a_single_tab() {
-        let mut tabs = with_files(&["/a.md"]);
-        tabs.open_settings();
-        tabs.activate(0);
-        tabs.open_settings();
-        assert_eq!(tabs.tabs().len(), 2);
-        assert_eq!(tabs.active().location, Location::Settings);
-        tabs.open(&p("/b.md"));
-        assert_eq!(tabs.tabs().len(), 3, "a file never replaces settings");
-    }
-
-    #[test]
     fn cycling_wraps_around() {
         let mut tabs = with_files(&["/a.md", "/b.md"]);
         assert!(tabs.cycle(true));
@@ -721,7 +692,6 @@ mod tests {
     fn a_session_round_trips_and_unknown_kinds_are_dropped() {
         let mut tabs = with_files(&["/a.md", "/b.md"]);
         tabs.open(&p("/c.md"));
-        tabs.open_settings();
         tabs.activate(1);
         let mut session = tabs.to_session();
         session.tabs.insert(
@@ -735,15 +705,20 @@ mod tests {
                 forward: Vec::new(),
             },
         );
+        // Settings were a tab before they became a screen of their own.
+        session.tabs.push(SessionTab {
+            location: SerializedLocation {
+                kind: "settings".into(),
+                payload: serde_json::Map::new(),
+            },
+            back: Vec::new(),
+            forward: Vec::new(),
+        });
         session.active_index = Some(2);
         let restored = Tabs::from_session(&session);
         assert_eq!(
             locations(&restored),
-            [
-                Location::file("/a.md"),
-                Location::file("/c.md"),
-                Location::Settings
-            ]
+            [Location::file("/a.md"), Location::file("/c.md")]
         );
         assert_eq!(restored.active_index(), 1);
         assert_eq!(restored.tabs()[1].back, [Location::file("/b.md")]);

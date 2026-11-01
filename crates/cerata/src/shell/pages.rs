@@ -15,7 +15,6 @@ pub fn render(page: Page, cx: &mut Context<WindowView>) -> AnyElement {
         Page::Editor(editor) => editor.into_any_element(),
         Page::Loading { spinner } => centered(if spinner { "Loading…" } else { "" }),
         Page::Launcher => launcher(cx),
-        Page::Settings(panel) => panel.into_any_element(),
         Page::Welcome => welcome(cx),
     }
 }

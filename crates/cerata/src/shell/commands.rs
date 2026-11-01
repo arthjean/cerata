@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use cerata_core::fs::titles::extract_title;
 use cerata_core::settings::ConfigValue;
-use gpui::{AppContext as _, Context, PathPromptOptions, Window};
+use gpui::{AppContext as _, Context, Focusable as _, PathPromptOptions, Window};
 
 use super::{WindowView, file_name};
 use crate::palette::{Availability, Choice, Command, Intent, Palette, PaletteEvent, RecentFile};
@@ -234,8 +234,22 @@ impl WindowView {
         if self.chrome == Chrome::Compact {
             return;
         }
-        self.tabs.open_settings();
-        self.tabs_changed(window, cx);
+        self.ensure_settings_panel(window, cx);
+        self.settings_open = true;
+        if let Some(panel) = &self.settings_panel {
+            window.focus(&panel.focus_handle(cx), cx);
+        }
+        cx.notify();
+    }
+
+    /// Back to the app: the active tab gets the focus again.
+    pub fn close_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !std::mem::take(&mut self.settings_open) {
+            return;
+        }
+        self.sync_active(window, cx);
+        self.focus_page(window, cx);
+        cx.notify();
     }
 
     // ---- Zoom and theme ----

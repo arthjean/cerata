@@ -209,7 +209,6 @@ pub enum Page {
     Editor(Entity<Editor>),
     Loading { spinner: bool },
     Launcher,
-    Settings(Entity<crate::settings_panel::SettingsPanel>),
     Welcome,
 }
 
@@ -242,6 +241,9 @@ pub struct WindowView {
     _sidebar_filter_events: Subscription,
     pub palette: Option<Entity<crate::palette::Palette>>,
     pub settings_panel: Option<Entity<crate::settings_panel::SettingsPanel>>,
+    /// Settings replace the sidebar and the page until Back, Escape or a
+    /// tab change.
+    pub settings_open: bool,
     /// The compact window's open recents picker and its entries.
     pub recents_picker: Option<Vec<crate::palette::RecentFile>>,
     picker_focus: FocusHandle,
@@ -324,6 +326,7 @@ impl WindowView {
             palette: None,
             _palette_events: None,
             settings_panel: None,
+            settings_open: false,
             recents_picker: None,
             picker_focus: cx.focus_handle(),
             tab_menu: None,
@@ -609,16 +612,6 @@ impl WindowView {
         self.commit_setting(key, pending, cx);
     }
 
-    /// Removes `key` from the global config: its default applies once the
-    /// file is written.
-    pub fn reset_setting(&self, key: &str, cx: &mut Context<Self>) {
-        let pending = self
-            .core
-            .settings()
-            .begin_reset(key, cerata_core::settings::Layer::Global);
-        self.commit_setting(key, pending, cx);
-    }
-
     fn commit_setting(
         &self,
         key: &str,
@@ -659,23 +652,22 @@ impl WindowView {
         cx.notify();
     }
 
-    /// The settings tab's panel, created the first time it shows.
-    fn ensure_settings_panel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.settings_panel.is_some()
-            || !matches!(self.tabs.active().location, Location::Settings)
-        {
+    /// The settings panel, created the first time Settings open.
+    pub(super) fn ensure_settings_panel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.settings_panel.is_some() {
             return;
         }
         let state = self.core.clone();
         let panel = cx.new(|cx| crate::settings_panel::SettingsPanel::new(state, window, cx));
-        self._settings_events = Some(cx.subscribe(
+        self._settings_events = Some(cx.subscribe_in(
             &panel,
-            |this, _, event, cx| match event.clone() {
+            window,
+            |this, _, event, window, cx| match event.clone() {
                 crate::settings_panel::PanelEvent::Set(key, value) => {
                     this.write_setting(&key, value, cx);
                     this.setting_written(cx);
                 }
-                crate::settings_panel::PanelEvent::Reset(key) => this.reset_setting(&key, cx),
+                crate::settings_panel::PanelEvent::Close => this.close_settings(window, cx),
             },
         ));
         self.settings_panel = Some(panel);
@@ -1030,10 +1022,6 @@ impl WindowView {
                 Page::Welcome
             }
             Location::Launcher => Page::Launcher,
-            Location::Settings => match &self.settings_panel {
-                Some(panel) => Page::Settings(panel.clone()),
-                None => Page::Loading { spinner: false },
-            },
             Location::File { path } => match self.docs.get(path) {
                 Some(doc) if doc.loading_since.is_some() => Page::Loading {
                     spinner: doc.shows_spinner(std::time::Instant::now()),
@@ -1155,9 +1143,14 @@ impl WindowView {
         self.after_tabs_change(cx);
     }
 
+    /// Any tab change leaves Settings for the tab.
     fn tabs_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let leaving_settings = std::mem::take(&mut self.settings_open);
         self.after_tabs_change(cx);
         self.sync_active(window, cx);
+        if leaving_settings {
+            self.focus_page(window, cx);
+        }
     }
 
     fn after_tabs_change(&mut self, cx: &mut Context<Self>) {
@@ -1563,6 +1556,9 @@ impl WindowView {
 
     /// The window title (`window-title/index.tsx`).
     pub fn title(&self, cx: &App) -> String {
+        if self.settings_open {
+            return "Settings - Cerata".into();
+        }
         match &self.tabs.active().location {
             Location::File { path } => {
                 let name = file_name(path);
@@ -1576,7 +1572,6 @@ impl WindowView {
                     format!("{name} - Cerata")
                 }
             }
-            Location::Settings => "Settings - Cerata".into(),
             Location::Launcher if self.chrome == Chrome::Workspace && self.workspace.is_none() => {
                 "Cerata".into()
             }
@@ -1600,14 +1595,13 @@ impl Focusable for WindowView {
 impl Render for WindowView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // A file that finished loading becomes the active editor here.
-        if self.palette.is_none() && self.recents_picker.is_none() {
+        if self.palette.is_none() && self.recents_picker.is_none() && !self.settings_open {
             self.sync_active(window, cx);
         }
         if let Some(background) = self.background.take() {
             window.set_background_appearance(background);
         }
         window.set_window_title(&self.title(cx));
-        self.ensure_settings_panel(window, cx);
         let page = self.page(cx);
         let mut root = div()
             .id("shell")
@@ -1702,101 +1696,110 @@ impl Render for WindowView {
                 }));
             root = register_tab_jumps(root, cx);
         }
-        let mut main = div().flex().flex_col().flex_1().min_w_0().h_full();
-        let header = match self.chrome {
-            Chrome::Workspace if self.workspace.is_some() => {
-                Some(tab_bar::render(self, cx).into_any_element())
+        let settings = self
+            .settings_panel
+            .clone()
+            .filter(|_| self.settings_open && self.chrome == Chrome::Workspace);
+        let body = if let Some(panel) = settings {
+            div().flex().flex_1().min_h_0().w_full().child(panel)
+        } else {
+            let mut main = div().flex().flex_col().flex_1().min_w_0().h_full();
+            let header = match self.chrome {
+                Chrome::Workspace if self.workspace.is_some() => {
+                    Some(tab_bar::render(self, cx).into_any_element())
+                }
+                Chrome::Compact => Some(compact::render(self, cx)),
+                Chrome::Workspace => None,
+            };
+            let captions = title_bar::caption_buttons(window);
+            if header.is_some() || captions.is_some() {
+                let filler = header.is_none().then(|| div().flex_1());
+                main = main.child(
+                    title_bar::row("title-bar")
+                        .w_full()
+                        .border_b_1()
+                        .border_color(theme::border())
+                        .children(header)
+                        .children(filler)
+                        .children(captions),
+                );
             }
-            Chrome::Compact => Some(compact::render(self, cx)),
-            Chrome::Workspace => None,
-        };
-        let captions = title_bar::caption_buttons(window);
-        if header.is_some() || captions.is_some() {
-            let filler = header.is_none().then(|| div().flex_1());
-            main = main.child(
-                title_bar::row("title-bar")
-                    .w_full()
-                    .border_b_1()
-                    .border_color(theme::border())
-                    .children(header)
-                    .children(filler)
-                    .children(captions),
-            );
-        }
-        let mut content = div().relative().flex_1().min_h_0().w_full();
-        let mut comparing = None;
-        if let Some(doc) = self.active_doc() {
-            if let Some(conflict) = &doc.conflict {
-                content = content.child(banner::render(conflict, doc.compare, cx));
+            let mut content = div().relative().flex_1().min_h_0().w_full();
+            let mut comparing = None;
+            if let Some(doc) = self.active_doc() {
+                if let Some(conflict) = &doc.conflict {
+                    content = content.child(banner::render(conflict, doc.compare, cx));
+                }
+                if let (true, Some(Conflict::Modified { disk })) = (doc.compare, &doc.conflict) {
+                    let mine = doc.editor.read(cx).state.doc().to_owned();
+                    comparing = Some(banner::compare(disk, &mine));
+                }
             }
-            if let (true, Some(Conflict::Modified { disk })) = (doc.compare, &doc.conflict) {
-                let mine = doc.editor.read(cx).state.doc().to_owned();
-                comparing = Some(banner::compare(disk, &mine));
+            let editing = matches!(page, Page::Editor(_));
+            content = match comparing {
+                Some(compare) => content.child(compare),
+                None => content.child(pages::render(page, cx)),
+            };
+            main = main.child(content);
+            if editing && self.chrome == Chrome::Workspace {
+                main = main.children(status_bar::render(self, cx));
             }
-        }
-        let editing = matches!(page, Page::Editor(_));
-        content = match comparing {
-            Some(compare) => content.child(compare),
-            None => content.child(pages::render(page, cx)),
-        };
-        main = main.child(content);
-        if editing && self.chrome == Chrome::Workspace {
-            main = main.children(status_bar::render(self, cx));
-        }
 
-        let mut body = div().flex().flex_1().min_h_0().w_full();
-        if let (Some(sidebar), true) = (self.sidebar.clone(), self.sidebar_visible) {
-            body = body
-                .child(
-                    div()
-                        .flex_none()
-                        .w(px(self.sidebar_width))
-                        .h_full()
-                        .flex()
-                        .flex_col()
-                        .bg(theme::panel())
-                        .child(title_bar::wordmark())
-                        .child(div().flex_1().min_h_0().child(sidebar))
-                        .child(sidebar_footer::render(self, window, cx)),
-                )
-                .child(
-                    div()
-                        .id("sidebar-resize")
-                        .flex_none()
-                        .w(px(8.0))
-                        .ml(px(-4.0))
-                        .mr(px(-4.0))
-                        .h_full()
-                        .flex()
-                        .justify_center()
-                        .cursor(gpui::CursorStyle::ResizeLeftRight)
-                        .child(div().w(px(1.0)).h_full().bg(if self.resizing {
-                            theme::accent()
-                        } else {
-                            theme::border()
-                        }))
-                        .on_mouse_down(
-                            gpui::MouseButton::Left,
-                            cx.listener(|this, _, _, cx| {
-                                cx.stop_propagation();
-                                this.begin_resize(cx);
-                            }),
-                        ),
-                );
-            root = root
-                .on_mouse_move(
-                    cx.listener(|this, event: &gpui::MouseMoveEvent, window, cx| {
-                        if this.resizing {
-                            this.resize_sidebar(f32::from(event.position.x), window, cx);
-                        }
-                    }),
-                )
-                .on_mouse_up(
-                    gpui::MouseButton::Left,
-                    cx.listener(|this, _, _, cx| this.end_resize(cx)),
-                );
-        }
-        body = body.child(main);
+            let mut body = div().flex().flex_1().min_h_0().w_full();
+            if let (Some(sidebar), true) = (self.sidebar.clone(), self.sidebar_visible) {
+                body = body
+                    .child(
+                        div()
+                            .flex_none()
+                            .w(px(self.sidebar_width))
+                            .h_full()
+                            .flex()
+                            .flex_col()
+                            .bg(theme::panel())
+                            .child(title_bar::wordmark())
+                            .child(div().flex_1().min_h_0().child(sidebar))
+                            .child(sidebar_footer::render(self, window, cx)),
+                    )
+                    .child(
+                        div()
+                            .id("sidebar-resize")
+                            .flex_none()
+                            .w(px(8.0))
+                            .ml(px(-4.0))
+                            .mr(px(-4.0))
+                            .h_full()
+                            .flex()
+                            .justify_center()
+                            .cursor(gpui::CursorStyle::ResizeLeftRight)
+                            .child(div().w(px(1.0)).h_full().bg(if self.resizing {
+                                theme::accent()
+                            } else {
+                                theme::border()
+                            }))
+                            .on_mouse_down(
+                                gpui::MouseButton::Left,
+                                cx.listener(|this, _, _, cx| {
+                                    cx.stop_propagation();
+                                    this.begin_resize(cx);
+                                }),
+                            ),
+                    );
+                root = root
+                    .on_mouse_move(
+                        cx.listener(|this, event: &gpui::MouseMoveEvent, window, cx| {
+                            if this.resizing {
+                                this.resize_sidebar(f32::from(event.position.x), window, cx);
+                            }
+                        }),
+                    )
+                    .on_mouse_up(
+                        gpui::MouseButton::Left,
+                        cx.listener(|this, _, _, cx| this.end_resize(cx)),
+                    );
+            }
+            body = body.child(main);
+            body
+        };
         root.child(body)
             .children(pages::notice(self.notice.clone(), cx))
             .children(compact::overlay(self, cx))

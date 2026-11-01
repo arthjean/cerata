@@ -1191,21 +1191,17 @@ fn settings_panel(
     keys(cx, handle, secondary!(","));
     let vcx = VisualTestContext::from_window(handle.into(), cx);
     vcx.run_until_parked();
-    let panel = read(cx, handle, |view, _| view.settings_panel.clone())
-        .expect("the Settings tab shows the panel");
+    let panel =
+        read(cx, handle, |view, _| view.settings_panel.clone()).expect("Settings show the panel");
     (handle, panel)
 }
 
 #[gpui::test]
-fn settings_write_through_the_panel_and_reset_to_the_default(cx: &mut TestAppContext) {
+fn settings_write_through_the_panel(cx: &mut TestAppContext) {
     use cerata_core::settings::ConfigValue;
     let env = setup(cx);
     let (handle, panel) = settings_panel(cx, &env);
-    assert!(matches!(
-        read(cx, handle, |view, cx| view.page(cx)),
-        Page::Settings(_)
-    ));
-    assert!(!panel.read_with(cx, |p, _| p.is_modified("editor.font-size")));
+    assert!(read(cx, handle, |view, _| view.settings_open));
     let field = panel.read_with(cx, |p, _| p.fields["editor.font-size"].clone());
     field.update(cx, |field, cx| field.set_text("18", cx));
     panel.update(cx, |p, cx| p.commit_field("editor.font-size", cx));
@@ -1214,17 +1210,69 @@ fn settings_write_through_the_panel_and_reset_to_the_default(cx: &mut TestAppCon
         setting(cx, handle, "editor.font-size"),
         Some(ConfigValue::Number(18.0))
     );
-    assert!(
-        panel.read_with(cx, |p, _| p.is_modified("editor.font-size")),
-        "Reset shows"
-    );
     assert_eq!(read(cx, handle, |view, _| view.config.font_size), 18.0);
+}
 
-    panel.update(cx, |p, cx| p.reset("editor.font-size", cx));
-    wait_until(cx, |cx| {
-        setting(cx, handle, "editor.font-size") == Some(ConfigValue::Number(16.0))
+#[gpui::test]
+fn settings_replace_the_page_until_escape_or_a_tab_change(cx: &mut TestAppContext) {
+    let env = setup(cx);
+    let (handle, _) = settings_panel(cx, &env);
+    assert_eq!(
+        read(cx, handle, |view, cx| view.title(cx)),
+        "Settings - Cerata"
+    );
+    let tabs = read(cx, handle, |view, _| view.tabs.tabs().len());
+    assert_eq!(tabs, 1, "Settings are not a tab");
+    keys(cx, handle, "escape");
+    assert!(!read(cx, handle, |view, _| view.settings_open));
+    keys(cx, handle, secondary!(","));
+    assert!(read(cx, handle, |view, _| view.settings_open));
+    update(cx, handle, |view, window, cx| view.new_tab(window, cx));
+    assert!(
+        !read(cx, handle, |view, _| view.settings_open),
+        "a tab change goes back to the app"
+    );
+}
+
+#[gpui::test]
+fn a_settings_search_moves_to_the_first_page_it_keeps(cx: &mut TestAppContext) {
+    let env = setup(cx);
+    let (_, panel) = settings_panel(cx, &env);
+    assert_eq!(panel.read_with(cx, |p, _| p.page), "Appearance");
+    let search = panel.read_with(cx, |p, _| p.search.clone());
+    search.update(cx, |field, cx| field.set_text("tab size", cx));
+    panel.update(cx, |p, cx| p.query_changed(cx));
+    assert_eq!(panel.read_with(cx, |p, _| p.page), "Editor");
+}
+
+#[gpui::test]
+fn a_select_opens_on_its_value_and_writes_the_chosen_option(cx: &mut TestAppContext) {
+    use cerata_core::settings::ConfigValue;
+    let env = setup(cx);
+    let (handle, panel) = settings_panel(cx, &env);
+    let key = "appearance.theme";
+    panel.update(cx, |p, cx| p.toggle_select(key, cx));
+    let (options, selected) = panel.read_with(cx, |p, _| {
+        let popup = p.select.as_ref().expect("the popup is open");
+        (popup.options.clone(), popup.selected)
     });
-    assert!(!panel.read_with(cx, |p, _| p.is_modified("editor.font-size")));
+    let current = setting(cx, handle, key).and_then(|v| v.as_str().map(str::to_owned));
+    assert_eq!(
+        selected.map(|ix| options[ix].to_string()),
+        current,
+        "the setting's option is the chosen one"
+    );
+    panel.update(cx, |p, cx| p.toggle_select(key, cx));
+    assert!(
+        panel.read_with(cx, |p, _| p.select.is_none()),
+        "a second press closes"
+    );
+    panel.update(cx, |p, cx| p.choose_option(key, "dark", cx));
+    cx.run_until_parked();
+    assert_eq!(
+        setting(cx, handle, key),
+        Some(ConfigValue::String("dark".into()))
+    );
 }
 
 #[gpui::test]
