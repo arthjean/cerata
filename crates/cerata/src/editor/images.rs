@@ -12,9 +12,10 @@ use std::io::{Cursor, Read as _};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-#[cfg(test)]
-use gpui::InteractiveElement as _;
-use gpui::{AnyElement, Image, ImageFormat, IntoElement, ParentElement, Styled, div, img, px};
+use gpui::{
+    AnyElement, Image, ImageFormat, InteractiveElement as _, IntoElement, ParentElement,
+    SharedString, StatefulInteractiveElement as _, Styled, div, img, px,
+};
 
 use super::layout::ImageBox;
 use super::theme;
@@ -36,6 +37,20 @@ pub enum Source {
     Local(PathBuf),
     Remote(String),
     Data(Vec<u8>),
+    /// An image embed (`![[pic.png]]`), found in the background, then read
+    /// like a local image inside `confine`.
+    Embed {
+        target: String,
+        workspace: Option<PathBuf>,
+        note_dir: Option<PathBuf>,
+        confine: Option<PathBuf>,
+    },
+}
+
+/// The key an image embed's entry is kept under: never a destination
+/// (`[[` cannot start one).
+pub fn embed_key(target: &str) -> String {
+    format!("\u{1}wiki:{target}")
 }
 
 /// The source an image destination loads from, relative to the note's
@@ -93,7 +108,7 @@ fn names_network_path(path: &Path) -> bool {
     let mut chars = s.chars();
     matches!(
         (chars.next(), chars.next()),
-        (Some('/' | '\\'), Some('/' | '\\'))
+        (Some('/' | '\\'), Some('/' | '\\' | '?'))
     )
 }
 
@@ -285,19 +300,63 @@ pub struct LoadJob {
 /// A job's url, with the image's natural size and what to draw, if it loaded.
 pub type LoadResult = (String, Option<((f32, f32), Loaded)>);
 
+/// A local image's size and what to draw.
+fn local_loaded(path: PathBuf) -> Option<((f32, f32), Loaded)> {
+    read_prefix(&path, 64 * 1024).and_then(|header| {
+        if is_svg(&header) {
+            // GPUI would read the file itself: an SVG is checked like an
+            // inline or remote one and handed over as bytes.
+            read_prefix(&path, MAX_SVG_BYTES).and_then(bytes_loaded)
+        } else {
+            natural_size(&header).map(|size| (size, Loaded::Path(path)))
+        }
+    })
+}
+
+/// The file an image embed shows, found as Writer finds it
+/// (`cerata_core::links::resolve_wiki_image`) and kept inside `confine`.
+fn embed_path(
+    target: &str,
+    workspace: Option<&Path>,
+    note_dir: Option<&Path>,
+    confine: Option<&Path>,
+) -> Option<PathBuf> {
+    let slash = |p: &Path| p.to_string_lossy().replace('\\', "/");
+    let (root, dir) = (workspace.map(slash), note_dir.map(slash));
+    let exists = |p: &str| Path::new(p).is_file();
+    let find = |root: &str, name: &str| {
+        cerata_core::index::find_file_by_name(Path::new(root), name).map(|p| slash(&p))
+    };
+    let found = cerata_core::links::resolve_wiki_image(
+        target,
+        root.as_deref(),
+        dir.as_deref(),
+        &exists,
+        &find,
+    )?;
+    let real = std::fs::canonicalize(&found).ok()?;
+    confine
+        .is_some_and(|root| real.starts_with(root) && real.is_file())
+        .then_some(real)
+}
+
 impl LoadJob {
     /// Reads the image's header (and, when remote or inline, its bytes).
     pub fn run(self) -> LoadResult {
         let result = match self.source {
-            Source::Local(path) => read_prefix(&path, 64 * 1024).and_then(|header| {
-                if is_svg(&header) {
-                    // GPUI would read the file itself: an SVG is checked
-                    // like an inline or remote one and handed over as bytes.
-                    read_prefix(&path, MAX_SVG_BYTES).and_then(bytes_loaded)
-                } else {
-                    natural_size(&header).map(|size| (size, Loaded::Path(path)))
-                }
-            }),
+            Source::Local(path) => local_loaded(path),
+            Source::Embed {
+                target,
+                workspace,
+                note_dir,
+                confine,
+            } => embed_path(
+                &target,
+                workspace.as_deref(),
+                note_dir.as_deref(),
+                confine.as_deref(),
+            )
+            .and_then(local_loaded),
             Source::Remote(url) => fetch(&url).and_then(bytes_loaded),
             Source::Data(bytes) => bytes_loaded(bytes),
         };
@@ -353,6 +412,8 @@ pub struct ImageHost {
     /// The canonical folder local images must be inside (FR-13): the
     /// workspace root, else the note's folder.
     root: Option<PathBuf>,
+    /// The workspace root, where image embeds are also looked for.
+    workspace: Option<PathBuf>,
     entries: HashMap<String, Entry>,
     /// Height per (destination, display width): what the line reserves
     /// before the image is measured again (Writer's `imageHeightCache`).
@@ -374,6 +435,7 @@ impl ImageHost {
     /// note's folder.
     pub fn set_root(&mut self, root: &Path) {
         self.root = std::fs::canonicalize(root).ok();
+        self.workspace = Some(root.to_path_buf());
         self.entries.clear();
     }
 
@@ -383,10 +445,6 @@ impl ImageHost {
             return false;
         };
         real.starts_with(root) && real.is_file()
-    }
-
-    pub fn note_dir(&self) -> Option<&Path> {
-        self.note_dir.as_deref()
     }
 
     /// The box of the image at `url` in a column `width` wide, and a load
@@ -399,11 +457,44 @@ impl ImageHost {
         width: f32,
         row_height: f32,
     ) -> (ImageBox, Option<LoadJob>) {
+        let source = |host: &Self| match resolve(host.note_dir.as_deref(), url) {
+            Some(Source::Local(path)) if !host.loadable(&path) => None,
+            source => source,
+        };
+        self.sized(url, source, width, row_height)
+    }
+
+    /// [`ImageHost::image_box`] for an image embed (`![[target]]`), found
+    /// in the background; until then it keeps its estimated height, and a
+    /// target found nowhere shows its source.
+    pub fn embed_box(
+        &mut self,
+        target: &str,
+        width: f32,
+        row_height: f32,
+    ) -> (ImageBox, Option<LoadJob>) {
+        let source = |host: &Self| {
+            Some(Source::Embed {
+                target: target.to_owned(),
+                workspace: host.workspace.clone(),
+                note_dir: host.note_dir.clone(),
+                confine: host.root.clone(),
+            })
+        };
+        self.sized(&embed_key(target), source, width, row_height)
+    }
+
+    fn sized(
+        &mut self,
+        url: &str,
+        source: impl FnOnce(&Self) -> Option<Source>,
+        width: f32,
+        row_height: f32,
+    ) -> (ImageBox, Option<LoadJob>) {
         let mut job = None;
         if !self.entries.contains_key(url) {
-            let entry = match resolve(self.note_dir.as_deref(), url) {
+            let entry = match source(self) {
                 None => Entry::Unavailable,
-                Some(Source::Local(path)) if !self.loadable(&path) => Entry::Unavailable,
                 Some(source) => {
                     job = Some(LoadJob {
                         url: url.to_owned(),
@@ -438,8 +529,11 @@ impl ImageHost {
     /// A load finished; `true` when the image's size is now known.
     pub fn finish(&mut self, url: String, result: Option<((f32, f32), Loaded)>) -> bool {
         let ready = result.is_some();
+        let embed = url.starts_with(&embed_key(""));
         let entry = match result {
             Some((natural, data)) => Entry::Ready { natural, data },
+            // An embed found nowhere shows its source (`ImageEmbedWidget`).
+            None if embed => Entry::Unavailable,
             None => Entry::Failed,
         };
         self.entries.insert(url, entry);
@@ -448,12 +542,18 @@ impl ImageHost {
 
     /// The element drawn for the image at `url`, `width` by `height`.
     pub fn element(&self, url: &str, width: f32, height: f32, id: String) -> AnyElement {
-        let frame = div();
+        let name = accessible_name(url);
+        let frame = div().id(SharedString::from(id.clone()));
         #[cfg(test)]
         let frame = frame.debug_selector(move || id);
         #[cfg(not(test))]
         let _ = id;
-        let frame = frame.w(px(width)).h(px(height)).rounded(px(4.0));
+        let frame = frame
+            .role(gpui::Role::Image)
+            .aria_label(name)
+            .w(px(width))
+            .h(px(height))
+            .rounded(px(4.0));
         match self.entries.get(url) {
             Some(Entry::Ready {
                 data: Loaded::Path(path),
@@ -539,9 +639,47 @@ pub fn markdown_destination(path: &str) -> String {
     }
 }
 
+/// An image's accessible name: its file name, as a browser names an
+/// `<img>` with no alt.
+fn accessible_name(url: &str) -> String {
+    let path = url.strip_prefix(embed_key("").as_str()).unwrap_or(url);
+    path.rsplit(['/', '\\']).next().unwrap_or(path).to_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn images_are_named_by_their_file() {
+        assert_eq!(accessible_name(&embed_key("assets/pic.png")), "pic.png");
+        assert_eq!(accessible_name("https://example.com/a/b.jpg"), "b.jpg");
+        assert_eq!(accessible_name("C:\\notes\\shot.png"), "shot.png");
+        assert_eq!(accessible_name("plain.gif"), "plain.gif");
+    }
+
+    /// `paths.test.ts:102-110`: a written destination with spaces goes in
+    /// angle brackets; one without is left as is.
+    #[test]
+    fn written_destinations_bracket_spaces() {
+        assert_eq!(
+            markdown_destination("Writer TODOs-assets/image.png"),
+            "<Writer TODOs-assets/image.png>"
+        );
+        assert_eq!(
+            markdown_destination("note-assets/image.png"),
+            "note-assets/image.png"
+        );
+        assert_eq!(markdown_destination("a <b>.png"), "<a %3Cb%3E.png>");
+    }
+
+    /// `\\?\` and `\??\` name device paths: never touched.
+    #[test]
+    fn device_paths_are_network_paths() {
+        assert!(names_network_path(Path::new(r"\\?\UNC\host\share\x.png")));
+        assert!(names_network_path(Path::new(r"\??\UNC\host\share\x.png")));
+        assert!(!names_network_path(Path::new(r"C:\pics\x.png")));
+    }
 
     #[test]
     fn destinations_resolve_by_scheme() {

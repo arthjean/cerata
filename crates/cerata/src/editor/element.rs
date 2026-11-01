@@ -14,6 +14,7 @@ use gpui::{
 
 use super::code_scroll::{THUMB_HEIGHT, THUMB_INSET};
 use super::layout::{BlockKind, CODE_PADDING, LaidLine, Marker, QUOTE_BAR_WIDTH};
+use super::math::{self, MathState};
 use super::mouse::ThumbHit;
 use super::{Editor, LAYOUT_MARGIN, SCROLLBAR_WIDTH, theme};
 
@@ -48,6 +49,15 @@ pub struct FrameRecord {
 struct Painted {
     line: LaidLine,
     top: Pixels,
+}
+
+/// A block element waiting for its layout.
+struct PendingBlock {
+    element: AnyElement,
+    origin: Point<Pixels>,
+    size: gpui::Size<Pixels>,
+    /// The rich block it draws, whose height is measured.
+    rich: Option<cerata_markdown::Widget>,
 }
 
 pub struct PrepaintState {
@@ -290,6 +300,7 @@ impl Element for EditorElement {
                 }
             }
             editor.start_loads(jobs, cx);
+            editor.start_math(cx);
 
             let viewport = editor.viewport.unwrap_or(super::Viewport {
                 bounds,
@@ -337,6 +348,24 @@ impl Element for EditorElement {
                     }
                 }
                 for r in editor.state.selection().ranges() {
+                    // After a diagram: on its right edge. Its hidden source
+                    // lines draw no caret.
+                    if let Some(block) = &painted.line.block
+                        && block.atomic_end == Some(r.head)
+                        && r.is_empty()
+                    {
+                        carets.push(Bounds::new(
+                            point(
+                                column_left + px(block.width - 2.0),
+                                painted.top + px(block.top),
+                            ),
+                            size(px(2.0), px(block.height)),
+                        ));
+                        continue;
+                    }
+                    if painted.line.height <= 0.0 {
+                        continue;
+                    }
                     if editor.marked_range.is_none() || r.is_empty() {
                         let on_this_line =
                             painted.line.start <= r.head && r.head <= painted.line.end();
@@ -462,17 +491,106 @@ impl Element for EditorElement {
             }
 
             let mut blocks = Vec::new();
+            let style = editor.block_style(window);
             for painted in &lines {
+                let line = &painted.line;
+                for (i, formula) in line.inline_math.iter().enumerate() {
+                    let start = line.display.to_display(formula.range.start);
+                    let end = line.display.to_display(formula.range.end);
+                    let (Some(from), Some(to)) = (x_in_line(line, start), x_in_line(line, end))
+                    else {
+                        continue;
+                    };
+                    let row_top = painted.top + px(line.text_top) + from.y;
+                    let row_height = line.metrics.row_height;
+                    let span = if (to.y - from.y).abs() < px(1.0) {
+                        (to.x - from.x).as_f32()
+                    } else {
+                        0.0
+                    };
+                    match &formula.state {
+                        MathState::Ready(svg) => {
+                            // On the text's baseline, centered in its spaces.
+                            let baseline =
+                                row_top + px(row_height / 2.0 + line.metrics.font_size * 0.3);
+                            let top = baseline + px(svg.descent - svg.height);
+                            let left =
+                                column_left + from.x + px(((span - svg.width) / 2.0).max(0.0));
+                            let picture = gpui::img(editor.math.image(svg))
+                                .w(px(svg.width))
+                                .h(px(svg.height));
+                            #[cfg(test)]
+                            let picture =
+                                picture.debug_selector(move || format!("math-inline-{i}"));
+                            blocks.push(PendingBlock {
+                                element: picture.into_any_element(),
+                                origin: point(left, top),
+                                size: size(px(svg.width), px(svg.height)),
+                                rich: None,
+                            });
+                        }
+                        MathState::Error(message) => {
+                            // A box over the red source holds the error's
+                            // tooltip; clicks go through to the text.
+                            let width = if span > 0.0 { span } else { 200.0 };
+                            let message = gpui::SharedString::from(message.to_string());
+                            let tip = gpui::div()
+                                .id(ElementId::NamedInteger(
+                                    "math-inline-error".into(),
+                                    (line.ix * 64 + i) as u64,
+                                ))
+                                .size_full()
+                                .tooltip(math::tooltip(message));
+                            #[cfg(test)]
+                            let tip = tip.debug_selector(move || format!("math-inline-error-{i}"));
+                            blocks.push(PendingBlock {
+                                element: tip.into_any_element(),
+                                origin: point(column_left + from.x, row_top),
+                                size: size(px(width), px(row_height)),
+                                rich: None,
+                            });
+                        }
+                        MathState::Pending => {}
+                    }
+                }
                 let Some(block) = &painted.line.block else {
                     continue;
                 };
-                if let BlockKind::Image { url } = &block.kind {
-                    let id = format!("editor-image-{}", painted.line.ix);
-                    blocks.push((
-                        editor.images.element(url, block.width, block.height, id),
-                        point(column_left, painted.top + px(block.top)),
-                        size(px(block.width), px(block.height)),
-                    ));
+                let origin = point(column_left, painted.top + px(block.top));
+                let block_size = size(px(block.width), px(block.height));
+                match &block.kind {
+                    BlockKind::Image { url } => {
+                        let id = format!("editor-image-{}", painted.line.ix);
+                        blocks.push(PendingBlock {
+                            element: editor.images.element(url, block.width, block.height, id),
+                            origin,
+                            size: block_size,
+                            rich: None,
+                        });
+                    }
+                    BlockKind::Rich(widget) => {
+                        let element =
+                            match widget {
+                                cerata_markdown::Widget::Frontmatter => {
+                                    editor.frontmatter.clone().into_any_element()
+                                }
+                                cerata_markdown::Widget::Html { source } => {
+                                    editor.html_element(source, block.width, &style, window, cx)
+                                }
+                                cerata_markdown::Widget::Math { tex, display } => editor
+                                    .math_block(tex, *display, block.width, &style, window, cx),
+                                cerata_markdown::Widget::Mermaid { source } => editor
+                                    .mermaid_element(source, painted.line.start, block.width, cx),
+                                _ => editor.rich.element(widget, block.width, &style, window, cx),
+                            };
+                        blocks.push(PendingBlock {
+                            element,
+                            origin,
+                            size: block_size,
+                            rich: Some(widget.clone()),
+                        });
+                    }
+                    BlockKind::Rule => {}
                 }
             }
             (
@@ -489,17 +607,37 @@ impl Element for EditorElement {
         });
 
         let mut elements = Vec::new();
-        for (mut element, origin, block_size) in blocks {
-            element.layout_as_root(
-                size(
-                    AvailableSpace::Definite(block_size.width),
-                    AvailableSpace::Definite(block_size.height),
-                ),
+        let mut remeasured = false;
+        for mut block in blocks {
+            // A rich block takes its natural height: when it differs from
+            // the height its line reserved, the next frame lays the line
+            // out again at the measured height.
+            let height = if block.rich.is_some() {
+                AvailableSpace::MinContent
+            } else {
+                AvailableSpace::Definite(block.size.height)
+            };
+            let measured = block.element.layout_as_root(
+                size(AvailableSpace::Definite(block.size.width), height),
                 window,
                 cx,
             );
-            element.prepaint_at(origin, window, cx);
-            elements.push(element);
+            if let Some(widget) = &block.rich {
+                let width = block.size.width.as_f32();
+                let height = measured.height.as_f32().ceil();
+                let changed = self
+                    .editor
+                    .update(cx, |editor, _| editor.rich.record(widget, width, height));
+                remeasured |= changed && (height - block.size.height.as_f32()).abs() > 0.5;
+            }
+            block.element.prepaint_at(block.origin, window, cx);
+            elements.push(block.element);
+        }
+        if remeasured {
+            // A notify while drawing is dropped (`invalidate_view` outside
+            // `DrawPhase::None`): ask again once this frame is done.
+            let editor = self.editor.clone();
+            window.on_next_frame(move |_, cx| editor.update(cx, |_, cx| cx.notify()));
         }
 
         PrepaintState {
@@ -600,13 +738,18 @@ fn paint_chrome(painted: &Painted, left: Pixels, width: Pixels, window: &mut Win
     let line = &painted.line;
     let top = painted.top;
     let height = px(line.height);
-    if let Some(code) = &line.code {
+    let panel = line
+        .code
+        .as_ref()
+        .map(|code| (code.first, code.last))
+        .or(line.table_source);
+    if let Some((first, last)) = panel {
         let radius = px(6.0);
         let corners = Corners {
-            top_left: if code.first { radius } else { px(0.0) },
-            top_right: if code.first { radius } else { px(0.0) },
-            bottom_left: if code.last { radius } else { px(0.0) },
-            bottom_right: if code.last { radius } else { px(0.0) },
+            top_left: if first { radius } else { px(0.0) },
+            top_right: if first { radius } else { px(0.0) },
+            bottom_left: if last { radius } else { px(0.0) },
+            bottom_right: if last { radius } else { px(0.0) },
         };
         window.paint_quad(quad(
             Bounds::new(point(left, top), size(width, height)),

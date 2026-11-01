@@ -89,7 +89,7 @@ fn prefix_zone(line: &LaidLine, text: &str, x: f32) -> Option<usize> {
 
 impl Editor {
     /// The document line and the scroll-space y under a window point.
-    fn line_at_point(&self, position: Point<Pixels>) -> Option<(usize, f64)> {
+    pub(super) fn line_at_point(&self, position: Point<Pixels>) -> Option<(usize, f64)> {
         let viewport = self.viewport?;
         let y = self.scroll_top()
             + (position.y - viewport.bounds.top() - px(TOP_INSET)).as_f32() as f64;
@@ -244,6 +244,14 @@ impl Editor {
             2 => Unit::Word,
             _ => Unit::Line,
         };
+        // A click on a link's text follows it, the caret stays.
+        if unit == Unit::Char
+            && !event.modifiers.shift
+            && let Some(target) = self.link_hit(event.position, window, cx)
+        {
+            self.follow_link(target, window, cx);
+            return;
+        }
         // A click on a widget with no selection selects its whole
         // decoration, anchored at its end.
         if unit == Unit::Char

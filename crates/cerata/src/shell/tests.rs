@@ -1817,3 +1817,346 @@ fn closing_without_a_workspace_does_nothing(cx: &mut TestAppContext) {
     assert_eq!(state(cx), before);
     assert!(read(cx, handle, |view, _| view.core.runtime().is_none()));
 }
+
+// ---- US-033: links and wiki links ----
+
+mod links {
+    use super::*;
+    use gpui::{Entity, Modifiers, MouseButton, MouseDownEvent, MouseUpEvent, point, px};
+
+    use crate::editor::Editor;
+
+    fn editor(cx: &mut TestAppContext, handle: WindowHandle<WindowView>) -> Entity<Editor> {
+        read(cx, handle, |view, _| {
+            view.active_doc().unwrap().editor.clone()
+        })
+    }
+
+    /// Clicks just right of the caret position `pos` of the active note.
+    fn click(cx: &mut TestAppContext, handle: WindowHandle<WindowView>, pos: usize) {
+        let editor = editor(cx, handle);
+        let mut vcx = VisualTestContext::from_window(handle.into(), cx);
+        let at = editor.update_in(&mut vcx, |editor, window, cx| {
+            let caret = editor.caret_bounds(pos, window, cx).expect("caret");
+            point(
+                caret.origin.x + px(0.5),
+                caret.origin.y + caret.size.height / 2.0,
+            )
+        });
+        vcx.simulate_event(MouseDownEvent {
+            button: MouseButton::Left,
+            position: at,
+            modifiers: Modifiers::default(),
+            click_count: 1,
+            first_mouse: false,
+        });
+        vcx.simulate_event(MouseUpEvent {
+            button: MouseButton::Left,
+            position: at,
+            modifiers: Modifiers::default(),
+            click_count: 1,
+        });
+        vcx.run_until_parked();
+    }
+
+    fn set_cursor(cx: &mut TestAppContext, handle: WindowHandle<WindowView>, pos: usize) {
+        let editor = editor(cx, handle);
+        update(cx, handle, |_, _, cx| {
+            editor.update(cx, |e, cx| {
+                e.select(cerata_markdown::Selection::cursor(pos), cx)
+            });
+        });
+    }
+
+    fn notice(cx: &mut TestAppContext, handle: WindowHandle<WindowView>) -> Option<String> {
+        let editor = editor(cx, handle);
+        cx.update(|cx| editor.read(cx).notice.as_ref().map(|n| n.to_string()))
+    }
+
+    fn active_path(cx: &mut TestAppContext, handle: WindowHandle<WindowView>) -> Option<PathBuf> {
+        read(cx, handle, |view, cx| {
+            view.active_doc()?.editor.read(cx).path.clone()
+        })
+    }
+
+    fn doc(cx: &mut TestAppContext, handle: WindowHandle<WindowView>) -> String {
+        let editor = editor(cx, handle);
+        cx.update(|cx| editor.read(cx).state.doc().to_owned())
+    }
+
+    fn roadmap() -> String {
+        let mut text = String::from("# Roadmap\n\n");
+        for i in 0..80 {
+            text.push_str(&format!("Line {i}\n\n"));
+        }
+        text.push_str("## Later work\n\n");
+        for i in 0..80 {
+            text.push_str(&format!("After {i}\n\n"));
+        }
+        text
+    }
+
+    /// A click on a folded wiki link opens the note it names, at the heading
+    /// its fragment names, in the same window.
+    #[gpui::test]
+    fn a_wiki_link_opens_its_note_at_its_heading(cx: &mut TestAppContext) {
+        let env = setup(cx);
+        let target = env.file("projects/Roadmap.md", &roadmap());
+        let note = "see [[Roadmap#Later work|the plan]] here\n\nend";
+        let a = env.file("a.md", note);
+        let handle = workspace(cx, &env);
+        wait_for_index(cx, handle);
+        update(cx, handle, |view, window, cx| {
+            view.open_file(&a, window, cx)
+        });
+        set_cursor(cx, handle, note.len());
+
+        click(cx, handle, note.find("[[").unwrap());
+        wait_until(cx, |cx| {
+            active_path(cx, handle).is_some_and(|p| p.ends_with("Roadmap.md"))
+                && doc(cx, handle).contains("## Later")
+        });
+        assert_eq!(
+            std::fs::canonicalize(active_path(cx, handle).unwrap()).unwrap(),
+            std::fs::canonicalize(&target).unwrap()
+        );
+        assert_eq!(windows(cx).len(), 1, "same window");
+        let editor = editor(cx, handle);
+        let mut vcx = VisualTestContext::from_window(handle.into(), cx);
+        vcx.run_until_parked();
+        let (scroll, heading_top) = editor.update_in(&mut vcx, |editor, window, cx| {
+            let pos = editor.state.doc().find("## Later").unwrap();
+            let ix = editor.state.text().line_at(pos).number;
+            editor.layout_line(ix, window, cx);
+            (editor.scroll_top(), editor.heights.prefix(ix))
+        });
+        assert!(scroll > 0.0, "scrolled to the heading");
+        assert!(
+            (heading_top - scroll - crate::editor::SAFE_MARGIN).abs() < 1.0,
+            "heading at the safe top: {heading_top} - {scroll}"
+        );
+    }
+
+    /// A missing note or heading shows a notice; nothing is created.
+    #[gpui::test]
+    fn a_missing_note_or_heading_shows_a_notice(cx: &mut TestAppContext) {
+        let env = setup(cx);
+        let note = "[[Nowhere]] and [this](#nope) here\n\n# Title\n\nend";
+        let a = env.file("a.md", note);
+        let handle = workspace(cx, &env);
+        wait_for_index(cx, handle);
+        update(cx, handle, |view, window, cx| {
+            view.open_file(&a, window, cx)
+        });
+        set_cursor(cx, handle, note.len());
+
+        click(cx, handle, note.find("[[").unwrap());
+        assert_eq!(
+            notice(cx, handle).as_deref(),
+            Some("Note not found: Nowhere")
+        );
+        assert!(!env.root().join("Nowhere.md").exists());
+        assert!(active_path(cx, handle).unwrap().ends_with("a.md"));
+
+        click(cx, handle, note.find("[this").unwrap() + 1);
+        assert_eq!(
+            notice(cx, handle).as_deref(),
+            Some("Heading \"#nope\" not found in this note")
+        );
+    }
+
+    /// US-038 from the keyboard: Ctrl+M lets Tab leave the text, a rail
+    /// mark takes the focus, Enter jumps to its heading and Shift+F10 opens
+    /// its menu; Ctrl+M again makes Tab indent.
+    #[gpui::test]
+    fn the_rail_works_from_the_keyboard(cx: &mut TestAppContext) {
+        let env = setup(cx);
+        let mut note = String::new();
+        for i in 0..6 {
+            note.push_str(&format!("## Section {i}\n\n"));
+            for j in 0..30 {
+                note.push_str(&format!("Paragraph {j} of section {i}.\n\n"));
+            }
+        }
+        let a = env.file("a.md", &note);
+        let handle = workspace(cx, &env);
+        update(cx, handle, |view, window, cx| {
+            view.open_file(&a, window, cx)
+        });
+        set_cursor(cx, handle, note.len());
+        let editor = editor(cx, handle);
+        let bottom = cx.update(|cx| editor.read(cx).scroll_top());
+        assert!(bottom > 0.0);
+        let toggle = if cfg!(target_os = "macos") {
+            "alt-shift-m"
+        } else {
+            "ctrl-m"
+        };
+        keys(cx, handle, toggle);
+        keys(cx, handle, "tab");
+        let left = update(cx, handle, |_, window, cx| {
+            !editor.read(cx).focus_handle.is_focused(window)
+        });
+        assert!(left, "Tab left the text");
+
+        assert_eq!(doc(cx, handle), note, "nothing indented");
+        // A key press as the OS sends it: down, then up (the click).
+        let mut vcx = VisualTestContext::from_window(handle.into(), cx);
+        let enter = gpui::Keystroke::parse("enter").unwrap();
+        vcx.simulate_event(gpui::KeyDownEvent {
+            keystroke: enter.clone(),
+            is_held: false,
+            prefer_character_input: false,
+        });
+        vcx.simulate_event(gpui::KeyUpEvent { keystroke: enter });
+        vcx.run_until_parked();
+        assert_eq!(doc(cx, handle), note);
+        let jumped = cx.update(|cx| editor.read(cx).scroll_top());
+        assert!(
+            jumped < bottom,
+            "Enter jumped to the first heading: {jumped}"
+        );
+        keys(cx, handle, "shift-f10");
+        let link = cx.update(|cx| editor.read(cx).menu.as_ref().map(|m| m.items.clone()));
+        let link = format!("{link:?}");
+        assert!(
+            link.contains("CopyLink(\"[Section 0](#section-0)\")"),
+            "Shift+F10 opens the mark's menu: {link}"
+        );
+        // Enter runs it, without jumping again.
+        update(cx, handle, |_, _, cx| {
+            let editor = editor.clone();
+            editor.update(cx, |e, _| e.set_scroll_top(500.0));
+        });
+        let mut vcx = VisualTestContext::from_window(handle.into(), cx);
+        let enter = gpui::Keystroke::parse("enter").unwrap();
+        vcx.simulate_event(gpui::KeyDownEvent {
+            keystroke: enter.clone(),
+            is_held: false,
+            prefer_character_input: false,
+        });
+        vcx.simulate_event(gpui::KeyUpEvent { keystroke: enter });
+        vcx.run_until_parked();
+        assert!(cx.update(|cx| editor.read(cx).menu.is_none()));
+        assert_eq!(
+            cx.update(|cx| cx.read_from_clipboard().and_then(|i| i.text()))
+                .as_deref(),
+            Some("[Section 0](#section-0)")
+        );
+        assert_eq!(
+            cx.update(|cx| editor.read(cx).scroll_top()),
+            500.0,
+            "no jump"
+        );
+        keys(cx, handle, "shift-f10 escape");
+        assert!(
+            cx.update(|cx| editor.read(cx).menu.is_none()),
+            "Escape closes it"
+        );
+
+        update(cx, handle, |_, window, cx| {
+            let handle = editor.read(cx).focus_handle.clone();
+            window.focus(&handle, cx);
+        });
+        set_cursor(cx, handle, 0);
+        keys(cx, handle, toggle);
+        keys(cx, handle, "tab");
+        let after = doc(cx, handle);
+
+        assert!(
+            after.starts_with("\t## Section 0"),
+            "Tab indents again: {:?}",
+            &after[..20]
+        );
+    }
+
+    fn completion(
+        cx: &mut TestAppContext,
+        handle: WindowHandle<WindowView>,
+    ) -> Option<crate::editor::complete::Completion> {
+        let editor = editor(cx, handle);
+        cx.update(|cx| editor.read(cx).completion.clone())
+    }
+
+    fn input(cx: &mut TestAppContext, handle: WindowHandle<WindowView>, text: &str) {
+        let mut vcx = VisualTestContext::from_window(handle.into(), cx);
+        vcx.simulate_input(text);
+        vcx.run_until_parked();
+    }
+
+    /// `[[` and a non-blank character list 20 notes (name, folder); Enter
+    /// writes the name and `]]`, absorbing the `]]` already there.
+    #[gpui::test]
+    fn wiki_completion_lists_twenty_notes_and_absorbs_the_brackets(cx: &mut TestAppContext) {
+        let env = setup(cx);
+        for i in 0..25 {
+            env.file(&format!("notes/Note {i:02}.md"), "x");
+        }
+        env.file("projects/Roadmap.md", "r");
+        let a = env.file("a.md", "\n");
+        let handle = workspace(cx, &env);
+        wait_for_index(cx, handle);
+        update(cx, handle, |view, window, cx| {
+            view.open_file(&a, window, cx)
+        });
+        set_cursor(cx, handle, 0);
+
+        input(cx, handle, "[[");
+        assert!(
+            completion(cx, handle).is_none(),
+            "nothing before a character"
+        );
+        input(cx, handle, " ");
+        assert!(
+            completion(cx, handle).is_none(),
+            "nothing for a blank query"
+        );
+        keys(cx, handle, "backspace");
+        input(cx, handle, "Note");
+        let list = completion(cx, handle).expect("open after typing");
+        assert_eq!(list.items.len(), 20);
+        assert_eq!(list.items[0].folder, "notes");
+        keys(cx, handle, "down");
+        assert_eq!(completion(cx, handle).unwrap().selected, 1);
+        // The list scrolls to keep the selection in view.
+        keys(cx, handle, "up up");
+        let last = completion(cx, handle).unwrap();
+        assert_eq!(last.selected, 19);
+        assert!(
+            last.scroll.offset().y < gpui::px(0.0),
+            "scrolled to the last note"
+        );
+        keys(cx, handle, "escape");
+        assert!(completion(cx, handle).is_none());
+
+        // Moving the caret back into a query does not open the list.
+        let end = doc(cx, handle).find("Note").unwrap() + 4;
+        set_cursor(cx, handle, 0);
+        set_cursor(cx, handle, end);
+        assert!(completion(cx, handle).is_none());
+
+        // A `]]` after the caret is absorbed.
+        let editor = editor(cx, handle);
+        update(cx, handle, |_, _, cx| {
+            editor.update(cx, |e, cx| {
+                e.update_state(cx, |s| {
+                    let all = 0..s.doc().len();
+                    let _ = s.apply(
+                        cerata_markdown::Transaction::new()
+                            .change(cerata_markdown::Change::new(all, "[[]]\n"))
+                            .select(cerata_markdown::Selection::cursor(2)),
+                    );
+                });
+            });
+        });
+        input(cx, handle, "Road");
+        let list = completion(cx, handle).expect("open");
+        assert_eq!(list.items[0].label, "Roadmap");
+        assert_eq!(list.items[0].folder, "projects");
+        keys(cx, handle, "enter");
+        assert_eq!(doc(cx, handle), "[[Roadmap]]\n");
+        assert!(completion(cx, handle).is_none());
+        let caret = cx.update(|cx| editor.read(cx).state.selection().main().head);
+        assert_eq!(caret, "[[Roadmap]]".len());
+    }
+}

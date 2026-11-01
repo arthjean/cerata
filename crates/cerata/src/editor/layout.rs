@@ -126,8 +126,24 @@ pub struct Fonts {
 /// A block widget held by a line.
 #[derive(Clone, Debug, PartialEq)]
 pub enum BlockKind {
-    Image { url: String },
+    Image {
+        url: String,
+    },
     Rule,
+    /// A rich block (`blocks::is_rich`): drawn by `RichBlocks`. A block
+    /// spanning several lines sits on its first line; the others are hidden.
+    Rich(Widget),
+}
+
+/// What sizes the block widgets of a line.
+pub trait BlockSizer {
+    fn image_box(&mut self, url: &str, width: f32) -> ImageBox;
+    /// The box of an image embed (`![[target]]`), found by the host.
+    fn embed_box(&mut self, target: &str, width: f32) -> ImageBox;
+    /// The render of a formula (US-036).
+    fn math(&mut self, tex: &str, display: bool) -> super::math::MathState;
+    /// Height of a rich block in a column `width` wide.
+    fn rich_height(&mut self, widget: &Widget, width: f32) -> f32;
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -139,6 +155,9 @@ pub struct LineBlock {
     pub height: f32,
     /// The widget replaces the line's source (else it sits below it).
     pub replaces: bool,
+    /// The end of an atomic block (a diagram): the caret there is drawn
+    /// on the block's right edge (`cerata_markdown::atomic`).
+    pub atomic_end: Option<usize>,
 }
 
 /// What a block image measures to, as the widget host reports it.
@@ -202,8 +221,22 @@ pub struct LaidLine {
     /// Column-relative x of each quote bar.
     pub quote_bars: Vec<f32>,
     pub code: Option<CodeChrome>,
+    /// A revealed table's line (first, last): the code background, with
+    /// wrapping text.
+    pub table_source: Option<(bool, bool)>,
     pub block: Option<LineBlock>,
+    /// Formulas flowing in the text: drawn over the space reserved for
+    /// them, or their source in red with the error.
+    pub inline_math: Vec<InlineMath>,
     pub height: f32,
+}
+
+/// A formula in a line of text.
+#[derive(Clone, Debug)]
+pub struct InlineMath {
+    /// Line-relative buffer range of its source.
+    pub range: Range<usize>,
+    pub state: super::math::MathState,
 }
 
 impl LaidLine {
@@ -261,7 +294,7 @@ pub fn layout_line(
     ix: usize,
     inputs: &FrameInputs,
     cx: &LayoutCx<'_>,
-    image_box: &mut dyn FnMut(&str, f32) -> ImageBox,
+    sizer: &mut dyn BlockSizer,
     window: &Window,
 ) -> LaidLine {
     let text = state.text();
@@ -276,6 +309,7 @@ pub fn layout_line(
 
     let mut style: Option<LineStyle> = None;
     let mut quote = false;
+    let mut table_source: Option<(bool, bool)> = None;
     for decoration in &decorations {
         if let Decoration::Line {
             line_start,
@@ -285,6 +319,7 @@ pub fn layout_line(
         {
             match s {
                 LineStyle::Quote => quote = true,
+                LineStyle::TableSource { first, last } => table_source = Some((*first, *last)),
                 LineStyle::Heading(_) => style = Some(*s),
                 LineStyle::Code { .. } if !matches!(style, Some(LineStyle::Heading(_))) => {
                     style = Some(*s)
@@ -296,28 +331,49 @@ pub fn layout_line(
     let metrics = cx.config.metrics(style);
     let em = metrics.font_size;
 
-    // Whole-line hides (setext underline) and block widgets.
-    let hidden_line = decorations.iter().any(|d| {
-        matches!(d, Decoration::Hide { range: r, mode: HideMode::Block } if r.start <= line.from && r.end >= line.to)
+    // Whole-line hides (setext underline), the lines under a rich block
+    // after its first, and block widgets.
+    let hidden_line = decorations.iter().any(|d| match d {
+        Decoration::Hide {
+            range: r,
+            mode: HideMode::Block,
+        } => r.start <= line.from && r.end >= line.to,
+        Decoration::Replace {
+            range: r,
+            widget,
+            block: true,
+        } if super::blocks::is_rich(widget) => r.start < line.from && line.from <= r.end,
+        _ => false,
     });
     let mut block: Option<LineBlock> = None;
     let mut muted_source = false;
     for decoration in &decorations {
-        let (widget, replaces) = match decoration {
+        let (widget, replaces, end) = match decoration {
             Decoration::Replace {
                 range: r,
                 widget,
                 block: true,
-            } if r.start <= line.from && r.end >= line.to => (widget, true),
+            } if super::blocks::is_rich(widget) => {
+                if line.from <= r.start && r.start <= line.to {
+                    (widget, true, r.end)
+                } else {
+                    continue;
+                }
+            }
+            Decoration::Replace {
+                range: r,
+                widget,
+                block: true,
+            } if r.start <= line.from && r.end >= line.to => (widget, true, r.end),
             Decoration::Widget {
                 pos,
                 widget,
                 block: true,
-            } if *pos == line.to => (widget, false),
+            } if *pos == line.to => (widget, false, *pos),
             _ => continue,
         };
         match widget {
-            Widget::Image { url } => match image_box(url, cx.column_width) {
+            Widget::Image { url } => match sizer.image_box(url, cx.column_width) {
                 ImageBox::Sized { width, height } => {
                     block = Some(LineBlock {
                         kind: BlockKind::Image { url: url.clone() },
@@ -325,6 +381,22 @@ pub fn layout_line(
                         width,
                         height,
                         replaces,
+                        atomic_end: None,
+                    });
+                }
+                ImageBox::Unavailable => muted_source = true,
+            },
+            Widget::WikiImage { target } => match sizer.embed_box(target, cx.column_width) {
+                ImageBox::Sized { width, height } => {
+                    block = Some(LineBlock {
+                        kind: BlockKind::Image {
+                            url: super::images::embed_key(target),
+                        },
+                        top: 0.0,
+                        width,
+                        height,
+                        replaces,
+                        atomic_end: None,
                     });
                 }
                 ImageBox::Unavailable => muted_source = true,
@@ -336,6 +408,17 @@ pub fn layout_line(
                     width: cx.column_width,
                     height: cx.config.row_height(),
                     replaces,
+                    atomic_end: None,
+                });
+            }
+            w if super::blocks::is_rich(w) => {
+                block = Some(LineBlock {
+                    kind: BlockKind::Rich(w.clone()),
+                    top: 0.0,
+                    width: cx.column_width,
+                    height: sizer.rich_height(w, cx.column_width),
+                    replaces,
+                    atomic_end: matches!(w, Widget::Mermaid { .. }).then_some(end),
                 });
             }
             _ => {}
@@ -344,6 +427,8 @@ pub fn layout_line(
 
     // Inline replacements, line-relative, sorted and disjoint.
     let mut replacements: Vec<(Range<usize>, String)> = Vec::new();
+    let mut inline_math: Vec<InlineMath> = Vec::new();
+    let mut errors: Vec<Range<usize>> = Vec::new();
     let mut invisible: Vec<Range<usize>> = Vec::new();
     let local = |r: &Range<usize>| {
         r.start.clamp(line.from, line.to) - line.from..r.end.clamp(line.from, line.to) - line.from
@@ -363,8 +448,31 @@ pub fn layout_line(
                 block: false,
             } => {
                 let glyph = match widget {
-                    Widget::Dash(_) | Widget::Emoji(_) => widget.glyph().map(str::to_owned),
+                    Widget::Dash(_) | Widget::Emoji(_) | Widget::WikiLink { .. } => {
+                        widget.glyph().map(str::to_owned)
+                    }
                     Widget::Tab => Some("\u{2007}".repeat(cerata_markdown::decorate::TAB_WIDTH_CH)),
+                    // A formula keeps figure spaces as wide as its image.
+                    Widget::Math { tex, display } => {
+                        let state = sizer.math(tex, *display);
+                        let width = match &state {
+                            super::math::MathState::Ready(svg) => Some(svg.width),
+                            super::math::MathState::Pending => {
+                                Some(super::math::estimated_width(tex, cx.config.text_size()))
+                            }
+                            super::math::MathState::Error(_) => {
+                                errors.push(local(r));
+                                None
+                            }
+                        };
+                        inline_math.push(InlineMath {
+                            range: local(r),
+                            state,
+                        });
+                        width.map(|w| {
+                            "\u{2007}".repeat((w / cx.ch.max(1.0)).ceil().max(1.0) as usize)
+                        })
+                    }
                     // Inline images keep their source (block images fold).
                     _ => None,
                 };
@@ -460,6 +568,9 @@ pub fn layout_line(
         text_left += QUOTE_INDENT_EM * cx.config.text_size();
     }
 
+    if table_source.is_some() {
+        text_left += CODE_PADDING;
+    }
     let code = match style {
         Some(LineStyle::Code { first, last }) => {
             let block_start = cerata_markdown::code::code_block_at(state.tree(), line.from)
@@ -495,15 +606,24 @@ pub fn layout_line(
             line.from,
             inputs,
             &invisible,
+            &errors,
             marked,
             style,
             muted_source,
+            table_source.is_some(),
             cx,
         );
+        let right_padding = if table_source.is_some() {
+            CODE_PADDING
+        } else {
+            0.0
+        };
         let wrap = if code.is_some() {
             None
         } else {
-            Some(px((cx.column_width - text_left).max(cx.ch * 4.0)))
+            Some(px(
+                (cx.column_width - text_left - right_padding).max(cx.ch * 4.0)
+            ))
         };
         let shaped = window.text_system().shape_text(
             SharedString::from(display.text.clone()),
@@ -563,7 +683,9 @@ pub fn layout_line(
         prefix,
         quote_bars,
         code,
+        table_source,
         block,
+        inline_math,
         height,
     }
 }
@@ -590,9 +712,11 @@ fn runs(
     line_from: usize,
     inputs: &FrameInputs,
     invisible: &[Range<usize>],
+    errors: &[Range<usize>],
     marked: Option<Range<usize>>,
     style: Option<LineStyle>,
     muted_source: bool,
+    table_source: bool,
     cx: &LayoutCx<'_>,
 ) -> Vec<TextRun> {
     let line_end = line_from + display.buffer_len;
@@ -624,7 +748,7 @@ fn runs(
     for (r, _) in &highlights {
         boundaries.extend([r.start, r.end]);
     }
-    for r in invisible {
+    for r in invisible.iter().chain(errors) {
         boundaries.extend([r.start, r.end]);
     }
     if let Some(m) = &marked {
@@ -662,6 +786,12 @@ fn runs(
                 .find(|(r, _)| r.start <= offset && offset < r.end)
                 .map(|(_, c)| *c);
         }
+        // A formula MathJax rejected: its source, red, as code
+        // (`.cm-math-error`).
+        if errors.iter().any(|r| r.start <= offset && offset < r.end) {
+            s.code = true;
+            s.color = Some(theme::danger());
+        }
         s.invisible = invisible
             .iter()
             .any(|r| r.start <= offset && offset < r.end);
@@ -671,7 +801,7 @@ fn runs(
         s
     };
     let to_run = |len: usize, s: Style| {
-        let family = if code_line || s.code {
+        let family = if code_line || table_source || s.code {
             &cx.fonts.mono
         } else {
             &cx.fonts.body

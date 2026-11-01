@@ -189,7 +189,12 @@ impl Editor {
         cx.notify();
     }
 
-    pub fn run_menu_action(&mut self, action: MenuAction, cx: &mut Context<Self>) {
+    pub fn run_menu_action(
+        &mut self,
+        action: MenuAction,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.menu = None;
         match action {
             MenuAction::Cut => self.cut(cx),
@@ -202,7 +207,7 @@ impl Editor {
             MenuAction::SelectAll => {
                 self.update_state(cx, |state| state.select_all());
             }
-            MenuAction::OpenLink(link) => self.open_link(&link, cx),
+            MenuAction::OpenLink(link) => self.follow_href(&link, window, cx),
             MenuAction::CopyLink(link) => cx.write_to_clipboard(ClipboardItem::new_string(link)),
             MenuAction::Command(id) => {
                 let clock = super::actions::clock();
@@ -210,25 +215,6 @@ impl Editor {
             }
         }
         cx.notify();
-    }
-
-    /// Web and mail links open in the browser; a relative link opens the
-    /// file it names, next to the note, in its default app.
-    fn open_link(&mut self, link: &str, cx: &mut Context<Self>) {
-        let lower = link.to_ascii_lowercase();
-        if lower.starts_with("https://")
-            || lower.starts_with("http://")
-            || lower.starts_with("mailto:")
-        {
-            cx.open_url(link);
-            return;
-        }
-        if let Some(super::images::Source::Local(path)) =
-            super::images::resolve(self.images.note_dir(), link)
-            && let Some(path) = openable(&path)
-        {
-            cx.open_with_system(&path);
-        }
     }
 }
 
@@ -299,8 +285,8 @@ fn menu_list(
                     row = row
                         .cursor_pointer()
                         .hover(|s| s.bg(theme::panel()))
-                        .on_click(cx.listener(move |editor, _, _, cx| {
-                            editor.run_menu_action(action.clone(), cx)
+                        .on_click(cx.listener(move |editor, _, window, cx| {
+                            editor.run_menu_action(action.clone(), window, cx)
                         }));
                 } else {
                     row = row.text_color(theme::muted());
@@ -358,9 +344,9 @@ fn menu_list(
     list.into_any_element()
 }
 
-/// What a local link opens without asking: folders, and documents the OS
-/// shows rather than runs. A note is untrusted content, so any other file
-/// waits for the confirmation that shows its path (US-033).
+/// Documents the OS shows rather than runs. A note is untrusted content:
+/// every local file a link names opens after a confirmation that shows its
+/// path (US-033), a stronger one for anything else.
 const OPENABLE: &[&str] = &[
     "avif", "bmp", "gif", "heic", "jpeg", "jpg", "markdown", "md", "pdf", "png", "tif", "tiff",
     "txt", "webp",
@@ -370,7 +356,7 @@ const OPENABLE: &[&str] = &[
 /// own name and through symlinks. A folder with an extension is refused:
 /// macOS runs bundles (`.app`, `.prefPane`, `.workflow`...) rather than
 /// showing them.
-fn openable(path: &std::path::Path) -> Option<std::path::PathBuf> {
+pub(super) fn openable(path: &std::path::Path) -> Option<std::path::PathBuf> {
     let real = std::fs::canonicalize(path).ok()?;
     if real.is_dir() {
         let plain = |p: &std::path::Path| p.extension().is_none();

@@ -34,7 +34,7 @@ use gpui::{
 };
 
 use crate::documents::{Conflict, Doc, Documents, LOAD_GRACE, SaveBridge, SaveResult};
-use crate::editor::{Editor, EditorConfig, theme};
+use crate::editor::{Editor, EditorConfig, EditorEvent, theme};
 use crate::routing::{Chrome, OpenRequest};
 use crate::sidebar::{self, Sidebar, SidebarEvent};
 use crate::tabs::{Location, Tabs, Undo};
@@ -230,7 +230,7 @@ pub struct WindowView {
     sessions: SessionStore,
     focus_handle: FocusHandle,
     handle: Option<WindowHandle<WindowView>>,
-    editor_subscriptions: HashMap<EntityId, Subscription>,
+    editor_subscriptions: HashMap<EntityId, [Subscription; 2]>,
     pub sidebar: Option<Entity<Sidebar>>,
     pub sidebar_width: f32,
     pub sidebar_visible: bool,
@@ -879,6 +879,7 @@ impl WindowView {
 
     fn new_editor(&mut self, path: &Path, text: String, cx: &mut Context<Self>) -> Entity<Editor> {
         let root = self.workspace_root().map(Path::to_path_buf);
+        let runtime = self.core.runtime();
         let config = self.config.clone();
         let path = path.to_path_buf();
         let editor = cx.new(|cx| {
@@ -886,13 +887,22 @@ impl WindowView {
             if let Some(root) = &root {
                 editor.images.set_root(root);
             }
+            editor.workspace = runtime;
             editor
         });
-        let subscription = cx.observe(&editor, |this, editor, cx| {
+        let changes = cx.observe(&editor, |this, editor, cx| {
             this.on_editor_changed(&editor, cx)
         });
+        let events = cx.subscribe(&editor, |this, _, event: &EditorEvent, cx| match event {
+            EditorEvent::OpenNote { path, anchor } => {
+                let (path, anchor) = (path.clone(), anchor.clone());
+                this.with_window(cx, move |this, window, cx| {
+                    this.open_note_at(&path, anchor, window, cx)
+                });
+            }
+        });
         self.editor_subscriptions
-            .insert(editor.entity_id(), subscription);
+            .insert(editor.entity_id(), [changes, events]);
         editor
     }
 
@@ -1084,6 +1094,24 @@ impl WindowView {
             self.ensure_doc(path, undo, cx);
         }
         self.tabs_changed(window, cx);
+    }
+
+    /// Opens `path` as a link does, then scrolls to the heading whose slug
+    /// is `anchor` (once the note has loaded).
+    pub fn open_note_at(
+        &mut self,
+        path: &Path,
+        anchor: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_file(path, window, cx);
+        if let Some(anchor) = anchor
+            && let Some(doc) = self.docs.get(path)
+        {
+            doc.editor
+                .update(cx, |editor, cx| editor.go_to_anchor(&anchor, cx));
+        }
     }
 
     pub fn open_file_in_new_tab(

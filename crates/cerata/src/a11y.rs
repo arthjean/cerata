@@ -12,12 +12,14 @@ use crate::editor::theme;
 
 actions!(a11y, [FocusNext, FocusPrevious]);
 
-/// Tab and Shift+Tab in the window chrome; the editor keeps Tab for
-/// indentation in its own, deeper context.
+/// Tab and Shift+Tab in the window chrome. Outside the editor only: a
+/// binding with no context outranks every context binding in GPUI's keymap
+/// (`binding_enabled` gives it the deepest depth), which took Tab from the
+/// editor's indentation. The editor moves the focus itself (Ctrl+M).
 pub fn bindings() -> Vec<KeyBinding> {
     vec![
-        KeyBinding::new("tab", FocusNext, None),
-        KeyBinding::new("shift-tab", FocusPrevious, None),
+        KeyBinding::new("tab", FocusNext, Some("!Editor")),
+        KeyBinding::new("shift-tab", FocusPrevious, Some("!Editor")),
     ]
 }
 

@@ -20,16 +20,24 @@ macro_rules! secondary {
 }
 
 pub mod actions;
+pub mod blocks;
 mod code_scroll;
+pub mod complete;
 pub mod config;
 mod display;
 mod element;
+pub mod frontmatter;
 mod height_map;
+mod html;
 pub mod images;
 mod input;
 mod layout;
+mod links;
+mod math;
 mod menu;
+pub mod mermaid;
 mod mouse;
+mod rail;
 pub mod search;
 pub mod text_field;
 pub mod theme;
@@ -43,12 +51,12 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Instant;
 
-use cerata_markdown::{EditorState, LineStyle, Selection, Transaction, UserEvent};
+use cerata_markdown::{Change, EditorState, LineStyle, Selection, Transaction, UserEvent};
 use cerata_render::HighlightSpan;
 use gpui::{
     App, AppContext as _, Bounds, Context, CursorStyle, Entity, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, ParentElement, Pixels, Render, SharedString, Styled, Window,
-    div, px,
+    InteractiveElement, IntoElement, ParentElement, Pixels, Render, SharedString,
+    StatefulInteractiveElement as _, Styled, Subscription, Window, div, px,
 };
 
 pub use code_scroll::CodeScroll;
@@ -57,6 +65,7 @@ use element::EditorElement;
 use height_map::HeightMap;
 use images::{ImageHost, LoadJob};
 use layout::{Fonts, FrameInputs, LaidLine, LayoutCx};
+pub use links::EditorEvent;
 use menu::ContextMenu;
 use search::SearchBar;
 
@@ -67,6 +76,8 @@ pub const LAYOUT_MARGIN: f64 = 300.0;
 pub const SAFE_MARGIN: f64 = 140.0;
 /// Horizontal padding around the text column, gutter included.
 pub const SIDE_PADDING: f32 = 40.0;
+/// The side inset of a source-only editor.
+const SOURCE_PADDING: f32 = 12.0;
 /// Space above the first line.
 pub const TOP_INSET: f32 = 32.0;
 /// Width of the drawn vertical scrollbar.
@@ -88,6 +99,9 @@ enum Autoscroll {
     /// The line holding a position, `SAFE_MARGIN` from the top or bottom
     /// edge, whichever is nearer (search results).
     Reveal(usize),
+    /// The line holding a position at the top of the safe zone (heading
+    /// anchors, `scrollPosToSafeTop`).
+    Top(usize),
 }
 
 /// The state saved when an IME composition starts: a cancel restores it, a
@@ -120,6 +134,30 @@ pub struct Editor {
     /// Pixel x a vertical motion aims for, kept across Up and Down.
     goal_x: Option<f32>,
     pub images: ImageHost,
+    pub rich: blocks::RichBlocks,
+    /// The open workspace: link resolution and wiki completion.
+    pub workspace: Option<std::sync::Arc<cerata_core::workspace::WorkspaceRuntime>>,
+    /// An anchor to scroll to once the note has loaded.
+    pending_anchor: Option<String>,
+    /// The open wiki link completion.
+    pub completion: Option<complete::Completion>,
+    /// The change being applied was typed (opens the completion).
+    typed: bool,
+    /// The properties panel drawn in place of the frontmatter.
+    pub frontmatter: Entity<frontmatter::FrontmatterPanel>,
+    /// Formulas asked of the renderer, and their images.
+    math: math::MathHost,
+    /// A canvas per ` ```mermaid ` fence, by its index in the document.
+    canvases: HashMap<usize, (Entity<mermaid::MermaidCanvas>, Subscription)>,
+    /// The diagram open full screen.
+    fullscreen: Option<mermaid::Fullscreen>,
+    /// Focus this at the next frame (a closed full-screen diagram's canvas).
+    refocus_to: Option<FocusHandle>,
+    /// The section rail's headings and hover state.
+    rail: rail::Rail,
+    _frontmatter_events: Subscription,
+    /// Take the focus back at the next frame (the panel let it go).
+    refocus: bool,
     highlights: HashMap<(String, String), Rc<Vec<HighlightSpan>>>,
     pub code_scroll: CodeScroll,
     drag: Option<mouse::Drag>,
@@ -138,6 +176,13 @@ pub struct Editor {
     #[cfg(test)]
     pub frames: Vec<element::FrameRecord>,
     epoch: Instant,
+    /// Source text only, filling its width: a diagram's edit panel
+    /// (Writer's inner editor has no prosemark decorations nor page inset).
+    source_only: bool,
+    /// Tab and Shift+Tab move the focus instead of indenting.
+    pub(crate) tab_focus: bool,
+    /// The focus the view last scrolled into sight.
+    revealed_focus: Option<FocusHandle>,
 }
 
 impl Editor {
@@ -148,9 +193,13 @@ impl Editor {
         cx: &mut Context<Self>,
     ) -> Self {
         let state = EditorState::new(text);
+        let panel = cx.new(|_| frontmatter::FrontmatterPanel::new());
+        let frontmatter_events = cx.subscribe(&panel, |editor: &mut Self, _, event, cx| {
+            editor.on_panel(event, cx);
+        });
         let note_dir = path.as_ref().and_then(|p| p.parent().map(PathBuf::from));
         let mut editor = Self {
-            focus_handle: cx.focus_handle(),
+            focus_handle: cx.focus_handle().tab_stop(true),
             state,
             path,
             config,
@@ -164,6 +213,19 @@ impl Editor {
             autoscroll: None,
             goal_x: None,
             images: ImageHost::new(note_dir),
+            rich: blocks::RichBlocks::default(),
+            workspace: None,
+            pending_anchor: None,
+            completion: None,
+            typed: false,
+            frontmatter: panel,
+            math: math::MathHost::default(),
+            canvases: HashMap::new(),
+            fullscreen: None,
+            refocus_to: None,
+            rail: rail::Rail::default(),
+            _frontmatter_events: frontmatter_events,
+            refocus: false,
             highlights: HashMap::new(),
             code_scroll: CodeScroll::default(),
             drag: None,
@@ -177,9 +239,61 @@ impl Editor {
             #[cfg(test)]
             frames: Vec::new(),
             epoch: Instant::now(),
+            source_only: false,
+            tab_focus: false,
+            revealed_focus: None,
         };
+        // Writer keeps the frontmatter out of the editor: a note opens with
+        // the caret in its body, so the properties show as a panel.
+        if let Some(frontmatter) = cerata_markdown::frontmatter::detect(editor.state.doc()) {
+            let _ = editor
+                .state
+                .select(Selection::cursor(frontmatter.body_start));
+        }
         editor.reestimate_heights();
+        editor.sync_frontmatter(cx);
         editor
+    }
+
+    fn sync_frontmatter(&mut self, cx: &mut Context<Self>) {
+        if self.state.is_loading() {
+            return;
+        }
+        let yaml = cerata_markdown::frontmatter::split(self.state.doc())
+            .0
+            .map(str::to_owned);
+        self.frontmatter
+            .update(cx, |panel, cx| panel.sync(yaml.as_deref(), cx));
+    }
+
+    /// The panel rewrote the YAML, or removed the frontmatter.
+    fn on_panel(&mut self, event: &frontmatter::PanelEvent, cx: &mut Context<Self>) {
+        use frontmatter::PanelEvent;
+        if *event == PanelEvent::FocusEditor {
+            self.refocus = true;
+            cx.notify();
+            return;
+        }
+        let Some(fm) = cerata_markdown::frontmatter::detect(self.state.doc()) else {
+            return;
+        };
+        let yaml = match event {
+            PanelEvent::FocusEditor => return,
+            PanelEvent::Write(yaml) => yaml.as_deref(),
+        };
+        // Writer's `serializeFile`: the block written whole, the body kept.
+        let eol = if self.state.doc()[..fm.body_start].contains("\r\n") {
+            "\r\n"
+        } else {
+            "\n"
+        };
+        let change = Change::new(
+            0..fm.body_start,
+            cerata_markdown::frontmatter::join(yaml, "", eol),
+        );
+        self.update_state(cx, |state| {
+            let _ = state.apply(Transaction::new().change(change).event(UserEvent::Type));
+        });
     }
 
     /// Milliseconds since the editor opened, never 0 (0 means "unset" to
@@ -274,7 +388,24 @@ impl Editor {
         if let Some(search) = self.search.clone() {
             search.update(cx, |search, cx| search.document_changed(&self.state, cx));
         }
+        if !self.state.is_loading()
+            && let Some(anchor) = self.pending_anchor.take()
+        {
+            self.go_to_anchor(&anchor, cx);
+        }
+        let typed = std::mem::take(&mut self.typed);
+        self.refresh_completion(typed, cx);
+        self.sync_frontmatter(cx);
         cx.notify();
+    }
+
+    /// Replaces the whole text (a Mermaid edit panel following its fence).
+    pub fn set_text(&mut self, text: &str, cx: &mut Context<Self>) {
+        let all = 0..self.state.text().len();
+        let text = text.to_owned();
+        self.update_state(cx, |state| {
+            let _ = state.apply(Transaction::new().change(Change::new(all, text)));
+        });
     }
 
     pub fn select(&mut self, selection: Selection, cx: &mut Context<Self>) {
@@ -338,8 +469,13 @@ impl Editor {
     }
 
     fn set_viewport(&mut self, bounds: Bounds<Pixels>) {
-        let available = (bounds.size.width.as_f32() - 2.0 * SIDE_PADDING).max(120.0);
-        let width = available.min(self.config.content_width).floor();
+        let (padding, max) = if self.source_only {
+            (SOURCE_PADDING, f32::INFINITY)
+        } else {
+            (SIDE_PADDING, self.config.content_width)
+        };
+        let available = (bounds.size.width.as_f32() - 2.0 * padding).max(120.0);
+        let width = available.min(max).floor();
         self.viewport = Some(Viewport {
             bounds,
             column_left: bounds.left() + px(((bounds.size.width.as_f32() - width) / 2.0).floor()),
@@ -410,7 +546,61 @@ impl Editor {
                 })
                 .clone()
         };
-        FrameInputs::collect(&self.state, range, &mut highlight)
+        let mut inputs = FrameInputs::collect(&self.state, range, &mut highlight);
+        if self.source_only {
+            inputs.decorations.clear();
+        }
+        inputs
+    }
+
+    /// The editor's keys act on the text: it has the focus, or its find
+    /// bar does (whose shortcuts drive the text). Any other control drawn
+    /// in or beside the text keeps its keys.
+    pub(crate) fn keys_reach_text(&self, window: &Window, cx: &App) -> bool {
+        self.focus_handle.is_focused(window)
+            || self
+                .search
+                .as_ref()
+                .is_some_and(|search| search.focus_handle(cx).contains_focused(window, cx))
+    }
+
+    /// A control drawn in the text that takes the keyboard focus (a
+    /// property field, a diagram or its toolbar) scrolls into sight once:
+    /// a focused control is never left off screen (WCAG 2.4.11).
+    fn reveal_focused_block(&mut self, window: &Window, cx: &App) {
+        let focused = window.focused(cx);
+        if focused == self.revealed_focus {
+            return;
+        }
+        self.revealed_focus = focused;
+        let block = if self.frontmatter.read(cx).has_focus(window, cx) {
+            Some(0)
+        } else {
+            let fences = mermaid::fences(self.state.tree(), self.state.text());
+            self.canvases.iter().find_map(|(index, (canvas, _))| {
+                canvas
+                    .focus_handle(cx)
+                    .contains_focused(window, cx)
+                    .then(|| fences.get(*index).map(|r| r.start))
+                    .flatten()
+            })
+        };
+        let Some(pos) = block else {
+            return;
+        };
+        let line = self.state.text().line_at(pos).number;
+        let (top, bottom) = (self.heights.prefix(line), self.heights.prefix(line + 1));
+        let scroll = self.scroll_top();
+        if top < scroll || bottom > scroll + self.viewport_height() {
+            self.autoscroll = Some(Autoscroll::Top(pos));
+        }
+    }
+
+    /// Shows the source as plain text across the whole width.
+    pub fn source_only(mut self) -> Self {
+        self.source_only = true;
+        self.state.set_atomic_blocks(false);
+        self
     }
 
     /// Lays out line `ix` from `inputs` (gathered for it when `None`) and
@@ -446,13 +636,15 @@ impl Editor {
             marked: self.marked_range.clone(),
             code_scroll: &scroll_for,
         };
-        let images = &mut self.images;
-        let mut image_box = |url: &str, width: f32| {
-            let (image_box, job) = images.image_box(url, width, row_height);
-            jobs.extend(job);
-            image_box
+        let mut sizer = Sizer {
+            images: &mut self.images,
+            rich: &mut self.rich,
+            math: &mut self.math,
+            jobs,
+            row_height,
+            font_size: self.config.text_size(),
         };
-        let line = layout::layout_line(&self.state, ix, inputs, &cx, &mut image_box, window);
+        let line = layout::layout_line(&self.state, ix, inputs, &cx, &mut sizer, window);
         if (self.heights.get(ix) - line.height as f64).abs() > 1e-6 {
             self.heights.set(ix, line.height as f64);
         }
@@ -464,11 +656,20 @@ impl Editor {
         line
     }
 
+    /// What rich blocks are drawn with.
+    pub(crate) fn block_style(&mut self, window: &Window) -> blocks::BlockStyle {
+        blocks::BlockStyle {
+            fonts: self.fonts(window),
+            font_size: self.config.text_size(),
+        }
+    }
+
     /// Lays out one line on demand (hit-testing, IME, scrolling).
     pub fn layout_line(&mut self, ix: usize, window: &Window, cx: &mut Context<Self>) -> LaidLine {
         let mut jobs = Vec::new();
         let line = self.layout_line_with(ix, None, &mut jobs, window);
         self.start_loads(jobs, cx);
+        self.start_math(cx);
         line
     }
 
@@ -603,6 +804,12 @@ impl Editor {
                 self.layout_line(ix, window, cx);
                 (self.heights.prefix(ix), self.heights.prefix(ix + 1))
             }
+            Autoscroll::Top(pos) => {
+                let ix = self.state.text().line_at(pos).number;
+                self.layout_line(ix, window, cx);
+                self.set_scroll_top(self.heights.prefix(ix) - margin);
+                return;
+            }
         };
         if top < scroll_top + margin {
             self.set_scroll_top(top - margin);
@@ -632,6 +839,13 @@ impl Focusable for Editor {
 
 impl Render for Editor {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if std::mem::take(&mut self.refocus) {
+            window.focus(&self.focus_handle, cx);
+        }
+        if let Some(handle) = self.refocus_to.take() {
+            window.focus(&handle, cx);
+        }
+        self.reveal_focused_block(window, cx);
         let mut root = div()
             .id("editor")
             .relative()
@@ -668,10 +882,11 @@ impl Render for Editor {
                     .child(
                         div()
                             .id("editor-notice")
+                            .role(gpui::Role::Status)
                             .px(px(12.0))
                             .py(px(6.0))
                             .rounded(px(6.0))
-                            .bg(theme::panel())
+                            .bg(theme::overlay())
                             .border_1()
                             .border_color(theme::border())
                             .text_size(px(13.0))
@@ -682,6 +897,52 @@ impl Render for Editor {
         if let Some(menu) = &self.menu {
             root = root.child(menu.render(window, cx));
         }
+        if let Some(list) = self.render_completion(window, cx) {
+            root = root.child(list);
+        }
+        if let Some(rail) = self.render_rail(cx) {
+            root = root.child(rail);
+        }
+        if let Some(overlay) = self.render_fullscreen(window, cx) {
+            root = root.child(overlay);
+        }
         root
+    }
+}
+
+/// Sizes the block widgets of the lines being laid out.
+struct Sizer<'a> {
+    images: &'a mut ImageHost,
+    rich: &'a mut blocks::RichBlocks,
+    math: &'a mut math::MathHost,
+    jobs: &'a mut Vec<LoadJob>,
+    row_height: f32,
+    font_size: f32,
+}
+
+impl layout::BlockSizer for Sizer<'_> {
+    fn image_box(&mut self, url: &str, width: f32) -> layout::ImageBox {
+        let (image_box, job) = self.images.image_box(url, width, self.row_height);
+        self.jobs.extend(job);
+        image_box
+    }
+
+    fn embed_box(&mut self, target: &str, width: f32) -> layout::ImageBox {
+        let (image_box, job) = self.images.embed_box(target, width, self.row_height);
+        self.jobs.extend(job);
+        image_box
+    }
+
+    fn math(&mut self, tex: &str, display: bool) -> math::MathState {
+        self.math.state(tex, display, self.font_size)
+    }
+
+    fn rich_height(&mut self, widget: &cerata_markdown::Widget, width: f32) -> f32 {
+        // A formula's height is its image's, known without measuring.
+        if let cerata_markdown::Widget::Math { tex, display } = widget {
+            let state = self.math.state(tex, *display, self.font_size);
+            return math::block_height(&state, tex, self.font_size, self.row_height);
+        }
+        self.rich.height(widget, width, self.font_size)
     }
 }

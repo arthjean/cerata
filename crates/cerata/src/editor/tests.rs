@@ -1074,6 +1074,45 @@ fn local_and_data_images_render_at_their_measured_height(cx: &mut TestAppContext
     );
 }
 
+/// US-033: `![[pic.png]]` shows the image found anywhere in the workspace
+/// (Obsidian's shortest-path links); an embed found nowhere shows its
+/// source muted (`ImageEmbedWidget`).
+#[gpui::test]
+fn image_embeds_render_the_file_they_name(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("deep/attachments")).unwrap();
+    std::fs::write(dir.path().join("deep/attachments/pic.png"), png(300, 120)).unwrap();
+    std::fs::create_dir(dir.path().join("notes")).unwrap();
+    let note = "![[pic.png]]\n\n![[nowhere.png]]\n\nend";
+    let path = dir.path().join("notes/note.md");
+    let (editor, cx) = open_at(cx, note, Some(path), EditorConfig::default());
+    editor.update(cx, |e, _| e.images.set_root(dir.path()));
+    set_cursor(&editor, cx, note.len());
+    for _ in 0..50 {
+        cx.run_until_parked();
+        let done = editor.update_in(cx, |e, window, cx| {
+            e.layout_line(0, window, cx)
+                .block
+                .is_some_and(|b| b.height == 120.0)
+                && e.layout_line(2, window, cx).block.is_none()
+        });
+        if done {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    editor.update_in(cx, |e, window, cx| {
+        let found = e.layout_line(0, window, cx).block.expect("embed drawn");
+        assert_eq!((found.width, found.height), (300.0, 120.0));
+        let missing = e.layout_line(2, window, cx);
+        assert!(missing.block.is_none());
+        assert!(missing.display.text.contains("nowhere.png"), "source shown");
+    });
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("editor-image-0").is_some());
+}
+
 fn base64_encode(bytes: &[u8]) -> String {
     const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::new();
@@ -1368,10 +1407,1102 @@ fn the_context_menu_is_drawn_in_the_app_with_the_registry(cx: &mut TestAppContex
         assert!(has(&|i| matches!(i, super::menu::MenuItem::Action { action: super::menu::MenuAction::Paste, enabled: false, .. })), "empty clipboard: Paste disabled");
     });
     // Run Bold from the Format submenu.
-    editor.update(cx, |editor, cx| {
+    editor.update_in(cx, |editor, window, cx| {
         editor.select(Selection::single(24, 28), cx);
-        editor.run_menu_action(super::menu::MenuAction::Command("format.bold"), cx);
+        editor.run_menu_action(super::menu::MenuAction::Command("format.bold"), window, cx);
     });
     assert_eq!(doc(&editor, cx), "see [site](https://a.b) **here**\n");
     assert!(editor.read_with(cx, |e, _| e.menu.is_none()));
+}
+
+mod tables {
+    use super::*;
+    use crate::editor::layout::BlockKind;
+
+    const DOC: &str =
+        "intro\n\n| Link | N |\n|:--|--:|\n| [site](https://example.test) | 2 |\n\nend";
+
+    fn table_from() -> usize {
+        DOC.find("| Link").unwrap()
+    }
+
+    /// US-032: folded while the caret is away, at its measured height, with
+    /// its other lines hidden; a link in a cell opens without moving the
+    /// caret; a click elsewhere selects the table, which shows its source.
+    #[gpui::test]
+    fn a_table_folds_measures_and_reveals_its_source(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, DOC);
+        set_cursor(&editor, cx, DOC.len());
+        cx.run_until_parked();
+        let (first, rest) = editor.update_in(cx, |editor, window, cx| {
+            let first = editor.layout_line(2, window, cx);
+            let rest: Vec<f32> = (3..5)
+                .map(|ix| editor.layout_line(ix, window, cx).height)
+                .collect();
+            (first, rest)
+        });
+        let block = first.block.as_ref().expect("table block");
+        assert!(matches!(
+            block.kind,
+            BlockKind::Rich(cerata_markdown::Widget::Table { .. })
+        ));
+        assert!(block.replaces);
+        assert_eq!(rest, vec![0.0, 0.0], "the other rows are folded away");
+        let header = cx
+            .debug_bounds("table-header-0")
+            .expect("header cell drawn");
+        let cell = cx.debug_bounds("table-cell-0").expect("body cell drawn");
+        assert!(cell.top() >= header.bottom() - px(1.0));
+        // The line takes the height the frame measured, not the estimate.
+        let measured = cx.debug_bounds("table-cell-1").expect("cell").bottom() - header.top();
+        assert!(
+            first.height >= measured.as_f32() - 1.0,
+            "{} < {measured:?}",
+            first.height
+        );
+
+        // A link in a cell opens; the caret stays where it was.
+        let inside = point(cell.left() + px(16.0), cell.top() + cell.size.height / 2.0);
+        press(cx, inside, 1, false);
+        release(cx, inside);
+        cx.run_until_parked();
+        assert_eq!(cx.opened_url().as_deref(), Some("https://example.test"));
+        assert_eq!(selection(&editor, cx), vec![(DOC.len(), DOC.len())]);
+
+        // Anywhere else selects the whole table and reveals its source.
+        let header = cx.debug_bounds("table-header-1").expect("header");
+        let blank = point(header.right() - px(4.0), header.top() + px(4.0));
+        press(cx, blank, 1, false);
+        release(cx, blank);
+        cx.run_until_parked();
+        let table_to = DOC.find("\n\nend").unwrap();
+        assert_eq!(selection(&editor, cx), vec![(table_to, table_from())]);
+        let revealed = editor.update_in(cx, |editor, window, cx| {
+            (2..5)
+                .map(|ix| editor.layout_line(ix, window, cx).table_source)
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(
+            revealed,
+            vec![
+                Some((true, false)),
+                Some((false, false)),
+                Some((false, true))
+            ]
+        );
+    }
+}
+
+mod frontmatter {
+    use super::*;
+    use crate::editor::layout::BlockKind;
+
+    fn rows(editor: &Entity<Editor>, cx: &mut VisualTestContext) -> Vec<(String, String)> {
+        editor.update(cx, |e, cx| e.frontmatter.read(cx).rows_text(cx))
+    }
+
+    fn focus_field(editor: &Entity<Editor>, cx: &mut VisualTestContext, row: usize, value: bool) {
+        editor.update_in(cx, |e, window, cx| {
+            let handle = e.frontmatter.read(cx).field_handle(row, value, cx);
+            window.focus(&handle, cx);
+        });
+        cx.run_until_parked();
+    }
+
+    /// An active window, as focus-out events need.
+    fn open_active<'a>(
+        cx: &'a mut TestAppContext,
+        text: &str,
+    ) -> (Entity<Editor>, &'a mut VisualTestContext) {
+        let (editor, cx) = open(cx, text);
+        cx.update(|window, _| window.activate_window());
+        cx.run_until_parked();
+        (editor, cx)
+    }
+
+    fn keys(cx: &mut VisualTestContext, keys: &str) {
+        cx.simulate_keystrokes(keys);
+        cx.run_until_parked();
+    }
+
+    fn type_in(cx: &mut VisualTestContext, text: &str) {
+        cx.simulate_input(text);
+        cx.run_until_parked();
+    }
+
+    const DOC: &str = "---\ntitle: Old\ntags:\n- a\n- b\n---\nbody";
+
+    /// One row per property in place of the YAML; editing a value rewrites
+    /// only its entry, the list keeps its text; keys stay in the panel.
+    #[gpui::test]
+    fn the_panel_replaces_the_yaml_and_edits_one_entry(cx: &mut TestAppContext) {
+        let (editor, cx) = open_active(cx, DOC);
+        set_cursor(&editor, cx, DOC.len());
+        let (first, hidden) = editor.update_in(cx, |editor, window, cx| {
+            let first = editor.layout_line(0, window, cx);
+            let hidden: Vec<f32> = (1..6)
+                .map(|ix| editor.layout_line(ix, window, cx).height)
+                .collect();
+            (first, hidden)
+        });
+        let block = first.block.as_ref().expect("panel block");
+        assert_eq!(
+            block.kind,
+            BlockKind::Rich(cerata_markdown::Widget::Frontmatter)
+        );
+        assert_eq!(hidden, vec![0.0; 5]);
+        assert_eq!(
+            rows(&editor, cx),
+            vec![
+                ("title".into(), "Old".into()),
+                ("tags".into(), "- a - b".into())
+            ]
+        );
+
+        focus_field(&editor, cx, 0, true);
+        type_in(cx, "er");
+        assert_eq!(
+            doc(&editor, cx),
+            "---\ntitle: Older\ntags:\n- a\n- b\n---\nbody"
+        );
+        // Up stays in the panel: the caret in the text does not move.
+        keys(cx, "up");
+        assert_eq!(selection(&editor, cx), vec![(DOC.len() + 2, DOC.len() + 2)]);
+    }
+
+    /// A note opens with the caret in its body, its properties as a panel.
+    #[gpui::test]
+    fn a_note_opens_with_its_properties_as_a_panel(cx: &mut TestAppContext) {
+        let (editor, cx) = open_active(cx, DOC);
+        let body = DOC.find("body").expect("body");
+        assert_eq!(selection(&editor, cx), vec![(body, body)]);
+        let first = editor.update_in(cx, |editor, window, cx| editor.layout_line(0, window, cx));
+        assert_eq!(
+            first.block.as_ref().map(|b| &b.kind),
+            Some(&BlockKind::Rich(cerata_markdown::Widget::Frontmatter))
+        );
+    }
+
+    /// Enter on the last value adds a row; Backspace in an empty row
+    /// removes it; a row left without a key is removed.
+    #[gpui::test]
+    fn rows_are_added_removed_and_reaped(cx: &mut TestAppContext) {
+        let doc_text = "---\na: 1\n---\nbody";
+        let (editor, cx) = open_active(cx, doc_text);
+        set_cursor(&editor, cx, doc_text.len());
+        cx.run_until_parked();
+        focus_field(&editor, cx, 0, true);
+        keys(cx, "enter");
+        assert_eq!(rows(&editor, cx).len(), 2);
+        assert!(editor.update_in(cx, |e, window, cx| {
+            e.frontmatter
+                .read(cx)
+                .field_handle(1, false, cx)
+                .is_focused(window)
+        }));
+        keys(cx, "backspace");
+        assert_eq!(rows(&editor, cx).len(), 1);
+        assert_eq!(doc(&editor, cx), doc_text);
+
+        // A new row with a key is written; one left without is reaped.
+        keys(cx, "enter");
+        type_in(cx, "draft");
+        assert_eq!(doc(&editor, cx), "---\na: 1\ndraft: \"\"\n---\nbody");
+        // Enter goes from the name to the value, then adds a row.
+        keys(cx, "enter");
+        keys(cx, "enter");
+        type_in(cx, "x");
+        keys(cx, "enter");
+        keys(cx, "enter");
+        assert_eq!(rows(&editor, cx).len(), 4);
+        editor.update_in(cx, |e, window, cx| window.focus(&e.focus_handle, cx));
+        cx.run_until_parked();
+        assert_eq!(rows(&editor, cx).len(), 3);
+        assert_eq!(
+            doc(&editor, cx),
+            "---\na: 1\ndraft: \"\"\nx: \"\"\n---\nbody"
+        );
+    }
+
+    /// Tab past the last field leaves the panel instead of stopping there.
+    #[gpui::test]
+    fn tab_leaves_the_panel_past_its_last_field(cx: &mut TestAppContext) {
+        let doc_text = "---\na: 1\n---\nbody";
+        let (editor, cx) = open_active(cx, doc_text);
+        focus_field(&editor, cx, 0, true);
+        keys(cx, "tab");
+        let in_panel = editor.update_in(cx, |e, window, cx| {
+            let panel = e.frontmatter.read(cx);
+            [false, true]
+                .iter()
+                .any(|&value| panel.field_handle(0, value, cx).is_focused(window))
+        });
+        assert!(!in_panel, "the focus moved on");
+        assert_eq!(doc(&editor, cx), doc_text);
+    }
+
+    /// Emptying the last row and pressing Backspace removes the block and
+    /// gives the focus back to the text.
+    #[gpui::test]
+    fn removing_the_last_row_removes_the_frontmatter(cx: &mut TestAppContext) {
+        let doc_text = "---\na: 1\n---\nbody";
+        let (editor, cx) = open_active(cx, doc_text);
+        set_cursor(&editor, cx, doc_text.len());
+        cx.run_until_parked();
+        focus_field(&editor, cx, 0, true);
+        keys(cx, "backspace");
+        keys(cx, "shift-tab");
+        keys(cx, "backspace");
+        assert_eq!(doc(&editor, cx), "---\n\n---\nbody");
+        keys(cx, "backspace");
+        assert_eq!(doc(&editor, cx), "body");
+        assert!(editor.update_in(cx, |e, window, _| e.focus_handle.is_focused(window)));
+    }
+
+    /// `---` typed on the first line opens an empty panel, its name field
+    /// focused.
+    #[gpui::test]
+    fn typing_three_dashes_on_the_first_line_opens_an_empty_panel(cx: &mut TestAppContext) {
+        let (editor, cx) = open_active(cx, "--\nhello");
+        set_cursor(&editor, cx, 2);
+        type_in(cx, "-");
+        assert_eq!(doc(&editor, cx), "---\n\n---\nhello");
+        assert_eq!(rows(&editor, cx), vec![(String::new(), String::new())]);
+        assert!(editor.update_in(cx, |e, window, cx| {
+            e.frontmatter
+                .read(cx)
+                .field_handle(0, false, cx)
+                .is_focused(window)
+        }));
+        type_in(cx, "title");
+        assert_eq!(doc(&editor, cx), "---\ntitle: \"\"\n---\nhello");
+    }
+
+    /// Elsewhere `---` stays a rule.
+    #[gpui::test]
+    fn three_dashes_elsewhere_stay_text(cx: &mut TestAppContext) {
+        let (editor, cx) = open_active(cx, "text\n--");
+        set_cursor(&editor, cx, 7);
+        type_in(cx, "-");
+        assert_eq!(doc(&editor, cx), "text\n---");
+    }
+
+    /// An invalid YAML is shown raw with its error and never written.
+    #[gpui::test]
+    fn an_invalid_yaml_is_shown_raw_and_left_alone(cx: &mut TestAppContext) {
+        let doc_text = "---\ntitle: [x\n---\nbody";
+        let (editor, cx) = open_active(cx, doc_text);
+        set_cursor(&editor, cx, doc_text.len());
+        cx.run_until_parked();
+        let error = editor.update(cx, |e, cx| {
+            e.frontmatter.read(cx).error().map(str::to_owned)
+        });
+        assert!(error.is_some_and(|e| !e.is_empty()));
+        assert!(rows(&editor, cx).is_empty());
+        assert!(cx.debug_bounds("frontmatter-raw-text").is_some());
+        assert_eq!(doc(&editor, cx), doc_text);
+    }
+}
+
+mod html_blocks {
+    use super::*;
+    use crate::editor::layout::BlockKind;
+
+    /// US-035: `<details>` drawn closed and opened by its summary, a link
+    /// opening with the URL rules, an image outside the note's folder never
+    /// loaded, and a click elsewhere revealing the source.
+    #[gpui::test]
+    fn html_blocks_render_toggle_and_reveal(cx: &mut TestAppContext) {
+        let dir = tempfile::TempDir::new().unwrap();
+        let vault = dir.path().join("vault");
+        std::fs::create_dir_all(&vault).unwrap();
+        std::fs::write(dir.path().join("outside.png"), png(4, 4)).unwrap();
+        let doc_text = "intro\n\n<details>\n<summary>More</summary>\n\n<a href=\"https://example.test\">site</a> <img src=\"../outside.png\" alt=\"out\"> <span onclick=\"x()\">safe</span>\n\n</details>\n\nend";
+        let (editor, cx) = open_at(
+            cx,
+            doc_text,
+            Some(vault.join("note.md")),
+            EditorConfig::default(),
+        );
+        set_cursor(&editor, cx, doc_text.len());
+        let line = editor.update_in(cx, |e, window, cx| e.layout_line(2, window, cx));
+        let block = line.block.as_ref().expect("html block");
+        assert!(matches!(
+            &block.kind,
+            BlockKind::Rich(cerata_markdown::Widget::Html { .. })
+        ));
+
+        let summary = cx.debug_bounds("html-summary-0").expect("summary drawn");
+        assert!(cx.debug_bounds("html-details-body-0").is_none(), "closed");
+        let at = point(summary.left() + px(24.0), summary.center().y);
+        press(cx, at, 1, false);
+        cx.run_until_parked();
+        // The frame that draws it open measures it; the next one makes room:
+        // the caret on the following line is painted below its body.
+        cx.update(|window, cx| window.simulate_next_frame(cx));
+        cx.run_until_parked();
+        let body = cx.debug_bounds("html-details-body-0").expect("opened");
+        let caret = editor.read_with(cx, |e, _| {
+            e.frames.last().and_then(|f| f.carets.first().copied())
+        });
+        let caret = caret.expect("caret painted");
+        assert!(caret.top() > body.bottom(), "{caret:?} under {body:?}");
+        release(cx, at);
+        cx.run_until_parked();
+        assert_eq!(
+            selection(&editor, cx),
+            vec![(doc_text.len(), doc_text.len())]
+        );
+        assert!(
+            cx.debug_bounds("html-image-0").is_none(),
+            "outside image not loaded"
+        );
+
+        // The link opens with the URL rules.
+        let link = point(body.left() + px(8.0), body.top() + px(8.0));
+        press(cx, link, 1, false);
+        release(cx, link);
+        cx.run_until_parked();
+        assert_eq!(cx.opened_url().as_deref(), Some("https://example.test"));
+
+        // A click on the frame selects the block, which shows its source.
+        let frame = point(summary.right() - px(4.0), summary.top() - px(2.0));
+        press(cx, frame, 1, false);
+        release(cx, frame);
+        cx.run_until_parked();
+        let line = editor.update_in(cx, |e, window, cx| e.layout_line(2, window, cx));
+        assert!(line.block.is_none(), "source revealed");
+    }
+}
+
+mod math {
+    use super::*;
+    use crate::editor::layout::BlockKind;
+    use crate::editor::math::MathState;
+    use gpui::{Context, Window};
+
+    /// Lays the lines out until `done`, letting the renderer's thread answer.
+    fn wait_for(
+        editor: &Entity<Editor>,
+        cx: &mut VisualTestContext,
+        mut done: impl FnMut(&mut Editor, &mut Window, &mut Context<Editor>) -> bool,
+    ) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        loop {
+            cx.run_until_parked();
+            if editor.update_in(cx, |e, window, cx| done(e, window, cx)) {
+                cx.run_until_parked();
+                return;
+            }
+            assert!(std::time::Instant::now() < deadline, "renderer timed out");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    }
+
+    const DOC: &str = "Inline $a^2$ here.\n\n$$\n\\frac{1}{2}\n$$\n\nBad $\\frac{a$ one.\n\nend";
+
+    /// US-036: inline and block formulas drawn from MathJax's SVG once the
+    /// renderer answers, an invalid one in red with its error, and a click
+    /// on a formula revealing its source.
+    #[gpui::test]
+    fn formulas_render_off_thread_and_errors_show_their_source(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, DOC);
+        set_cursor(&editor, cx, DOC.len());
+        let block_line = 2;
+        let bad_line = 6;
+        wait_for(&editor, cx, |e, window, cx| {
+            let ready = |l: &crate::editor::layout::LaidLine| {
+                l.inline_math
+                    .iter()
+                    .all(|m| !matches!(m.state, MathState::Pending))
+            };
+            let first = e.layout_line(0, window, cx);
+            let bad = e.layout_line(bad_line, window, cx);
+            let block = e.layout_line(block_line, window, cx);
+            let block_ready = matches!(
+                e.math.state("\n\\frac{1}{2}\n", true, e.config.text_size()),
+                MathState::Ready(_)
+            );
+            ready(&first) && ready(&bad) && block.block.is_some() && block_ready
+        });
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+
+        let inline = cx
+            .debug_bounds("math-inline-0")
+            .expect("inline formula drawn");
+        assert!(inline.size.width > px(4.0) && inline.size.height > px(4.0));
+        let block = cx.debug_bounds("math-block").expect("block formula drawn");
+        assert!(block.size.height > px(16.0));
+        let (laid, kind) = editor.update_in(cx, |e, window, cx| {
+            let l = e.layout_line(block_line, window, cx);
+            let kind = l.block.as_ref().map(|b| b.kind.clone());
+            (l, kind)
+        });
+        assert!(matches!(
+            kind,
+            Some(BlockKind::Rich(cerata_markdown::Widget::Math {
+                display: true,
+                ..
+            }))
+        ));
+        assert!(laid.height >= block.size.height.as_f32());
+
+        let bad = editor.update_in(cx, |e, window, cx| e.layout_line(bad_line, window, cx));
+        let MathState::Error(message) = &bad.inline_math[0].state else {
+            panic!("the invalid formula is an error");
+        };
+        assert!(message.contains("Missing close brace"), "{message}");
+        assert!(
+            cx.debug_bounds("math-inline-error-0").is_some(),
+            "tooltip box drawn"
+        );
+
+        // A click on the block formula selects it: its source shows.
+        let at = block.center();
+        press(cx, at, 1, false);
+        release(cx, at);
+        cx.run_until_parked();
+        let from = DOC.find("$$").unwrap();
+        let to = DOC.rfind("$$").unwrap() + 2;
+        assert_eq!(selection(&editor, cx), vec![(to, from)]);
+        let line = editor.update_in(cx, |e, window, cx| e.layout_line(block_line, window, cx));
+        assert!(line.block.is_none(), "source revealed");
+    }
+
+    /// Currency stays text: nothing is sent to the renderer.
+    #[gpui::test]
+    fn currency_is_not_a_formula(cx: &mut TestAppContext) {
+        let text = "I paid $5 and $10 more, 5 $ and 10 $.";
+        let (editor, cx) = open(cx, text);
+        set_cursor(&editor, cx, text.len());
+        let line = editor.update_in(cx, |e, window, cx| e.layout_line(0, window, cx));
+        assert!(line.inline_math.is_empty());
+    }
+}
+
+mod mermaid {
+    use super::*;
+    use crate::editor::layout::BlockKind;
+    use crate::editor::mermaid::{CANVAS_HEIGHT, MermaidCanvas, PANEL_SHARE};
+    use gpui::{Bounds, Focusable as _};
+
+    const DOC: &str = "intro\n\n```mermaid\nflowchart LR\n  A --> B\n```\n\nend";
+
+    fn canvas(editor: &Entity<Editor>, cx: &mut VisualTestContext) -> Entity<MermaidCanvas> {
+        editor.read_with(cx, |e, _| {
+            e.canvases.get(&0).map(|(c, _)| c.clone()).expect("canvas")
+        })
+    }
+
+    /// Waits for the renderer's thread, then draws again.
+    fn wait_drawn(cx: &mut VisualTestContext, selector: &'static str) -> Bounds<Pixels> {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        loop {
+            cx.run_until_parked();
+            cx.update(|window, _| window.refresh());
+            cx.run_until_parked();
+            if let Some(bounds) = cx.debug_bounds(selector) {
+                return bounds;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "{selector} never drawn"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    }
+
+    fn view(canvas: &Entity<MermaidCanvas>, cx: &mut VisualTestContext) -> (f32, f32, f32) {
+        canvas.read_with(cx, |c, _| (c.view.zoom, c.view.pan.x, c.view.pan.y))
+    }
+
+    /// US-037: a 480 px canvas fitted with 16 px around the diagram; drag
+    /// pans, Ctrl+wheel zooms around the pointer within 0.25 and 4, keys pan,
+    /// zoom and fit.
+    #[gpui::test]
+    fn the_canvas_pans_zooms_and_fits(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, DOC);
+        set_cursor(&editor, cx, 0);
+        let line = editor.update_in(cx, |e, window, cx| e.layout_line(2, window, cx));
+        assert!(matches!(
+            line.block.as_ref().map(|b| &b.kind),
+            Some(BlockKind::Rich(cerata_markdown::Widget::Mermaid { .. }))
+        ));
+        let frame = wait_drawn(cx, "mermaid-canvas");
+        assert!((frame.size.height.as_f32() - CANVAS_HEIGHT).abs() < 1.0);
+        let diagram = wait_drawn(cx, "mermaid-diagram");
+        // Fitted: centered, at least 16 px around (this small diagram stops
+        // at the 4x cap before filling an axis).
+        let margin_x = (diagram.left() - frame.left()).as_f32();
+        let margin_y = (diagram.top() - frame.top()).as_f32();
+        assert!(margin_x.min(margin_y) >= 15.0, "{margin_x} {margin_y}");
+        assert!(((frame.right() - diagram.right()).as_f32() - margin_x).abs() < 2.0);
+        assert!(((frame.bottom() - diagram.bottom()).as_f32() - margin_y).abs() < 2.0);
+        let canvas = canvas(&editor, cx);
+        let fitted = view(&canvas, cx);
+
+        // Drag pans.
+        let start = diagram.center();
+        press(cx, start, 1, false);
+        drag_to(cx, point(start.x + px(40.0), start.y + px(10.0)), true);
+        release(cx, point(start.x + px(40.0), start.y + px(10.0)));
+        cx.run_until_parked();
+        let panned = view(&canvas, cx);
+        assert!(
+            (panned.1 - fitted.1 - 40.0).abs() < 0.5 && (panned.2 - fitted.2 - 10.0).abs() < 0.5
+        );
+        assert_eq!(selection(&editor, cx), vec![(0, 0)], "the caret stays");
+
+        // Ctrl+wheel zooms, bounded.
+        // GPUI's wheel up is a positive delta: it zooms in.
+        for _ in 0..40 {
+            cx.simulate_event(ScrollEvent {
+                position: start,
+                delta: ScrollDelta::Pixels(point(px(0.0), px(200.0))),
+                modifiers: Modifiers {
+                    control: true,
+                    ..Modifiers::default()
+                },
+                ..Default::default()
+            });
+        }
+        cx.run_until_parked();
+        assert!((view(&canvas, cx).0 - 4.0).abs() < 1e-3, "capped at 4");
+        for _ in 0..80 {
+            cx.simulate_event(ScrollEvent {
+                position: start,
+                delta: ScrollDelta::Pixels(point(px(0.0), px(-200.0))),
+                modifiers: Modifiers {
+                    control: true,
+                    ..Modifiers::default()
+                },
+                ..Default::default()
+            });
+        }
+        cx.run_until_parked();
+        let zoomed_out = view(&canvas, cx).0;
+        assert!(zoomed_out >= 0.25f32.min(fitted.0) - 1e-3 && zoomed_out < fitted.0);
+        // Without Ctrl the wheel is the note's, not the diagram's.
+        cx.simulate_event(ScrollEvent {
+            position: start,
+            delta: ScrollDelta::Pixels(point(px(0.0), px(-60.0))),
+            ..Default::default()
+        });
+        cx.run_until_parked();
+        assert_eq!(view(&canvas, cx).0, zoomed_out);
+
+        // Keys: `0` fits, `+` zooms in, arrows pan.
+        cx.simulate_keystrokes("0");
+        assert_eq!(view(&canvas, cx), fitted);
+        // A small diagram fits at the cap: zoom out first.
+        cx.simulate_keystrokes("-");
+        let smaller = view(&canvas, cx).0;
+        assert!(smaller < fitted.0);
+        cx.simulate_keystrokes("+");
+        assert!(view(&canvas, cx).0 > smaller);
+        cx.simulate_keystrokes("0 right");
+        let moved = view(&canvas, cx);
+        assert!((moved.1 - (fitted.1 - 24.0)).abs() < 0.5);
+        // Editing keys the canvas does not bind stop there too.
+        cx.simulate_keystrokes("backspace tab delete shift-tab");
+        assert_eq!(doc(&editor, cx), DOC, "keys never reach the text");
+    }
+
+    /// The edit panel takes a third of the width and writes the fence back
+    /// 150 ms after the last keystroke.
+    #[gpui::test]
+    fn the_edit_panel_rewrites_the_fence_after_150_ms(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, DOC);
+        set_cursor(&editor, cx, 0);
+        let frame = wait_drawn(cx, "mermaid-canvas");
+        let canvas = canvas(&editor, cx);
+        canvas.update_in(cx, |c, window, cx| {
+            window.focus(&c.focus_handle(cx), cx);
+        });
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        let panel = cx.debug_bounds("mermaid-panel").expect("panel open");
+        let share = panel.size.width.as_f32() / frame.size.width.as_f32();
+        assert!((share - PANEL_SHARE).abs() < 0.02, "{share}");
+
+        // Typing in the panel: the fence follows 150 ms after the last key.
+        let fence_end = DOC.find("B\n```").unwrap() + 1;
+        let inner = canvas.read_with(cx, |c, _| c.panel_editor().expect("panel editor"));
+        // Plain source across the panel: no code block, no page inset.
+        let (code, column) = inner.update_in(cx, |e, window, cx| {
+            let line = e.layout_line(1, window, cx);
+            (line.code.is_some(), e.viewport.map(|v| v.column_width))
+        });
+        assert!(!code, "the fence is not drawn as a code block");
+        let column = column.expect("panel laid out");
+        assert!(
+            (column - (panel.size.width.as_f32() - 24.0)).abs() < 2.0,
+            "{column} in {panel:?}"
+        );
+        inner.update(cx, |e, cx| {
+            e.select(
+                cerata_markdown::Selection::cursor(fence_end - DOC.find("```").unwrap()),
+                cx,
+            )
+        });
+        cx.simulate_input(" --> C");
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(100));
+        cx.run_until_parked();
+        assert_eq!(doc(&editor, cx), DOC, "not before 150 ms");
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(60));
+        cx.run_until_parked();
+        assert_eq!(doc(&editor, cx), DOC.replace("A --> B", "A --> B --> C"));
+        // Digits typed in the panel stay text.
+        cx.simulate_input("0");
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(200));
+        cx.run_until_parked();
+        let text = doc(&editor, cx);
+        let panel_text = inner.read_with(cx, |e, _| e.state.text().as_str().to_owned());
+        assert!(text.contains("B --> C0"), "{text:?} panel {panel_text:?}");
+    }
+
+    /// Full screen opens from its button and closes with Escape, the close
+    /// button or the backdrop, the focus back on the canvas.
+    #[gpui::test]
+    fn full_screen_closes_and_gives_the_focus_back(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, DOC);
+        set_cursor(&editor, cx, 0);
+        wait_drawn(cx, "mermaid-diagram");
+        let canvas = canvas(&editor, cx);
+        let open_full = |cx: &mut VisualTestContext| {
+            let expand = cx.debug_bounds("mermaid-expand").expect("expand button");
+            press(cx, expand.center(), 1, false);
+            release(cx, expand.center());
+            cx.run_until_parked();
+            assert!(cx.debug_bounds("mermaid-fullscreen").is_some(), "open");
+        };
+        let focused_canvas = |cx: &mut VisualTestContext| {
+            canvas.update_in(cx, |c, window, cx| c.focus_handle(cx).is_focused(window))
+        };
+
+        open_full(cx);
+        cx.simulate_keystrokes("escape");
+        cx.run_until_parked();
+        assert!(cx.debug_bounds("mermaid-fullscreen").is_none());
+        assert!(focused_canvas(cx));
+
+        open_full(cx);
+        let backdrop = cx.debug_bounds("mermaid-fullscreen").unwrap();
+        let corner = point(backdrop.left() + px(4.0), backdrop.top() + px(4.0));
+        press(cx, corner, 1, false);
+        release(cx, corner);
+        cx.run_until_parked();
+        assert!(cx.debug_bounds("mermaid-fullscreen").is_none());
+        assert!(focused_canvas(cx));
+        assert_eq!(doc(&editor, cx), DOC);
+    }
+
+    /// Tab moves from the canvas to its toolbar; Enter clicks the focused
+    /// button once (not the canvas's own Enter as well).
+    #[gpui::test]
+    fn the_toolbar_works_from_the_keyboard(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, DOC);
+        set_cursor(&editor, cx, 0);
+        wait_drawn(cx, "mermaid-diagram");
+        let canvas = canvas(&editor, cx);
+        canvas.update_in(cx, |c, window, cx| window.focus(&c.focus_handle(cx), cx));
+        cx.simulate_keystrokes("tab");
+        cx.run_until_parked();
+        let on_button = canvas.update_in(cx, |c, window, cx| {
+            let handle = c.focus_handle(cx);
+            !handle.is_focused(window) && handle.contains_focused(window, cx)
+        });
+        assert!(on_button, "Tab reached a toolbar button");
+        let enter = gpui::Keystroke::parse("enter").unwrap();
+        cx.simulate_event(gpui::KeyDownEvent {
+            keystroke: enter.clone(),
+            is_held: false,
+            prefer_character_input: false,
+        });
+        cx.simulate_event(gpui::KeyUpEvent { keystroke: enter });
+        cx.run_until_parked();
+        assert!(
+            cx.debug_bounds("mermaid-panel").is_some(),
+            "Edit code opened once"
+        );
+        assert_eq!(doc(&editor, cx), DOC);
+    }
+
+    /// A canvas taking the keyboard focus off screen scrolls into sight.
+    #[gpui::test]
+    fn a_focused_canvas_scrolls_into_sight(cx: &mut TestAppContext) {
+        let text = format!("{DOC}\n\n{}", "filler line\n\n".repeat(200));
+        let (editor, cx) = open(cx, &text);
+        set_cursor(&editor, cx, 0);
+        wait_drawn(cx, "mermaid-diagram");
+        let canvas = canvas(&editor, cx);
+        editor.update(cx, |e, cx| {
+            e.set_scroll_top(4000.0);
+            cx.notify();
+        });
+        cx.run_until_parked();
+        canvas.update_in(cx, |c, window, cx| window.focus(&c.focus_handle(cx), cx));
+        cx.run_until_parked();
+        let (scroll, top) = editor.read_with(cx, |e, _| {
+            let fence = text.find("```").unwrap();
+            let line = e.state.text().line_at(fence).number;
+            (e.scroll_top(), e.heights.prefix(line))
+        });
+        assert!(
+            (scroll - (top - SAFE_MARGIN).max(0.0)).abs() < 1.0,
+            "{scroll} {top}"
+        );
+    }
+
+    /// ADR 0006: the caret steps over a diagram, which stays drawn: Down
+    /// stops before it, then after it, then on the next line; Backspace
+    /// after it selects it, then deletes it; typing at a boundary takes a
+    /// line of its own.
+    #[gpui::test]
+    fn the_caret_steps_over_a_diagram(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, DOC);
+        set_cursor(&editor, cx, 0);
+        let frame = wait_drawn(cx, "mermaid-canvas");
+        let start = DOC.find("```").unwrap();
+        let end = DOC.rfind("```").unwrap() + 3;
+        let last_caret = |editor: &Entity<Editor>, cx: &mut VisualTestContext| {
+            cx.update(|window, _| window.refresh());
+            cx.run_until_parked();
+            editor.read_with(cx, |e, _| {
+                e.frames
+                    .last()
+                    .and_then(|f| f.carets.first().copied())
+                    .expect("a caret drawn")
+            })
+        };
+        let canvas_drawn = |editor: &Entity<Editor>, cx: &mut VisualTestContext| {
+            editor.update_in(cx, |e, window, cx| {
+                let line = e.layout_line(2, window, cx);
+                line.block.is_some_and(|b| b.height >= CANVAS_HEIGHT)
+            })
+        };
+
+        let mut heads = Vec::new();
+        for _ in 0..4 {
+            cx.simulate_keystrokes("down");
+            cx.run_until_parked();
+            heads.push(selection(&editor, cx)[0].1);
+            assert!(canvas_drawn(&editor, cx), "the diagram stays drawn");
+        }
+        assert_eq!(heads, vec![start, end, end + 1, end + 2]);
+        // Up from the line under it: straight to its end.
+        cx.simulate_keystrokes("up");
+        cx.run_until_parked();
+        assert_eq!(selection(&editor, cx), vec![(end, end)]);
+        // After the diagram: a caret on its right edge, its full height.
+        let caret = last_caret(&editor, cx);
+        assert!(
+            (caret.right() - frame.right()).abs() < px(3.0),
+            "{caret:?} {frame:?}"
+        );
+        assert!(caret.size.height >= px(CANVAS_HEIGHT));
+        cx.simulate_keystrokes("up");
+        cx.run_until_parked();
+        assert_eq!(selection(&editor, cx), vec![(start, start)]);
+        let caret = last_caret(&editor, cx);
+        assert!(
+            (caret.left() - frame.left()).abs() < px(3.0),
+            "{caret:?} {frame:?}"
+        );
+        // Right and Left never stop inside.
+        cx.simulate_keystrokes("right");
+        cx.run_until_parked();
+        assert_eq!(selection(&editor, cx), vec![(end, end)]);
+        cx.simulate_keystrokes("left");
+        cx.run_until_parked();
+        assert_eq!(selection(&editor, cx), vec![(start, start)]);
+
+        // Typed at the start: a line of its own above the diagram.
+        cx.simulate_input("x");
+        cx.run_until_parked();
+        let typed = DOC.replace("```mermaid", "x\n```mermaid");
+        assert_eq!(doc(&editor, cx), typed);
+        assert!(canvas_drawn_at(&editor, cx, 3));
+        cx.simulate_keystrokes(&secondary("z"));
+        cx.run_until_parked();
+        assert_eq!(doc(&editor, cx), DOC);
+
+        // Backspace after it selects it, then deletes it.
+        set_cursor(&editor, cx, end);
+        cx.simulate_keystrokes("backspace");
+        cx.run_until_parked();
+        assert_eq!(doc(&editor, cx), DOC);
+        assert_eq!(selection(&editor, cx), vec![(start, end)]);
+        cx.simulate_keystrokes("backspace");
+        cx.run_until_parked();
+        assert_eq!(doc(&editor, cx), "intro\n\n\n\nend");
+    }
+
+    fn canvas_drawn_at(editor: &Entity<Editor>, cx: &mut VisualTestContext, line: usize) -> bool {
+        editor.update_in(cx, |e, window, cx| {
+            let laid = e.layout_line(line, window, cx);
+            laid.block.is_some_and(|b| b.height >= CANVAS_HEIGHT)
+        })
+    }
+
+    /// A diagram Pele rejects shows the message and the source.
+    #[gpui::test]
+    fn a_syntax_error_shows_its_message_and_source(cx: &mut TestAppContext) {
+        let text =
+            "```mermaid\nflowchart TD\n  A --> B -->\n  C[[[ <img src=x onerror=1>\n```\n\nend";
+        let (editor, cx) = open(cx, text);
+        set_cursor(&editor, cx, text.len());
+        wait_drawn(cx, "mermaid-error");
+        let canvas = canvas(&editor, cx);
+        let error = canvas.read_with(cx, |c, _| c.rendered().cloned());
+        // `mermaid.test.ts:300-312`: the message is text, its markup shown
+        // as typed.
+        let Some(Err(message)) = error else {
+            panic!("an error");
+        };
+        assert!(message.contains("<img src=x onerror=1>"), "{message}");
+
+        // `mermaid.test.ts:576-587`: full screen opens on the error, and
+        // Escape closes it.
+        let expand = cx.debug_bounds("mermaid-expand").expect("expand button");
+        press(cx, expand.center(), 1, false);
+        release(cx, expand.center());
+        cx.run_until_parked();
+        assert!(cx.debug_bounds("mermaid-fullscreen").is_some());
+        let full = editor.read_with(cx, |e, _| {
+            e.fullscreen
+                .as_ref()
+                .map(|f| f.canvas.clone())
+                .expect("full screen")
+        });
+        assert!(matches!(
+            full.read_with(cx, |c, _| c.rendered().cloned()),
+            Some(Err(_))
+        ));
+        cx.simulate_keystrokes("escape");
+        cx.run_until_parked();
+        assert!(cx.debug_bounds("mermaid-fullscreen").is_none());
+
+        // `mermaid.test.ts:332-344`: fixing the source swaps the error for
+        // the diagram.
+        let broken = text.find("  A --> B -->").unwrap();
+        let line_end = broken + text[broken..].find("```").unwrap();
+        editor.update(cx, |e, cx| {
+            e.update_state(cx, |s| {
+                let _ = s.apply(cerata_markdown::Transaction::new().change(
+                    cerata_markdown::Change::new(broken..line_end, "  A --> B --> C\n"),
+                ));
+            })
+        });
+        wait_drawn(cx, "mermaid-diagram");
+        assert!(cx.debug_bounds("mermaid-error").is_none());
+        assert!(matches!(
+            canvas.read_with(cx, |c, _| c.rendered().cloned()),
+            Some(Ok(_))
+        ));
+    }
+}
+
+mod rail {
+    use super::*;
+    use crate::editor::menu::{MenuAction, MenuItem};
+    use crate::editor::rail::{MIN_HEADINGS, POPOVER_WIDTH};
+
+    /// `count` h2 sections, each followed by 30 paragraphs.
+    fn sections(count: usize) -> String {
+        let mut out = String::new();
+        for i in 0..count {
+            out.push_str(&format!("## Section {i}\n\n"));
+            for j in 0..30 {
+                out.push_str(&format!("Paragraph {j} of section {i}.\n\n"));
+            }
+        }
+        out
+    }
+
+    fn hover(cx: &mut VisualTestContext, position: Point<Pixels>) {
+        drag_to(cx, position, false);
+        cx.run_until_parked();
+    }
+
+    fn line_of(editor: &Entity<Editor>, cx: &mut VisualTestContext, i: usize) -> f64 {
+        editor.read_with(cx, |e, _| {
+            let headings = e.rail.headings.clone();
+            e.heights.prefix(headings[i].line)
+        })
+    }
+
+    fn active(editor: &Entity<Editor>, cx: &mut VisualTestContext) -> Option<usize> {
+        editor.update(cx, |e, cx| {
+            let headings = e.rail_headings(cx);
+            e.active_heading(&headings)
+        })
+    }
+
+    /// US-038: hidden under 5 headings; one 8 x 1 mark per heading, 6 px
+    /// apart, on the right edge.
+    #[gpui::test]
+    fn the_rail_shows_from_five_headings(cx: &mut TestAppContext) {
+        let (_editor, cx) = open(cx, &sections(MIN_HEADINGS - 1));
+        assert!(
+            cx.debug_bounds("section-rail").is_none(),
+            "4 headings: no rail"
+        );
+
+        let (_editor, cx) = open(cx, &sections(MIN_HEADINGS));
+        let rail = cx.debug_bounds("section-rail").expect("rail");
+        let window = cx.update(|window, _| window.viewport_size());
+        assert!(rail.right() <= window.width && rail.right() >= window.width - px(24.0));
+        let first = cx.debug_bounds("rail-tick-0").expect("tick 0");
+        let second = cx.debug_bounds("rail-tick-1").expect("tick 1");
+        assert_eq!(first.size.width, px(10.0), "8 px mark in a 1 px focus ring");
+        assert_eq!(
+            (second.top() - first.top()).as_f32(),
+            7.0,
+            "1 px mark + 6 px gap"
+        );
+        assert!(cx.debug_bounds("rail-tick-4").is_some());
+        assert!(cx.debug_bounds("rail-popover").is_none());
+    }
+
+    /// A note with thousands of headings builds only the marks that fit in
+    /// 70 % of the view, around the active one, and reparses its headings
+    /// only once typing pauses (`use-document-headings.ts:85-87`).
+    #[gpui::test]
+    fn a_long_note_builds_only_the_marks_that_fit(cx: &mut TestAppContext) {
+        use crate::editor::rail::HEADINGS_DEBOUNCE;
+        let note: String = (0..2000).map(|i| format!("## Heading {i}\n\n")).collect();
+        let (editor, cx) = open(cx, &note);
+        let rail = cx.debug_bounds("section-rail").expect("rail");
+        let window = cx.update(|window, _| window.viewport_size());
+        assert!(rail.size.height < window.height, "{rail:?}");
+        let drawn = (0..2000)
+            .filter(|i| {
+                cx.debug_bounds(Box::leak(format!("rail-tick-{i}").into_boxed_str()))
+                    .is_some()
+            })
+            .count();
+        assert!(drawn > 10 && drawn <= 200, "{drawn} marks built");
+        assert!(cx.debug_bounds("rail-tick-0").is_some());
+
+        // Far down the note, the marks around the active heading are drawn.
+        let target = editor.update(cx, |e, _| e.rail.headings[1500].pos);
+        editor.update(cx, |e, cx| e.rail_go_to(target, cx));
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+        let shown = active(&editor, cx).expect("an active heading");
+        assert!(shown >= 1490, "{shown}");
+        assert!(
+            cx.debug_bounds(Box::leak(format!("rail-tick-{shown}").into_boxed_str()))
+                .is_some()
+        );
+
+        // Typing keeps the parsed headings until the pause.
+        set_cursor(&editor, cx, 0);
+        cx.simulate_input("# New\n\n");
+        cx.run_until_parked();
+        let before = editor.read_with(cx, |e, _| e.rail.headings.len());
+        assert_eq!(before, 2000);
+        cx.executor().advance_clock(HEADINGS_DEBOUNCE);
+        cx.run_until_parked();
+        assert_eq!(editor.read_with(cx, |e, _| e.rail.headings.len()), 2001);
+    }
+
+    /// The active heading is the last one at or above the safe line, else
+    /// the first; it follows the scroll.
+    #[gpui::test]
+    fn the_active_heading_follows_the_scroll(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, &sections(6));
+        assert_eq!(active(&editor, cx), Some(0));
+        let third = line_of(&editor, cx, 2);
+        editor.update(cx, |e, cx| {
+            e.set_scroll_top(third - SAFE_MARGIN);
+            cx.notify();
+        });
+        cx.run_until_parked();
+        assert_eq!(active(&editor, cx), Some(2));
+        editor.update(cx, |e, _| e.set_scroll_top(third - SAFE_MARGIN - 10.0));
+        assert_eq!(active(&editor, cx), Some(1), "not past the line yet");
+    }
+
+    /// Hovering opens the 260 px outline; a row scrolls its heading to the
+    /// safe line and makes it active; leaving or Escape closes it.
+    #[gpui::test]
+    fn the_outline_opens_on_hover_and_jumps(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, &sections(6));
+        set_cursor(&editor, cx, 0);
+        let tick = cx.debug_bounds("rail-tick-2").expect("tick");
+        hover(cx, tick.center());
+        let popover = cx.debug_bounds("rail-popover").expect("outline open");
+        assert_eq!(popover.size.width, px(POPOVER_WIDTH));
+
+        let row = cx.debug_bounds("rail-row-4").expect("row 4");
+        press(cx, row.center(), 1, false);
+        release(cx, row.center());
+        cx.run_until_parked();
+        let target = line_of(&editor, cx, 4);
+        let scroll = editor.read_with(cx, |e, _| e.scroll_top());
+        assert!(
+            (scroll - (target - SAFE_MARGIN)).abs() < 1.0,
+            "{scroll} {target}"
+        );
+        assert_eq!(active(&editor, cx), Some(4));
+        assert_eq!(selection(&editor, cx), vec![(0, 0)], "the caret stays");
+
+        hover(cx, point(px(300.0), px(300.0)));
+        assert!(cx.debug_bounds("rail-popover").is_none(), "closed on leave");
+
+        hover(cx, tick.center());
+        assert!(cx.debug_bounds("rail-popover").is_some());
+        cx.simulate_keystrokes("escape");
+        cx.run_until_parked();
+        assert!(
+            cx.debug_bounds("rail-popover").is_none(),
+            "closed by Escape"
+        );
+    }
+
+    /// A right click on a mark offers "Copy heading link", which copies
+    /// `[text](#slug)`.
+    #[gpui::test]
+    fn a_right_click_copies_the_heading_link(cx: &mut TestAppContext) {
+        let (editor, cx) = open(
+            cx,
+            &sections(6).replace("## Section 3", "## Sources & Notes"),
+        );
+        // With the outline closed the marks take the click.
+        let tick = cx.debug_bounds("rail-tick-3").expect("tick");
+        cx.simulate_event(MouseDownEvent {
+            button: MouseButton::Right,
+            position: tick.center(),
+            modifiers: Modifiers::default(),
+            click_count: 1,
+            first_mouse: false,
+        });
+        cx.run_until_parked();
+        let action = editor.read_with(cx, |e, _| {
+            let menu = e.menu.as_ref().expect("menu open");
+            assert_eq!(menu.items.len(), 1);
+            match &menu.items[0] {
+                MenuItem::Action { label, action, .. } => {
+                    assert_eq!(label.as_ref(), "Copy heading link");
+                    action.clone()
+                }
+                _ => panic!("an action"),
+            }
+        });
+        assert!(
+            matches!(&action, MenuAction::CopyLink(l) if l == "[Sources & Notes](#sources-notes)"),
+            "{action:?}"
+        );
+        editor.update_in(cx, |e, window, cx| e.run_menu_action(action, window, cx));
+        assert_eq!(
+            cx.read_from_clipboard().and_then(|i| i.text()).as_deref(),
+            Some("[Sources & Notes](#sources-notes)")
+        );
+    }
 }

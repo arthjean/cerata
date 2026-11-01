@@ -87,7 +87,11 @@ impl Editor {
 
     /// Typed text at every selection range (or `range`, from the OS).
     fn type_text(&mut self, range: Option<Range<usize>>, text: &str, cx: &mut Context<Self>) {
+        if range.is_none() && text == "-" && self.open_frontmatter(cx) {
+            return;
+        }
         let text = text.to_owned();
+        self.typed = true;
         self.update_state(cx, |state| {
             let ranges: Vec<SelectionRange> = match range {
                 Some(range) => vec![SelectionRange::new(range.start, range.end)],
@@ -97,10 +101,16 @@ impl Editor {
             let mut carets = Vec::new();
             let mut shift: isize = 0;
             for r in &ranges {
-                changes.push(Change::new(r.range(), text.clone()));
-                let end = r.from() as isize + shift + text.len() as isize;
+                // At a diagram's boundary: on a line of its own.
+                let (insert, caret) = match r.is_empty() {
+                    true => cerata_markdown::atomic::typed_at(state, r.head, &text),
+                    false => None,
+                }
+                .unwrap_or_else(|| (text.clone(), text.len()));
+                let end = r.from() as isize + shift + caret as isize;
                 carets.push(SelectionRange::cursor(end.max(0) as usize));
-                shift += text.len() as isize - r.range().len() as isize;
+                shift += insert.len() as isize - r.range().len() as isize;
+                changes.push(Change::new(r.range(), insert));
             }
             let main = state.selection().main_index().min(carets.len() - 1);
             let _ = state.apply(
@@ -111,6 +121,47 @@ impl Editor {
                     .scroll(),
             );
         });
+    }
+}
+
+impl Editor {
+    /// `---` typed on a first line holding `--`, in a note without
+    /// frontmatter, opens an empty properties panel instead of a rule
+    /// (`editor-clipboard.ts:57-78`).
+    fn open_frontmatter(&mut self, cx: &mut Context<Self>) -> bool {
+        let main = self.state.selection().main();
+        let doc = self.state.doc();
+        let first_line = doc.split(['\n', '\r']).next().unwrap_or("");
+        if self.state.selection().ranges().len() > 1
+            || !main.is_empty()
+            || main.head != 2
+            || first_line != "--"
+            || cerata_markdown::frontmatter::detect(doc).is_some()
+        {
+            return false;
+        }
+        // An empty block as Writer writes it; the caret after it, where
+        // the panel shows.
+        let eol = if doc[2..].starts_with("\r\n") {
+            "\r\n"
+        } else {
+            "\n"
+        };
+        let replaced = 0..(2 + if doc.len() > 2 { eol.len() } else { 0 });
+        let block = cerata_markdown::frontmatter::join(Some(""), "", eol);
+        let caret = block.len();
+        self.update_state(cx, |state| {
+            let _ = state.apply(
+                Transaction::new()
+                    .change(Change::new(replaced, block))
+                    .select(Selection::cursor(caret))
+                    .event(UserEvent::Command)
+                    .scroll(),
+            );
+        });
+        self.frontmatter
+            .update(cx, |panel, cx| panel.focus_first(cx));
+        true
     }
 }
 

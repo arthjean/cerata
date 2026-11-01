@@ -15,6 +15,7 @@ use super::{Editor, images};
 actions!(
     editor,
     [
+        ToggleTabFocus,
         Backspace,
         Delete,
         DeleteWordLeft,
@@ -119,6 +120,13 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("shift-enter", Newline, c),
         KeyBinding::new("tab", Indent, c),
         KeyBinding::new("shift-tab", Outdent, c),
+        // CodeMirror's `toggleTabFocusMode` (Mod-m, Shift-Alt-m on macOS):
+        // Tab leaves the text for the controls around and inside it.
+        KeyBinding::new(
+            if mac { "alt-shift-m" } else { "ctrl-m" },
+            ToggleTabFocus,
+            c,
+        ),
         KeyBinding::new("left", Left, c),
         KeyBinding::new("right", Right, c),
         KeyBinding::new("up", Up, c),
@@ -211,6 +219,7 @@ pub fn bindings() -> Vec<KeyBinding> {
 pub fn init(cx: &mut App) {
     cx.bind_keys(bindings());
     cx.bind_keys(super::text_field::bindings());
+    cx.bind_keys(super::mermaid::bindings());
 }
 
 /// The local date and time for the insert commands.
@@ -233,6 +242,13 @@ macro_rules! on {
              _: &$action,
              $window: &mut Window,
              $ecx: &mut Context<Editor>| {
+                // A control drawn in or beside the text has the focus (a
+                // property field, a diagram canvas, a rail mark): the text
+                // is not edited behind it.
+                if !$editor.keys_reach_text($window, $ecx) {
+                    $ecx.propagate();
+                    return;
+                }
                 $body;
             },
         ));
@@ -249,20 +265,57 @@ pub fn register(mut root: Stateful<Div>, cx: &mut Context<Editor>) -> Stateful<D
         .update_state(cx, |s| s.delete_group(false)));
     on!(root, cx, DeleteWordRight, |e, _w, cx| e
         .update_state(cx, |s| s.delete_group(true)));
-    on!(root, cx, Newline, |e, _w, cx| e
-        .update_state(cx, |s| s.insert_newline()));
-    on!(root, cx, Indent, |e, _w, cx| e
-        .update_state(cx, |s| s.indent()));
-    on!(root, cx, Outdent, |e, _w, cx| e
-        .update_state(cx, |s| s.outdent()));
+    on!(
+        root,
+        cx,
+        Newline,
+        |e, _w, cx| if !e.completion_accept(None, cx) {
+            e.update_state(cx, |s| s.insert_newline());
+        }
+    );
+    // Tab indents the text it has the focus of. With Ctrl+M on, or from a
+    // control drawn in the text (a rail mark, a diagram, the find field),
+    // it moves the focus: the window's Tab binding skips the editor.
+    root = root.on_action(cx.listener(|e: &mut Editor, _: &Indent, window, cx| {
+        if !e.focus_handle.is_focused(window) || e.tab_focus {
+            window.focus_next(cx);
+        } else if !e.completion_accept(None, cx) {
+            e.update_state(cx, |s| s.indent());
+        }
+    }));
+    root = root.on_action(cx.listener(|e: &mut Editor, _: &Outdent, window, cx| {
+        if !e.focus_handle.is_focused(window) || e.tab_focus {
+            window.focus_prev(cx);
+        } else {
+            e.update_state(cx, |s| s.outdent());
+        }
+    }));
+    on!(root, cx, ToggleTabFocus, |e, _w, cx| {
+        e.tab_focus = !e.tab_focus;
+        let keys = if cfg!(target_os = "macos") {
+            "Shift+Option+M"
+        } else {
+            "Ctrl+M"
+        };
+        let notice = if e.tab_focus {
+            format!("Tab now moves the focus. Press {keys} to indent with Tab again.")
+        } else {
+            format!("Tab indents again. Press {keys} to move the focus with Tab.")
+        };
+        e.show_notice(notice, cx);
+    });
     on!(root, cx, Left, |e, _w, cx| e.horizontal(false, false, cx));
     on!(root, cx, Right, |e, _w, cx| e.horizontal(true, false, cx));
     on!(root, cx, SelectLeft, |e, _w, cx| e
         .horizontal(false, true, cx));
     on!(root, cx, SelectRight, |e, _w, cx| e
         .horizontal(true, true, cx));
-    on!(root, cx, Up, |e, w, cx| e.vertical(false, false, w, cx));
-    on!(root, cx, Down, |e, w, cx| e.vertical(true, false, w, cx));
+    on!(root, cx, Up, |e, w, cx| if !e.completion_move(-1, cx) {
+        e.vertical(false, false, w, cx);
+    });
+    on!(root, cx, Down, |e, w, cx| if !e.completion_move(1, cx) {
+        e.vertical(true, false, w, cx);
+    });
     on!(root, cx, SelectUp, |e, w, cx| e
         .vertical(false, true, w, cx));
     on!(root, cx, SelectDown, |e, w, cx| e
@@ -510,6 +563,13 @@ impl Editor {
     /// Escape: closes the find bar or the menu, else collapses a multiple
     /// selection to its main range.
     fn cancel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.completion_close(cx) {
+            return;
+        }
+        if self.rail.close() {
+            cx.notify();
+            return;
+        }
         if self.menu.take().is_some() {
             cx.notify();
             return;

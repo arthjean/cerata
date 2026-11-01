@@ -86,6 +86,8 @@ pub struct TextField {
     pub invalid: bool,
     /// No border, background or padding: the parent draws the field.
     bare: bool,
+    /// Text in the muted color (a property name).
+    muted: bool,
     text_size: Pixels,
     last_layout: Option<(ShapedLine, Bounds<Pixels>)>,
     /// The last edit or caret move, which the blink counts from.
@@ -110,6 +112,7 @@ impl TextField {
             label: None,
             invalid: false,
             bare: false,
+            muted: false,
             text_size: px(13.0),
             last_layout: None,
             blink_anchor: Instant::now(),
@@ -125,6 +128,11 @@ impl TextField {
     /// example or empty.
     pub fn labeled(mut self, label: impl Into<SharedString>) -> Self {
         self.label = Some(label.into());
+        self
+    }
+
+    pub fn muted(mut self) -> Self {
+        self.muted = true;
         self
     }
 
@@ -474,6 +482,8 @@ impl Element for FieldElement {
         let field = self.field.read(cx);
         let (text, color) = if field.text.is_empty() {
             (field.placeholder.to_string(), theme::muted())
+        } else if field.muted {
+            (field.text.clone(), theme::muted())
         } else {
             (field.text.clone(), theme::text())
         };
