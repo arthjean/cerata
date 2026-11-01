@@ -27,6 +27,9 @@ mod editor;
 #[allow(dead_code)]
 #[path = "editor_spike/fixture.rs"]
 mod fixture;
+#[allow(dead_code)]
+#[path = "../src/icons.rs"]
+mod icons;
 
 use std::cell::RefCell;
 use std::rc::Rc;
