@@ -21,11 +21,22 @@ pub struct Stats {
     pub paragraphs: usize,
 }
 
-/// `(setting key, footer label, menu label)` in display order.
-pub const METRICS: [(&str, &str, &str); 3] = [
-    ("statusbar.show-words", "words", "Words"),
-    ("statusbar.show-characters", "characters", "Characters"),
-    ("statusbar.show-paragraphs", "paragraphs", "Paragraphs"),
+/// `(setting key, footer label for one, for any other count, menu label)`
+/// in display order.
+pub const METRICS: [(&str, &str, &str, &str); 3] = [
+    ("statusbar.show-words", "word", "words", "Words"),
+    (
+        "statusbar.show-characters",
+        "character",
+        "characters",
+        "Characters",
+    ),
+    (
+        "statusbar.show-paragraphs",
+        "paragraph",
+        "paragraphs",
+        "Paragraphs",
+    ),
 ];
 
 /// `^[ \t]{0,3}(?:#{1,6}|[-*+]|\d+[.)]|>)[ \t]+` removed from a line.
@@ -204,7 +215,7 @@ impl WindowView {
     ) {
         let items = METRICS
             .iter()
-            .map(|(key, _, label)| {
+            .map(|(key, _, _, label)| {
                 let visible = self.metric_visible(key);
                 let key = (*key).to_owned();
                 Item::check(*label, visible, move |this: &mut WindowView, _, cx| {
@@ -223,10 +234,10 @@ impl WindowView {
 }
 
 pub fn render(view: &mut WindowView, cx: &mut Context<WindowView>) -> Option<AnyElement> {
-    let visible: Vec<(&str, &str)> = METRICS
+    let visible: Vec<(&str, &str, &str)> = METRICS
         .iter()
-        .filter(|(key, _, _)| view.metric_visible(key))
-        .map(|(key, label, _)| (*key, *label))
+        .filter(|(key, _, _, _)| view.metric_visible(key))
+        .map(|(key, one, many, _)| (*key, *one, *many))
         .collect();
     if visible.is_empty() {
         return None;
@@ -253,12 +264,13 @@ pub fn render(view: &mut WindowView, cx: &mut Context<WindowView>) -> Option<Any
                 this.open_status_menu(event.position, cx);
             }),
         );
-    for (key, label) in visible {
+    for (key, one, many) in visible {
         let value = match key {
             "statusbar.show-words" => stats.words,
             "statusbar.show-characters" => stats.characters,
             _ => stats.paragraphs,
         };
+        let label = if value == 1 { one } else { many };
         bar = bar.child(
             div()
                 .flex()

@@ -81,6 +81,8 @@ pub struct TextField {
     pub selection: Range<usize>,
     marked: Option<Range<usize>>,
     placeholder: SharedString,
+    /// The accessible name; the placeholder unless [`Self::labeled`].
+    label: Option<SharedString>,
     pub invalid: bool,
     /// No border, background or padding: the parent draws the field.
     bare: bool,
@@ -105,6 +107,7 @@ impl TextField {
             selection: 0..0,
             marked: None,
             placeholder: placeholder.into(),
+            label: None,
             invalid: false,
             bare: false,
             text_size: px(13.0),
@@ -118,6 +121,13 @@ impl TextField {
 
     /// A field without its own chrome, its text `text_size` on a line 5
     /// taller, for a parent that draws the field (the sidebar's Search).
+    /// Names the field for assistive technology when its placeholder is an
+    /// example or empty.
+    pub fn labeled(mut self, label: impl Into<SharedString>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
     pub fn bare(mut self, text_size: f32) -> Self {
         self.bare = true;
         self.text_size = px(text_size);
@@ -277,7 +287,16 @@ impl Render for TextField {
         } else {
             theme::border()
         };
+        let label = self
+            .label
+            .clone()
+            .unwrap_or_else(|| self.placeholder.clone());
         let root = div()
+            .id(ElementId::View(cx.entity_id()))
+            .role(gpui::Role::TextInput)
+            .aria_label(label)
+            .aria_value(SharedString::from(self.text.clone()))
+            .aria_placeholder(self.placeholder.clone())
             .key_context(CONTEXT)
             .track_focus(&self.focus_handle)
             .cursor(CursorStyle::IBeam)

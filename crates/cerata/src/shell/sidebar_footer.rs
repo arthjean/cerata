@@ -169,7 +169,7 @@ fn search(view: &WindowView, window: &Window, cx: &mut Context<WindowView>) -> A
             div()
                 .flex_1()
                 .min_w_0()
-                .when(!shown, |d| d.invisible())
+                .when(!shown, |d| d.opacity(0.0))
                 .child(view.sidebar_filter.clone()),
         )
         .when(has_query, |d| d.child(clear))

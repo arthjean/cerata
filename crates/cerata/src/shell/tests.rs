@@ -1443,7 +1443,7 @@ fn the_status_bar_counts_and_toggles_its_metrics(cx: &mut TestAppContext) {
         })
     );
     let at = gpui::point(px(0.0), px(0.0));
-    for (_, _, label) in METRICS {
+    for (_, _, _, label) in METRICS {
         update(cx, handle, |view, _, cx| view.open_status_menu(at, cx));
         let labels = read(cx, handle, |view, _| {
             view.tab_menu.as_ref().unwrap().labels()

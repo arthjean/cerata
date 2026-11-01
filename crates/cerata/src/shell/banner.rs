@@ -48,7 +48,7 @@ pub fn render(conflict: &Conflict, comparing: bool, cx: &mut Context<WindowView>
                     .child(MODIFIED),
             )
             .child(
-                button("conflict-keep", "Keep My Version")
+                button("conflict-keep", "Keep my version")
                     .on_click(cx.listener(|this, _, _, cx| this.keep_mine(cx))),
             )
             .child(

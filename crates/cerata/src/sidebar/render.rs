@@ -306,7 +306,7 @@ fn show_more(section: Section, cx: &mut Context<Sidebar>) -> AnyElement {
             ICON_SIZE,
             theme::muted(),
         )))
-        .child("Show More")
+        .child("Show more")
         .on_click(cx.listener(move |this, _, _, cx| this.show_more(section, cx)))
         .into_any_element()
 }

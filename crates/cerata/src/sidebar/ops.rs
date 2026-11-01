@@ -309,7 +309,7 @@ impl Sidebar {
             stem(&entry.name).to_owned()
         };
         let field = cx.new(|cx| {
-            let mut field = TextField::new("Name", cx);
+            let mut field = TextField::new("Name", cx).labeled("New name");
             field.set_text(&text, cx);
             field
         });

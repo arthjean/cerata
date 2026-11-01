@@ -460,7 +460,8 @@ impl SettingsPanel {
         cx: &mut Context<Self>,
     ) -> Entity<TextField> {
         let placeholder = def.placeholder.clone().unwrap_or_default();
-        let field = cx.new(|cx| TextField::new(placeholder, cx).bare(14.0));
+        let label = accessible_name(def);
+        let field = cx.new(|cx| TextField::new(placeholder, cx).bare(14.0).labeled(label));
         let key = def.key.clone();
         self._subscriptions.push(cx.subscribe_in(&field, window, {
             let key = key.clone();
@@ -615,7 +616,11 @@ impl SettingsPanel {
         cx: &mut Context<Self>,
     ) -> Entity<TextField> {
         let field = cx.new(|cx| {
-            let mut field = TextField::new("", cx).bare(14.0);
+            let name = self
+                .def(key)
+                .map(|def| accessible_name(&def))
+                .unwrap_or_default();
+            let mut field = TextField::new("", cx).bare(14.0).labeled(name);
             field.set_text(text, cx);
             field
         });
@@ -775,6 +780,26 @@ impl SettingsPanel {
     }
 }
 
+/// A control's accessible name: its label, with the theme it belongs to
+/// for the two theme cards, whose rows share their labels ("Preset",
+/// "Accent", ...).
+fn accessible_name(def: &SettingDef) -> String {
+    let label = if preset_mode(&def.key).is_some() {
+        "Preset"
+    } else {
+        def.label.as_str()
+    };
+    match def
+        .key
+        .strip_prefix("theme.")
+        .and_then(|rest| rest.split_once('.'))
+    {
+        Some(("light", _)) => format!("Light theme {}", label.to_lowercase()),
+        Some(("dark", _)) => format!("Dark theme {}", label.to_lowercase()),
+        _ => label.to_owned(),
+    }
+}
+
 fn preset_mode(key: &str) -> Option<Mode> {
     match key {
         "theme.light.preset" => Some(Mode::Light),
@@ -795,7 +820,7 @@ impl SettingsPanel {
         let key = def.key.clone();
         let value = self.value(&key);
         let id = |suffix: &str| SharedString::from(format!("setting-{key}-{suffix}"));
-        let name = def.label.clone();
+        let name = accessible_name(def);
         if preset_mode(&key).is_some()
             || matches!(def.value_type, ValueType::Enum | ValueType::Font)
         {
@@ -1463,24 +1488,26 @@ impl Render for SettingsPanel {
             .child(nav)
             .child(div().flex_none().w(px(1.0)).h_full().bg(theme::border()))
             .child(page);
+        // The release is always listened for: a click on a slider's track
+        // can press and release before the next frame draws.
+        root = root
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| this.end_drag(cx)),
+            )
+            .on_mouse_up_out(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| this.end_drag(cx)),
+            );
         if self.dragging.is_some() {
-            root = root
-                .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
-                    if let Some((key, _)) = this.dragging.clone()
-                        && let Some(value) = this.slider_at(&key, event.position.x)
-                    {
-                        this.dragging = Some((key, value));
-                        cx.notify();
-                    }
-                }))
-                .on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(|this, _, _, cx| this.end_drag(cx)),
-                )
-                .on_mouse_up_out(
-                    MouseButton::Left,
-                    cx.listener(|this, _, _, cx| this.end_drag(cx)),
-                );
+            root = root.on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
+                if let Some((key, _)) = this.dragging.clone()
+                    && let Some(value) = this.slider_at(&key, event.position.x)
+                {
+                    this.dragging = Some((key, value));
+                    cx.notify();
+                }
+            }));
         }
         if let Some(select) = self.select.as_mut() {
             root = root.child(crate::select::render(select, window, cx));
@@ -1641,6 +1668,19 @@ mod tests {
             "the page's name keeps the whole page"
         );
         assert!(page_cards(page("Files"), &cards, defs, "zoom").is_empty());
+    }
+
+    #[test]
+    fn theme_rows_are_named_with_their_theme() {
+        let schema = cerata_core::settings::Schema::embedded().unwrap();
+        let name = |key: &str| accessible_name(schema.get(key).unwrap());
+        assert_eq!(name("theme.light.preset"), "Light theme preset");
+        assert_eq!(name("theme.dark.preset"), "Dark theme preset");
+        assert_eq!(name("theme.dark.accent"), "Dark theme accent");
+        assert_eq!(
+            name("editor.font-size"),
+            schema.get("editor.font-size").unwrap().label
+        );
     }
 
     #[test]
