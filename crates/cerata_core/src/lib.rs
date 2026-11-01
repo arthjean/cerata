@@ -12,6 +12,7 @@ pub mod fs;
 pub mod ignore;
 pub mod index;
 pub mod json_store;
+pub mod links;
 pub mod markdown;
 pub mod open_target;
 pub mod paths;

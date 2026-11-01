@@ -201,6 +201,23 @@ mod tests {
 
     // Ported from Writer `fs.rs` title tests.
 
+    /// `frontmatter.test.ts:98-122` (`parseDocument`): the title comes from
+    /// the frontmatter, else a leading H1, else none; the body stays
+    /// verbatim.
+    #[test]
+    fn titles_leave_the_body_verbatim() {
+        let doc = "---\ntitle: Hello\ntags: [a]\n---\n\n# Hello #\n\nBody";
+        assert_eq!(title_from_text(doc).as_deref(), Some("Hello"));
+        assert_eq!(
+            cerata_markdown::frontmatter::split(doc),
+            (Some("title: Hello\ntags: [a]"), "\n# Hello #\n\nBody")
+        );
+        let doc = "\n# Project Plan\n\nBody text.";
+        assert_eq!(title_from_text(doc).as_deref(), Some("Project Plan"));
+        assert_eq!(cerata_markdown::frontmatter::split(doc), (None, doc));
+        assert_eq!(title_from_text("Body text."), None);
+    }
+
     #[test]
     fn extract_title_from_h1() {
         assert_eq!(title_of("# My Title\n\nBody").as_deref(), Some("My Title"));
