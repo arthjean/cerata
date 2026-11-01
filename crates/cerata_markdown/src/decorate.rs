@@ -60,6 +60,9 @@ pub enum LineStyle {
     Code { first: bool, last: bool },
     /// A line of a blockquote: the quote bar.
     Quote,
+    /// A line of a table whose source is revealed: monospace on the code
+    /// background, wrapping (`.cm-table-source-line`).
+    TableSource { first: bool, last: bool },
 }
 
 impl LineStyle {
@@ -79,7 +82,7 @@ impl LineStyle {
     }
 
     pub fn is_monospace(self) -> bool {
-        matches!(self, LineStyle::Code { .. })
+        matches!(self, LineStyle::Code { .. } | LineStyle::TableSource { .. })
     }
 }
 
@@ -89,6 +92,11 @@ pub enum Widget {
     /// An image, by its normalized destination.
     Image {
         url: String,
+    },
+    /// An Obsidian image embed (`![[pic.png]]`), by its target
+    /// (`wiki::image_embed_target`); the host finds the file.
+    WikiImage {
+        target: String,
     },
     HorizontalRule,
     /// `--` (2) or `---` (3).
@@ -104,15 +112,49 @@ pub enum Widget {
     NestedQuoteBorder,
     /// A tab, drawn `TAB_WIDTH_CH` wide (`tabWidthExtension.ts`).
     Tab,
+    /// A folded GFM table: its rows, quote prefixes removed, one per line.
+    Table {
+        source: String,
+    },
+    /// A folded wiki link: its alias, else its target
+    /// (`wiki-link-extension.ts` `WikiLinkWidget`).
+    WikiLink {
+        display: String,
+    },
+    /// The frontmatter, drawn as its properties panel.
+    Frontmatter,
+    /// An HTML block, drawn sanitized (`HtmlBlockWidget`).
+    Html {
+        source: String,
+    },
+    /// A formula (`MathWidget`): `$...$` inline, `$$...$$` displayed.
+    Math {
+        tex: String,
+        display: bool,
+    },
+    /// A closed ` ```mermaid ` fence, drawn as its diagram's canvas
+    /// (`MermaidWidget`); `source` is its body, trimmed.
+    Mermaid {
+        source: String,
+    },
 }
 
 impl Widget {
-    /// A fold of the source (image, rule, dash, emoji), as opposed to the
-    /// chrome drawn next to it.
+    /// A fold of the source (image, rule, dash, emoji, table), as opposed
+    /// to the chrome drawn next to it.
     pub fn is_fold(&self) -> bool {
         matches!(
             self,
-            Widget::Image { .. } | Widget::HorizontalRule | Widget::Dash(_) | Widget::Emoji(_)
+            Widget::Image { .. }
+                | Widget::WikiImage { .. }
+                | Widget::HorizontalRule
+                | Widget::Dash(_)
+                | Widget::Emoji(_)
+                | Widget::Table { .. }
+                | Widget::Frontmatter
+                | Widget::Html { .. }
+                | Widget::Math { .. }
+                | Widget::Mermaid { .. }
         )
     }
 
@@ -122,6 +164,7 @@ impl Widget {
             Widget::Dash(2) => Some("\u{2013}"),
             Widget::Dash(3) => Some("\u{2014}"),
             Widget::Emoji(emoji) => Some(emoji),
+            Widget::WikiLink { display } => Some(display),
             _ => None,
         }
     }
@@ -351,6 +394,44 @@ impl Cx<'_> {
     fn fold(&mut self, node: Node<'_>) {
         match node.kind() {
             NodeKind::Image => self.fold_image(node),
+            NodeKind::Table => self.fold_table(node),
+            NodeKind::WikiLink => self.fold_wiki_link(node),
+            // The properties panel while the selection is away
+            // (`frontmatter-panel.tsx`), else the YAML as a code block.
+            // `html-block-decorations.ts:185-218`: the sanitized HTML
+            // while untouched; `script` and `style` blocks stay source.
+            NodeKind::HtmlBlock
+                if !self.touches(node.range())
+                    && !crate::html::is_script_or_style(self.text.slice(node.range())) =>
+            {
+                self.out.push(Decoration::Replace {
+                    range: node.range(),
+                    widget: Widget::Html {
+                        source: self.text.slice(node.range()).to_owned(),
+                    },
+                    block: true,
+                });
+            }
+            NodeKind::Math if !self.touches(node.range()) => self.fold_math(node),
+            // A diagram stays drawn whatever the selection: it is edited in
+            // its canvas, and the caret steps over it (`atomic.rs`,
+            // `mermaid-decorations.ts:186-197`).
+            NodeKind::FencedCode if self.mermaid_source(node).is_some() => {
+                if let Some(source) = self.mermaid_source(node) {
+                    self.out.push(Decoration::Replace {
+                        range: node.range(),
+                        widget: Widget::Mermaid { source },
+                        block: true,
+                    });
+                }
+            }
+            NodeKind::Frontmatter if !self.touches(node.range()) => {
+                self.out.push(Decoration::Replace {
+                    range: node.range(),
+                    widget: Widget::Frontmatter,
+                    block: true,
+                });
+            }
             NodeKind::Emoji => {
                 if self.touches(node.range()) || node.to() < node.from() + 2 {
                     return;
@@ -384,6 +465,126 @@ impl Cx<'_> {
                 }
             }
             _ => {}
+        }
+    }
+
+    /// `wiki-link-extension.ts:195-238`: the link text while no selection
+    /// range lies inside the brackets, else the source (link-colored by
+    /// the renderer). An image embed (`![[pic.png]]`) folds to its image,
+    /// a block when alone on its line; another embed keeps its `!` as
+    /// source.
+    fn fold_wiki_link(&mut self, node: Node<'_>) {
+        let bang = self.text.slice(node.range()).starts_with('!');
+        let image = bang
+            .then(|| {
+                let range = node.range();
+                (range.end >= range.start + 5)
+                    .then(|| {
+                        crate::wiki::image_embed_target(
+                            self.text.slice(range.start + 3..range.end - 2),
+                        )
+                    })
+                    .flatten()
+            })
+            .flatten();
+        let start = node.from() + usize::from(bang && image.is_none());
+        let end = node.to();
+        if end < start + 4 {
+            return;
+        }
+        let inside = self
+            .selection
+            .ranges()
+            .iter()
+            .any(|r| r.from() >= start && r.to() <= end);
+        if inside {
+            return;
+        }
+        if let Some(target) = image {
+            let line = self.text.line_at(start);
+            self.out.push(Decoration::Replace {
+                range: start..end,
+                widget: Widget::WikiImage { target },
+                block: start == line.from && end == line.to,
+            });
+            return;
+        }
+        let inner = self.text.slice(start + 2..end - 2);
+        self.out.push(Decoration::Replace {
+            range: start..end,
+            widget: Widget::WikiLink {
+                display: crate::wiki::parse(inner).display,
+            },
+            block: false,
+        });
+    }
+
+    fn mermaid_source(&self, node: Node<'_>) -> Option<String> {
+        crate::atomic::mermaid_body(self.text, node)
+    }
+
+    /// `math-decorations.ts:56-72`: the rendered formula while untouched; an
+    /// empty one keeps its source. A `$$` formula alone on its lines is a
+    /// block; elsewhere it flows with the text, displayed.
+    fn fold_math(&mut self, node: Node<'_>) {
+        let Some(formula) = node.children().find(|c| c.kind() == NodeKind::MathFormula) else {
+            return;
+        };
+        let tex = self.text.slice(formula.range());
+        if tex.trim().is_empty() {
+            return;
+        }
+        let display = self.text.slice(node.range()).starts_with("$$");
+        let (first, last) = (self.text.line_at(node.from()), self.text.line_at(node.to()));
+        let alone = self.text.slice(first.from..node.from()).trim().is_empty()
+            && self.text.slice(node.to()..last.to).trim().is_empty();
+        self.out.push(Decoration::Replace {
+            range: node.range(),
+            widget: Widget::Math {
+                tex: tex.to_owned(),
+                display,
+            },
+            block: display && alone,
+        });
+    }
+
+    /// `table-decorations.ts:507-523`: the rendered grid while untouched,
+    /// else the source lines on the code background.
+    fn fold_table(&mut self, node: Node<'_>) {
+        let rows: Vec<&str> = node
+            .children()
+            .filter(|c| {
+                matches!(
+                    c.kind(),
+                    NodeKind::TableHeader | NodeKind::TableDelimiter | NodeKind::TableRow
+                )
+            })
+            .map(|c| self.text.slice(c.range()))
+            .collect();
+        let source = rows.join("\n");
+        if crate::table::parse(&source, |l| l).is_none() {
+            return;
+        }
+        if self.touches(node.range()) {
+            let (first, last) = (
+                self.text.line_at(node.from()).number,
+                self.text.line_at(node.to()).number,
+            );
+            for n in first..=last {
+                self.out.push(Decoration::Line {
+                    line_start: self.text.line(n).from,
+                    style: LineStyle::TableSource {
+                        first: n == first,
+                        last: n == last,
+                    },
+                });
+            }
+        } else {
+            self.out.push(Decoration::Replace {
+                range: node.range(),
+                widget: Widget::Table { source },
+                block: true,
+            });
         }
     }
 
@@ -428,6 +629,12 @@ impl Cx<'_> {
                 line_start,
                 style: LineStyle::Heading(level),
             });
+            return;
+        }
+        if node.kind() == NodeKind::Frontmatter && !self.touches(node.range()) {
+            return;
+        }
+        if self.mermaid_source(node).is_some() {
             return;
         }
         if let Some(block) = crate::code::describe(self.text, node) {
@@ -531,6 +738,10 @@ pub(crate) fn word_at(text: &Text, pos: usize) -> Option<Range<usize>> {
 }
 
 /// Writer's `normalizeMarkdownDestination` (`lib/paths.ts:41-62`).
+pub fn normalize_markdown_destination(destination: &str) -> String {
+    normalize_destination(destination)
+}
+
 pub(crate) fn normalize_destination(destination: &str) -> String {
     let mut normalized = destination.trim_matches(is_js_space);
     if normalized.len() >= 2 && normalized.starts_with('<') && normalized.ends_with('>') {

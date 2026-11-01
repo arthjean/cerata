@@ -314,3 +314,352 @@ fn ranged_decorations_match_the_whole_document_line_by_line() {
         assert_eq!(on_line(&ranged, line), on_line(&all, line), "line {n}");
     }
 }
+
+/// `table-decorations.test.ts:134-190`.
+#[test]
+fn tables_fold_to_a_widget_and_unfold_as_source_lines() {
+    let before = "before\n";
+    let table = "| Name | Count |\n| --- | ---: |\n| Tea | 2 |";
+    let doc = format!("{before}{table}\n\nafter");
+    let (from, to) = (before.len(), before.len() + table.len());
+    let is_table = |d: &Decoration| matches!(d.widget(), Some(Widget::Table { .. }));
+    let source_lines = |d: &[Decoration]| -> Vec<LineStyle> {
+        d.iter()
+            .filter_map(|d| match d {
+                Decoration::Line {
+                    style: s @ LineStyle::TableSource { .. },
+                    ..
+                } => Some(*s),
+                _ => None,
+            })
+            .collect()
+    };
+
+    let folded = at(&doc, 0);
+    let widget = folded.iter().find(|d| is_table(d)).unwrap();
+    assert_eq!(widget.range(), from..to);
+    assert!(matches!(widget, Decoration::Replace { block: true, .. }));
+    assert!(source_lines(&folded).is_empty());
+
+    let touched = at(&doc, from + 2);
+    assert!(!touched.iter().any(is_table));
+    assert_eq!(
+        source_lines(&touched),
+        [
+            LineStyle::TableSource {
+                first: true,
+                last: false
+            },
+            LineStyle::TableSource {
+                first: false,
+                last: false
+            },
+            LineStyle::TableSource {
+                first: false,
+                last: true
+            },
+        ]
+    );
+
+    // Selecting the whole table keeps its source.
+    let state = EditorState::with_filters(&doc, Vec::new());
+    let all = decorate(
+        state.tree(),
+        state.text(),
+        &Selection::single(to, from),
+        None,
+    );
+    assert!(!all.iter().any(is_table));
+    assert_eq!(source_lines(&all).len(), 3);
+}
+
+#[test]
+fn a_table_in_a_quote_keeps_its_rows_without_the_marks() {
+    let doc = "> | a | b |\n> | - | - |\n> | 1 | 2 |\n\nx";
+    let d = at(doc, doc.len());
+    let Some(Widget::Table { source }) = d.iter().find_map(|d| d.widget()).cloned() else {
+        panic!("no table widget");
+    };
+    assert_eq!(source, "| a | b |\n| - | - |\n| 1 | 2 |");
+}
+
+/// `wiki-link-extension.ts:195-238`: the alias (else the target) while the
+/// selection is outside the brackets; the source while it is inside.
+#[test]
+fn wiki_links_fold_to_their_text_unless_the_selection_is_inside() {
+    let doc = "see [[Roadmap|the plan]] and [[Notes/Plan.md#Goals]] x";
+    let folded = at(doc, doc.len());
+    let texts: Vec<(Range<usize>, &str)> = folded
+        .iter()
+        .filter_map(|d| match d {
+            Decoration::Replace {
+                range,
+                widget: Widget::WikiLink { display },
+                ..
+            } => Some((range.clone(), display.as_str())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(texts, [(4..24, "the plan"), (29..52, "Notes/Plan")]);
+    let editing = at(doc, 10);
+    assert!(
+        !editing
+            .iter()
+            .any(|d| matches!(d, Decoration::Replace { range, .. } if range.start == 4)),
+        "the caret inside shows the source"
+    );
+    assert!(at("`[[code]]`", 0).iter().all(|d| d.widget().is_none()));
+}
+
+/// US-033: an image embed folds to its image (a block alone on its line,
+/// `!` included) unless the caret is inside; another embed keeps its `!`
+/// and folds as a link (`wiki-link-extension.ts:205-232`).
+#[test]
+fn image_embeds_fold_to_their_image() {
+    let doc = "![[assets/pic.png|400]]\n\nsee ![[pic.png]] and ![[Note]]\n\nx";
+    let folded = at(doc, doc.len());
+    let images: Vec<(Range<usize>, &str, bool)> = folded
+        .iter()
+        .filter_map(|d| match d {
+            Decoration::Replace {
+                range,
+                widget: Widget::WikiImage { target },
+                block,
+            } => Some((range.clone(), target.as_str(), *block)),
+            _ => None,
+        })
+        .collect();
+    let inline = doc.find("![[pic").unwrap();
+    assert_eq!(
+        images,
+        [
+            (0..23, "assets/pic.png", true),
+            (inline..inline + 12, "pic.png", false)
+        ]
+    );
+    let note = doc.find("![[Note").unwrap();
+    assert!(folded.iter().any(|d| matches!(
+        d,
+        Decoration::Replace { range, widget: Widget::WikiLink { .. }, .. } if range.start == note + 1
+    )));
+    assert!(
+        at(doc, 5)
+            .iter()
+            .all(|d| !matches!(d, Decoration::Replace { range, .. } if range.start == 0)),
+        "the caret inside shows the source"
+    );
+}
+
+/// US-034: the properties panel while the caret is away, the YAML as a
+/// code block once it touches the frontmatter.
+#[test]
+fn frontmatter_folds_to_its_panel_unless_touched() {
+    let doc = "---\ntitle: a\n---\nbody";
+    let code_lines = |d: &[Decoration]| {
+        d.iter()
+            .filter(|d| {
+                matches!(
+                    d,
+                    Decoration::Line {
+                        style: LineStyle::Code { .. },
+                        ..
+                    }
+                )
+            })
+            .count()
+    };
+    let folded = at(doc, doc.len());
+    let panel = folded
+        .iter()
+        .find(|d| d.widget() == Some(&Widget::Frontmatter))
+        .expect("panel");
+    assert_eq!(panel.range(), 0..16);
+    assert!(matches!(panel, Decoration::Replace { block: true, .. }));
+    assert_eq!(code_lines(&folded), 0);
+
+    let touched = at(doc, 5);
+    assert!(
+        touched
+            .iter()
+            .all(|d| d.widget() != Some(&Widget::Frontmatter))
+    );
+    assert_eq!(code_lines(&touched), 3);
+}
+
+/// US-035: an HTML block is drawn while the selection is away, its source
+/// once touched, and stays drawn while a drag frozen outside it passes
+/// over it; `script` and `style` blocks stay source.
+#[test]
+fn html_blocks_fold_unless_touched_or_script() {
+    let doc = "intro\n\n<div>\n<b>hi</b>\n</div>\n\nend";
+    let is_html = |d: &Decoration| matches!(d.widget(), Some(Widget::Html { .. }));
+    let block = doc.find("<div>").unwrap();
+    let folded = at(doc, 0);
+    let widget = folded.iter().find(|d| is_html(d)).expect("html widget");
+    assert_eq!(widget.range(), block..doc.find("\n\nend").unwrap());
+    assert!(!at(doc, block + 3).iter().any(is_html));
+
+    // A drag that started at the intro keeps the block drawn.
+    let state = EditorState::with_filters(doc, Vec::new());
+    let frozen = Selection::cursor(0);
+    let live = Selection::single(0, block + 3);
+    let dragged = decorate(state.tree(), state.text(), &live, Some(&frozen));
+    assert!(dragged.iter().any(is_html));
+
+    assert!(
+        !at("<script>\nalert(1)\n</script>\n\nx", 20)
+            .iter()
+            .any(is_html)
+    );
+}
+
+/// `<details>` runs to its `</details>` over blank lines, as Writer's
+/// block parser reads it; an unclosed one does not.
+#[test]
+fn details_blocks_span_blank_lines() {
+    let doc = "<details>\n<summary>More</summary>\n\nHidden **text**\n\n</details>\n\nafter";
+    let html: Vec<_> = at(doc, doc.len())
+        .into_iter()
+        .filter(|d| matches!(d.widget(), Some(Widget::Html { .. })))
+        .collect();
+    assert_eq!(html.len(), 1);
+    assert_eq!(html[0].range(), 0..doc.find("\n\nafter").unwrap());
+    let unclosed = "<details>\n<summary>More</summary>\n\nHidden";
+    let html: Vec<_> = at(unclosed, unclosed.len())
+        .into_iter()
+        .filter(|d| matches!(d.widget(), Some(Widget::Html { .. })))
+        .collect();
+    assert_eq!(html[0].range(), 0..unclosed.find("\n\nHidden").unwrap());
+}
+
+/// US-036: `$...$` folds inline, `$$...$$` alone on its lines as a block;
+/// currency stays text; the caret reveals the source.
+#[test]
+fn formulas_fold_inline_or_as_blocks_and_currency_stays_text() {
+    let math = |d: &[Decoration]| -> Vec<(Range<usize>, String, bool, bool)> {
+        d.iter()
+            .filter_map(|d| match d {
+                Decoration::Replace {
+                    range,
+                    widget: Widget::Math { tex, display },
+                    block,
+                } => Some((range.clone(), tex.clone(), *display, *block)),
+                _ => None,
+            })
+            .collect()
+    };
+    let doc = "Inline $a^2$ here.\n\n$$\n\\frac{1}{2}\n$$\n\nend";
+    let found = math(&at(doc, doc.len()));
+    assert_eq!(found.len(), 2);
+    assert_eq!(found[0], (7..12, "a^2".into(), false, false));
+    let block_from = doc.find("$$").unwrap();
+    assert_eq!(found[1].0, block_from..doc.rfind("$$").unwrap() + 2);
+    assert!(found[1].2 && found[1].3);
+    // The caret inside a formula shows its source.
+    assert_eq!(math(&at(doc, 9)).len(), 1);
+    // So does a range covering it (`math.test.ts:142`).
+    let state = EditorState::with_filters(doc, Vec::new());
+    let covering = Selection::single(13, 5);
+    assert_eq!(
+        math(&decorate(state.tree(), state.text(), &covering, None)).len(),
+        1
+    );
+
+    for text in [
+        "5 $ and 10 $",
+        "I paid $5 and $10 more",
+        r"costs \$5 and \$10",
+    ] {
+        assert!(math(&at(text, 0)).is_empty(), "{text}");
+    }
+    // Display math inside a line flows with the text.
+    let inline_display = "see $$x$$ now";
+    assert_eq!(
+        math(&at(inline_display, 0)),
+        vec![(4..9, "x".into(), true, false)]
+    );
+}
+
+/// `math.test.ts:29-63`: Pandoc's rules for `$` (no space after the
+/// opener or before the closer, no digit after the closer, `\$` escaped).
+#[test]
+fn math_parses_with_pandocs_guards() {
+    let nodes = |doc: &str| -> Vec<String> {
+        let state = EditorState::with_filters(doc, Vec::new());
+        state
+            .tree()
+            .root()
+            .descendants()
+            .filter(|n| n.kind() == crate::tree::NodeKind::Math)
+            .map(|n| doc[n.range()].to_owned())
+            .collect()
+    };
+    assert_eq!(
+        nodes(r"Euler: $e^{i\pi} + 1 = 0$ wow"),
+        [r"$e^{i\pi} + 1 = 0$"]
+    );
+    assert_eq!(
+        nodes(r"Sum: $$\sum_{i=1}^n i$$ done"),
+        [r"$$\sum_{i=1}^n i$$"]
+    );
+    assert!(nodes(r"costs \$5 and \$10").is_empty());
+    assert!(nodes("I paid $5 and $10 more").is_empty());
+    assert!(nodes("a $ b$ c").is_empty());
+    assert!(nodes("a $b $ c").is_empty());
+    assert_eq!(nodes("pay $x+y$ dollars"), ["$x+y$"]);
+    assert_eq!(nodes("$$ x^2 $$"), ["$$ x^2 $$"]);
+}
+
+/// US-037: only a closed, non-empty ` ```mermaid ` fence becomes a canvas,
+/// whose code chrome is not drawn, whatever the selection.
+#[test]
+fn closed_mermaid_fences_fold_to_a_canvas() {
+    let canvas = |d: &[Decoration]| -> Vec<(Range<usize>, String)> {
+        d.iter()
+            .filter_map(|d| match d {
+                Decoration::Replace {
+                    range,
+                    widget: Widget::Mermaid { source },
+                    block: true,
+                } => Some((range.clone(), source.clone())),
+                _ => None,
+            })
+            .collect()
+    };
+    let doc = "intro\n\n```mermaid\nflowchart LR\n  A --> B\n```\n\nend";
+    let fence = doc.find("```").unwrap()..doc.rfind("```").unwrap() + 3;
+    let folded = at(doc, 0);
+    assert_eq!(
+        canvas(&folded),
+        vec![(fence.clone(), "flowchart LR\n  A --> B".into())]
+    );
+    assert!(!folded.iter().any(|d| matches!(
+        d,
+        Decoration::Line {
+            style: LineStyle::Code { .. },
+            ..
+        }
+    )));
+    // `mermaid.test.ts:501-511`: the canvas stays whatever the selection.
+    let state = EditorState::with_filters(doc, Vec::new());
+    for selection in [
+        Selection::cursor(fence.start + 5),
+        Selection::cursor(fence.start),
+        Selection::cursor(fence.end),
+        Selection::single(fence.end, fence.start),
+        Selection::single(0, doc.len()),
+    ] {
+        assert_eq!(
+            canvas(&decorate(state.tree(), state.text(), &selection, None)).len(),
+            1,
+            "{selection:?}"
+        );
+    }
+
+    let unclosed = "```mermaid\nflowchart LR\n  A --> B\n";
+    assert!(canvas(&at(unclosed, unclosed.len())).is_empty());
+    let empty = "```mermaid\n\n```\n\nx";
+    assert!(canvas(&at(empty, empty.len())).is_empty());
+    let other = "```rust\nfn main() {}\n```\n\nx";
+    assert!(canvas(&at(other, other.len())).is_empty());
+}

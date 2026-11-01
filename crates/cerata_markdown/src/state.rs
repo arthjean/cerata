@@ -156,6 +156,9 @@ pub struct EditorState {
     splices: Vec<LineSplice>,
     /// The time stamped on transactions that carry none, for undo grouping.
     now_ms: u64,
+    /// Diagrams are atomic blocks (`atomic.rs`); off for an editor showing
+    /// plain source (a diagram's edit panel).
+    atomic_blocks: bool,
 }
 
 impl EditorState {
@@ -180,7 +183,18 @@ impl EditorState {
             drag: None,
             splices: Vec::new(),
             now_ms: 0,
+            atomic_blocks: true,
         }
+    }
+
+    /// Whether diagrams are atomic blocks the caret steps over.
+    pub fn atomic_blocks(&self) -> bool {
+        self.atomic_blocks
+    }
+
+    /// Plain source: the caret goes anywhere (a diagram's edit panel).
+    pub fn set_atomic_blocks(&mut self, on: bool) {
+        self.atomic_blocks = on;
     }
 
     /// A placeholder for a file still being read: empty, and editing
@@ -425,6 +439,15 @@ impl EditorState {
                 let filtered = filter(self, self.selection.clone());
                 self.selection = filtered.clamp(&self.text);
             }
+        }
+        // Never inside a diagram's source (`atomic.rs`).
+        if self.atomic_blocks {
+            self.selection = crate::atomic::skip(
+                &self.tree,
+                &self.text,
+                std::mem::take(&mut self.selection),
+                &previous_selection,
+            );
         }
         if doc_changed && add_to_history {
             self.history.record(

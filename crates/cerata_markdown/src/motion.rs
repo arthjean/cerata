@@ -16,6 +16,9 @@ pub enum Vertical {
 /// Where the caret goes when `direction` is pressed in `state`, if a widget
 /// takes the move; `None` leaves it to the regular vertical motion.
 pub fn reveal_block_on_arrow(state: &EditorState, direction: Vertical) -> Option<usize> {
+    if let Some(pos) = crate::atomic::step_over(state, direction) {
+        return Some(pos);
+    }
     // A move only enters a widget past the blank lines around the caret's
     // line: the nodes touching that run are all it needs.
     let text = state.text();

@@ -54,10 +54,56 @@ pub(crate) fn parse_document(text: &str) -> Elt {
             ],
         ));
     }
+    merge_details(text, &mut blocks);
     children.extend(blocks);
     let mut document = Elt::with(NodeKind::Document, 0, len, children);
     wrap_wiki_links(text, &mut document);
     document
+}
+
+fn contains_ignore_case(haystack: &str, needle: &str) -> bool {
+    haystack
+        .as_bytes()
+        .windows(needle.len())
+        .any(|w| w.eq_ignore_ascii_case(needle.as_bytes()))
+}
+
+fn opens_details(block: &str) -> bool {
+    let rest = block.trim_start();
+    rest.get(..8)
+        .is_some_and(|open| open.eq_ignore_ascii_case("<details"))
+        && rest
+            .as_bytes()
+            .get(8)
+            .is_none_or(|b| b.is_ascii_whitespace() || *b == b'>')
+}
+
+/// Whether `text` may hold a `<details>` block, which a window reparse
+/// cannot see whole.
+pub(crate) fn has_details(text: &str) -> bool {
+    contains_ignore_case(text, "<details")
+}
+
+/// `html-block-decorations.ts:312-332` (`detailsBlockParser`): a top-level
+/// HTML block opening `<details>` runs to the block that closes it, blank
+/// lines and Markdown between included. An unclosed one stays as
+/// CommonMark reads it.
+fn merge_details(text: &str, blocks: &mut Vec<Elt>) {
+    let mut i = 0;
+    while i < blocks.len() {
+        let open = &blocks[i];
+        let source = &text[open.from..open.to];
+        if open.kind == NodeKind::HtmlBlock
+            && opens_details(source)
+            && !contains_ignore_case(source, "</details")
+            && let Some(j) = (i + 1..blocks.len())
+                .find(|&j| contains_ignore_case(&text[blocks[j].from..blocks[j].to], "</details"))
+        {
+            let merged = Elt::new(NodeKind::HtmlBlock, open.from, blocks[j].to);
+            blocks.splice(i..=j, [merged]);
+        }
+        i += 1;
+    }
 }
 
 /// Blocks of `text[from..to]`, parsed as a document of their own, with the

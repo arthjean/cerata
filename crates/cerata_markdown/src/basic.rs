@@ -218,6 +218,22 @@ impl EditorState {
             return false;
         }
         let text = self.text();
+        let cut: Vec<std::ops::Range<usize>> = self
+            .selection()
+            .ranges()
+            .iter()
+            .map(|r| match r.is_empty() {
+                true => {
+                    let to = step(text, r.head);
+                    r.head.min(to)..r.head.max(to)
+                }
+                false => r.range(),
+            })
+            .collect();
+        if self.guard_atomic_deletes(&cut) {
+            return true;
+        }
+        let text = self.text();
         let changes: Vec<Change> = self
             .selection()
             .ranges()

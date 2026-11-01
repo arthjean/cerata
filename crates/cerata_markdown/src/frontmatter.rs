@@ -87,6 +87,17 @@ fn break_start(text: &str, line_start: usize) -> usize {
     pos
 }
 
+/// The file for `frontmatter` (YAML without delimiters; `None` for no
+/// block) above `body`, lines ending in `eol` (`serializeFile`). An empty
+/// frontmatter keeps a blank line between its delimiters, as Writer
+/// writes it.
+pub fn join(frontmatter: Option<&str>, body: &str, eol: &str) -> String {
+    match frontmatter {
+        None => body.to_owned(),
+        Some(yaml) => format!("---{eol}{yaml}{eol}---{eol}{body}"),
+    }
+}
+
 /// The frontmatter text (without delimiters, `""` when empty) and the body.
 pub fn split(text: &str) -> (Option<&str>, &str) {
     match detect(text) {
@@ -101,6 +112,44 @@ pub fn split(text: &str) -> (Option<&str>, &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `frontmatter.test.ts:66-96`.
+    #[test]
+    fn join_writes_writers_delimiters_and_round_trips() {
+        assert_eq!(
+            join(Some("title: Hello"), "# Content", "\n"),
+            "---\ntitle: Hello\n---\n# Content"
+        );
+        assert_eq!(join(None, "# Content", "\n"), "# Content");
+        assert_eq!(join(Some(""), "Body", "\n"), "---\n\n---\nBody");
+        for original in [
+            "---\ntitle: Test\ntags: [a, b]\n---\n\n# Hello\n\nWorld",
+            "---\n\n---\nBody",
+            "---\r\ntitle: Test\r\n---\r\nBody",
+        ] {
+            let (frontmatter, body) = split(original);
+            let eol = if original.contains("\r\n") {
+                "\r\n"
+            } else {
+                "\n"
+            };
+            assert_eq!(join(frontmatter, body, eol), original, "{original:?}");
+        }
+        assert_eq!(split("---\n\n---\nBody").0, Some(""));
+    }
+
+    /// `frontmatter.test.ts:124-134` (`serializeDocument`).
+    #[test]
+    fn a_body_is_written_verbatim_under_its_frontmatter() {
+        assert_eq!(
+            join(None, "# Project Plan\n\nBody text.", "\n"),
+            "# Project Plan\n\nBody text."
+        );
+        assert_eq!(
+            join(Some("title: Hello"), "Body text.", "\n"),
+            "---\ntitle: Hello\n---\nBody text."
+        );
+    }
 
     #[test]
     fn only_at_offset_zero_and_closed() {
@@ -130,5 +179,26 @@ mod tests {
         assert_eq!(split("---\n---\n"), (Some(""), ""));
         assert_eq!(split("# no"), (None, "# no"));
         assert_eq!(split("---\r\na: 1\r\n---\r\nhi"), (Some("a: 1"), "hi"));
+    }
+
+    /// `frontmatter.test.ts` parseFrontmatter.
+    #[test]
+    fn split_matches_writers_cases() {
+        assert_eq!(
+            split("---\ntitle: Hello\ndate: 2024-01-01\n---\n# Content"),
+            (Some("title: Hello\ndate: 2024-01-01"), "# Content")
+        );
+        let plain = "# Just a heading\n\nSome text";
+        assert_eq!(split(plain), (None, plain));
+        assert_eq!(
+            split("---\ntitle: Test\n---\n\n# Content"),
+            (Some("title: Test"), "\n# Content")
+        );
+        assert_eq!(split("---\n\n---\nBody"), (Some(""), "Body"));
+        let mid = "Some text\n---\ntitle: Nope\n---\nMore text";
+        assert_eq!(split(mid), (None, mid));
+        assert_eq!(split("---\n---\nBody"), (Some(""), "Body"));
+        assert_eq!(split("---\n---"), (Some(""), ""));
+        assert_eq!(split(""), (None, ""));
     }
 }

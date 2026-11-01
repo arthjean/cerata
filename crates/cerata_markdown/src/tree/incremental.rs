@@ -96,7 +96,13 @@ impl MarkdownTree {
         });
         let frontmatter = self.root().child(NodeKind::Frontmatter);
         let protected = frontmatter.map_or_else(|| line_end(old_text, 0), |f| f.to()) + 1;
-        if dollar || first.from <= protected || self.root().last_child()?.kind() == NodeKind::Math {
+        // A `<details>` block spans blank lines (`blocks::merge_details`).
+        if dollar
+            || first.from <= protected
+            || self.root().last_child()?.kind() == NodeKind::Math
+            || blocks::has_details(text)
+            || blocks::has_details(old_text)
+        {
             return None;
         }
         if frontmatter.is_none()

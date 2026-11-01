@@ -43,8 +43,10 @@ fn describe(decoration: &Decoration) -> Option<String> {
                 Widget::HorizontalRule => "HorizontalRuleWidget".to_owned(),
                 Widget::Dash(count) => format!("DashWidget {count}"),
                 Widget::Emoji(emoji) => format!("EmojiWidget {emoji}"),
-                // View-plugin chrome the oracle cannot capture (see top).
-                Widget::CodeInfo { .. } | Widget::NestedQuoteBorder | Widget::Tab => return None,
+                // View-plugin chrome the oracle cannot capture (see top),
+                // and the rich blocks of Writer's own extensions (tables,
+                // math, Mermaid, HTML), outside prosemark-core's fold set.
+                _ => return None,
             };
             let block = if *block { "block" } else { "inline" };
             format!("{kind} {block} {name} {span}")

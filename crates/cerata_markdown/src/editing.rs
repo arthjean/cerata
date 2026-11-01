@@ -238,6 +238,22 @@ impl EditorState {
         if self.is_loading() {
             return false;
         }
+        let s = self.doc();
+        let cut: Vec<std::ops::Range<usize>> = self
+            .selection()
+            .ranges()
+            .iter()
+            .map(|r| match r.is_empty() {
+                true => s[..r.head]
+                    .chars()
+                    .next_back()
+                    .map_or(r.head..r.head, |c| r.head - c.len_utf8()..r.head),
+                false => r.range(),
+            })
+            .collect();
+        if self.guard_atomic_deletes(&cut) {
+            return true;
+        }
         if self.list_backspace() {
             return true;
         }
