@@ -7,6 +7,7 @@ use gpui::{
 
 use super::{Page, WindowView};
 use crate::editor::theme;
+use crate::icons::{Icon, icon};
 use crate::palette::Intent;
 
 pub fn render(page: Page, cx: &mut Context<WindowView>) -> AnyElement {
@@ -191,9 +192,14 @@ pub fn notice(notice: Option<SharedString>, cx: &mut Context<WindowView>) -> Opt
                             .items_center()
                             .justify_center()
                             .rounded(px(4.0))
-                            .text_color(theme::muted())
-                            .hover(|s| s.bg(theme::panel()).text_color(theme::text()))
-                            .child("×"),
+                            .group("window-notice-close")
+                            .hover(|s| s.bg(theme::panel()))
+                            .child(
+                                icon(Icon::Close, 14.0, theme::muted())
+                                    .group_hover("window-notice-close", |s| {
+                                        s.text_color(theme::text())
+                                    }),
+                            ),
                     )
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.notice = None;

@@ -21,6 +21,7 @@ use gpui::{
 
 use crate::editor::text_field::{FieldEvent, TextField};
 use crate::editor::theme;
+use crate::icons::{Icon, icon};
 use crate::menu::{HasMenu, Item, Menu};
 use crate::theme::{Mode, Preset};
 
@@ -607,7 +608,7 @@ impl SettingsPanel {
                         .whitespace_nowrap()
                         .child(shown),
                 )
-                .child(div().text_color(theme::muted()).child("▾"))
+                .child(icon(Icon::ChevronDown, 12.0, theme::muted()))
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, event: &MouseDownEvent, _, cx| {
@@ -757,9 +758,13 @@ impl SettingsPanel {
                                 .items_center()
                                 .justify_center()
                                 .cursor_pointer()
-                                .text_color(theme::muted())
-                                .hover(|s| s.text_color(theme::text()))
-                                .child("×")
+                                .group("setting-remove")
+                                .child(
+                                    icon(Icon::Close, 14.0, theme::muted())
+                                        .group_hover("setting-remove", |s| {
+                                            s.text_color(theme::text())
+                                        }),
+                                )
                                 .on_click(cx.listener(
                                     move |this, _, _, cx| {
                                         this.remove_list_item(&remove_key, index, cx)

@@ -13,6 +13,7 @@ use gpui::{
 use super::tree::{Listing, label};
 use super::{ClearSelection, ROW_HEIGHT, Section, Sidebar, SidebarEvent};
 use crate::editor::theme;
+use crate::icons::{Icon, icon};
 
 fn indent(depth: usize) -> f32 {
     if depth == 0 {
@@ -45,10 +46,14 @@ pub fn row(
     cx: &mut Context<Sidebar>,
 ) -> gpui::Stateful<gpui::Div> {
     let label_name = label_text.clone();
-    let icon = if entry.is_dir {
-        if state.expanded { "▾" } else { "▸" }
+    let row_icon = if entry.is_dir {
+        if state.expanded {
+            Icon::ChevronDown
+        } else {
+            Icon::ChevronRight
+        }
     } else {
-        "·"
+        Icon::File
     };
     let renaming = sidebar
         .renaming
@@ -158,8 +163,7 @@ pub fn row(
                 .w(px(20.0))
                 .flex()
                 .justify_center()
-                .text_color(theme::muted())
-                .child(icon),
+                .child(icon(row_icon, 14.0, theme::muted())),
         )
         .child(label_el)
         .when_some(state.error, |d, error| {
@@ -229,7 +233,19 @@ fn header(
         .text_color(theme::muted())
         .cursor_pointer()
         .hover(|s| s.text_color(theme::text()))
-        .child(div().w(px(12.0)).child(if collapsed { "▸" } else { "▾" }))
+        .group("sidebar-section")
+        .child(
+            icon(
+                if collapsed {
+                    Icon::ChevronRight
+                } else {
+                    Icon::ChevronDown
+                },
+                12.0,
+                theme::muted(),
+            )
+            .group_hover("sidebar-section", |s| s.text_color(theme::text())),
+        )
         .child(title)
         .on_click(cx.listener(move |this, _, _, cx| this.toggle_section(section, cx)))
         .into_any_element()
@@ -251,7 +267,11 @@ fn show_more(section: Section, cx: &mut Context<Sidebar>) -> AnyElement {
         .text_color(theme::muted())
         .cursor_pointer()
         .hover(|s| s.bg(theme::panel()))
-        .child(div().w(px(20.0)).flex().justify_center().child("…"))
+        .child(div().w(px(20.0)).flex().justify_center().child(icon(
+            Icon::More,
+            14.0,
+            theme::muted(),
+        )))
         .child("Show More")
         .on_click(cx.listener(move |this, _, _, cx| this.show_more(section, cx)))
         .into_any_element()
@@ -380,7 +400,11 @@ impl Render for Sidebar {
                     .text_color(theme::muted())
                     .cursor_pointer()
                     .hover(|s| s.bg(theme::panel()))
-                    .child(div().w(px(20.0)).flex().justify_center().child("⌕"))
+                    .child(div().w(px(20.0)).flex().justify_center().child(icon(
+                        Icon::Search,
+                        14.0,
+                        theme::muted(),
+                    )))
                     .child("Search")
                     .on_click(cx.listener(|_, _, _, cx| cx.emit(SidebarEvent::Search))),
             );

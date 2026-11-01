@@ -9,6 +9,7 @@ use gpui::{
 
 use super::{WindowView, file_name};
 use crate::editor::theme;
+use crate::icons::{Icon, icon};
 use crate::menu::{HasMenu, Item, Menu};
 use crate::tabs::Location;
 
@@ -28,7 +29,7 @@ fn label(location: &Location) -> String {
 
 pub fn nav_button(
     id: &'static str,
-    glyph: &'static str,
+    glyph: Icon,
     name: &'static str,
     enabled: bool,
 ) -> gpui::Stateful<gpui::Div> {
@@ -39,12 +40,11 @@ pub fn nav_button(
         .w(px(28.0))
         .h(px(28.0))
         .rounded(px(6.0))
-        .text_size(px(14.0))
         .when(enabled, |d| {
             d.cursor_pointer().hover(|s| s.bg(theme::panel()))
         })
         .when(!enabled, |d| d.opacity(0.3))
-        .child(glyph)
+        .child(icon(glyph, 16.0, theme::text()))
 }
 
 pub fn render(view: &WindowView, cx: &mut Context<WindowView>) -> impl IntoElement {
@@ -139,9 +139,8 @@ pub fn render(view: &WindowView, cx: &mut Context<WindowView>) -> impl IntoEleme
             .justify_center()
             .size(px(20.0))
             .rounded(px(4.0))
-            .text_size(px(14.0))
             .hover(|s| s.bg(theme::border()))
-            .child("×")
+            .child(icon(Icon::Close, 14.0, theme::text()))
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(move |this, _, window, cx| this.close_tab(ix, window, cx)));
         item = item.child(if is_active {
@@ -163,11 +162,11 @@ pub fn render(view: &WindowView, cx: &mut Context<WindowView>) -> impl IntoEleme
         .border_b_1()
         .border_color(theme::border())
         .child(
-            nav_button("tab-back", "←", "Back", can_back)
+            nav_button("tab-back", Icon::ArrowLeft, "Back", can_back)
                 .on_click(cx.listener(|this, _, window, cx| this.go_back(window, cx))),
         )
         .child(
-            nav_button("tab-forward", "→", "Forward", can_forward)
+            nav_button("tab-forward", Icon::ArrowRight, "Forward", can_forward)
                 .on_click(cx.listener(|this, _, window, cx| this.go_forward(window, cx))),
         )
         .child(strip)
@@ -179,9 +178,8 @@ pub fn render(view: &WindowView, cx: &mut Context<WindowView>) -> impl IntoEleme
                 .w(px(36.0))
                 .h(px(28.0))
                 .rounded(px(6.0))
-                .text_size(px(16.0))
                 .hover(|s| s.bg(theme::panel()))
-                .child("+")
+                .child(icon(Icon::Add, 16.0, theme::text()))
                 .on_click(cx.listener(|this, _, window, cx| this.new_tab(window, cx))),
         )
 }

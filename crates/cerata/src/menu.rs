@@ -13,6 +13,7 @@ use gpui::{
 };
 
 use crate::editor::theme;
+use crate::icons::{Icon, icon};
 
 type Run<V> = Rc<dyn Fn(&mut V, &mut Window, &mut Context<V>)>;
 
@@ -319,10 +320,15 @@ fn list<V: HasMenu>(
                     .items_center()
                     .gap(px(8.0))
                     .when(current, |row| row.bg(theme::panel()))
-                    .child(div().w(px(12.0)).child(match checked {
-                        Some(true) => "✓",
-                        _ => "",
-                    }))
+                    .child(
+                        div()
+                            .w(px(12.0))
+                            .flex()
+                            .items_center()
+                            .when(matches!(checked, Some(true)), |d| {
+                                d.child(icon(Icon::Check, 12.0, theme::text()))
+                            }),
+                    )
                     .child(label.clone());
                 if let Some(checked) = checked {
                     row = row.aria_toggled(if *checked {
@@ -373,7 +379,7 @@ fn list<V: HasMenu>(
                     .hover(|s| s.bg(theme::panel()))
                     .child(div().w(px(12.0)))
                     .child(div().flex_1().child(label.clone()))
-                    .child("›")
+                    .child(icon(Icon::ChevronRight, 12.0, theme::muted()))
                     .on_hover(cx.listener(move |view, hovered: &bool, _, cx| {
                         if *hovered && let Some(menu) = view.menu() {
                             menu.open_submenu = Some(index);

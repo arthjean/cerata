@@ -8,9 +8,8 @@ use std::ops::Range;
 use gpui::{
     AnyElement, App, AvailableSpace, Bounds, ContentMask, Corners, CursorStyle, DispatchPhase,
     Edges, ElementId, ElementInputHandler, Entity, GlobalElementId, Hitbox, HitboxBehavior,
-    InspectorElementId, LayoutId, MouseButton, MouseMoveEvent, MouseUpEvent, Pixels, Point,
-    ShapedLine, SharedString, Style, TextAlign, Window, fill, point, prelude::*, px, quad,
-    relative, size,
+    InspectorElementId, LayoutId, MouseButton, MouseMoveEvent, MouseUpEvent, Pixels, Point, Style,
+    TextAlign, Window, fill, point, prelude::*, px, quad, relative, size,
 };
 
 use super::code_scroll::{THUMB_HEIGHT, THUMB_INSET};
@@ -665,26 +664,16 @@ fn paint_text(painted: &Painted, left: Pixels, width: Pixels, window: &mut Windo
                 };
                 window.paint_quad(quad(rect, px(5.0), bg, px(1.5), border, Default::default()));
                 if *checked {
-                    let check: SharedString = "\u{2713}".into();
-                    let run = gpui::TextRun {
-                        len: check.len(),
-                        font: gpui::font(".SystemUIFont"),
-                        color: gpui::white(),
-                        background_color: None,
-                        underline: None,
-                        strikethrough: None,
-                    };
-                    let shaped: ShapedLine =
-                        window
-                            .text_system()
-                            .shape_line(check, px(13.0), &[run], None);
-                    let gx = bx + (s - shaped.width()) / 2.0;
-                    let _ = shaped.paint(
-                        point(gx, center_y - s / 2.0),
-                        s,
-                        TextAlign::Left,
-                        None,
-                        window,
+                    let check = crate::icons::Icon::Check;
+                    let g = px(14.0);
+                    let glyph =
+                        Bounds::new(point(bx + (s - g) / 2.0, center_y - g / 2.0), size(g, g));
+                    let _ = window.paint_svg(
+                        glyph,
+                        check.key().into(),
+                        Some(check.data()),
+                        Default::default(),
+                        gpui::white(),
                         cx,
                     );
                 }

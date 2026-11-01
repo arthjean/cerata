@@ -8,14 +8,15 @@ use std::ops::Range;
 
 use cerata_markdown::{Change, EditorState, Selection, Transaction, UserEvent};
 use gpui::{
-    AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement as _, Styled,
-    Subscription, Window, div, px,
+    AnyElement, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable,
+    InteractiveElement, IntoElement, ParentElement, Render, SharedString,
+    StatefulInteractiveElement as _, Styled, Subscription, Window, div, px,
 };
 
 use super::Editor;
 use super::text_field::{FieldEvent, TextField};
 use super::theme;
+use crate::icons::{Icon, icon};
 
 /// Scrollbar marks drawn at most (`MAX_OVERVIEW_MATCHES`).
 pub const MAX_MARKS: usize = 5000;
@@ -202,7 +203,7 @@ impl Focusable for SearchBar {
 impl Render for SearchBar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let counter: SharedString = self.counter().into();
-        let button = |id: &'static str, label: &'static str| {
+        let button = |id: &'static str, label: AnyElement| {
             div()
                 .id(id)
                 .px(px(8.0))
@@ -241,15 +242,32 @@ impl Render for SearchBar {
                             .text_color(theme::muted())
                             .child(counter),
                     )
-                    .child(button("search-prev", "\u{2191}").on_click(
-                        cx.listener(|_, _, _, cx| cx.emit(SearchEvent::Step { forward: false })),
-                    ))
-                    .child(button("search-next", "\u{2193}").on_click(
-                        cx.listener(|_, _, _, cx| cx.emit(SearchEvent::Step { forward: true })),
-                    ))
                     .child(
-                        button("search-close", "\u{2715}")
-                            .on_click(cx.listener(|_, _, _, cx| cx.emit(SearchEvent::Close))),
+                        button(
+                            "search-prev",
+                            icon(Icon::ChevronUp, 14.0, theme::text()).into_any_element(),
+                        )
+                        .on_click(
+                            cx.listener(|_, _, _, cx| {
+                                cx.emit(SearchEvent::Step { forward: false })
+                            }),
+                        ),
+                    )
+                    .child(
+                        button(
+                            "search-next",
+                            icon(Icon::ChevronDown, 14.0, theme::text()).into_any_element(),
+                        )
+                        .on_click(
+                            cx.listener(|_, _, _, cx| cx.emit(SearchEvent::Step { forward: true })),
+                        ),
+                    )
+                    .child(
+                        button(
+                            "search-close",
+                            icon(Icon::Close, 14.0, theme::text()).into_any_element(),
+                        )
+                        .on_click(cx.listener(|_, _, _, cx| cx.emit(SearchEvent::Close))),
                     ),
             )
             .child(
@@ -259,11 +277,11 @@ impl Render for SearchBar {
                     .gap(px(6.0))
                     .child(div().w(px(220.0)).child(self.replace.clone()))
                     .child(
-                        button("search-replace", "Replace")
+                        button("search-replace", "Replace".into_any_element())
                             .on_click(cx.listener(|_, _, _, cx| cx.emit(SearchEvent::ReplaceNext))),
                     )
                     .child(
-                        button("search-replace-all", "Replace all")
+                        button("search-replace-all", "Replace all".into_any_element())
                             .on_click(cx.listener(|_, _, _, cx| cx.emit(SearchEvent::ReplaceAll))),
                     ),
             )

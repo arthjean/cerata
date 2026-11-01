@@ -12,6 +12,7 @@ use gpui::{
 
 use super::{WindowView, file_name, tab_bar};
 use crate::editor::theme;
+use crate::icons::{Icon, icon};
 use crate::routing::OpenRequest;
 
 /// Tallest the picker grows before it scrolls (`compact-file-layout.tsx:31`).
@@ -74,10 +75,20 @@ impl WindowView {
 pub fn render(view: &WindowView, cx: &mut Context<WindowView>) -> AnyElement {
     let active = view.tabs.active();
     let open = view.recents_picker.is_some();
-    let back = tab_bar::nav_button("compact-back", "←", "Back", active.can_go_back())
-        .on_click(cx.listener(|this, _, window, cx| this.go_back(window, cx)));
-    let forward = tab_bar::nav_button("compact-forward", "→", "Forward", active.can_go_forward())
-        .on_click(cx.listener(|this, _, window, cx| this.go_forward(window, cx)));
+    let back = tab_bar::nav_button(
+        "compact-back",
+        Icon::ArrowLeft,
+        "Back",
+        active.can_go_back(),
+    )
+    .on_click(cx.listener(|this, _, window, cx| this.go_back(window, cx)));
+    let forward = tab_bar::nav_button(
+        "compact-forward",
+        Icon::ArrowRight,
+        "Forward",
+        active.can_go_forward(),
+    )
+    .on_click(cx.listener(|this, _, window, cx| this.go_forward(window, cx)));
     let title = view.compact_title();
     let trigger = crate::a11y::button(div().id("compact-title"), format!("{title}, recent files"))
         .aria_expanded(open)
@@ -100,12 +111,15 @@ pub fn render(view: &WindowView, cx: &mut Context<WindowView>) -> AnyElement {
                 .whitespace_nowrap()
                 .child(title),
         )
-        .child(
-            div()
-                .text_size(px(10.0))
-                .text_color(theme::muted())
-                .child(if open { "▴" } else { "▾" }),
-        )
+        .child(icon(
+            if open {
+                Icon::ChevronUp
+            } else {
+                Icon::ChevronDown
+            },
+            12.0,
+            theme::muted(),
+        ))
         .on_click(cx.listener(|this, _, window, cx| this.toggle_recents_picker(window, cx)));
 
     let header = div()
@@ -206,10 +220,13 @@ fn picker(
                     .items_center()
                     .justify_center()
                     .rounded(px(4.0))
-                    .text_color(theme::muted())
-                    .hover(|s| s.text_color(theme::text()).bg(theme::border()))
+                    .group("compact-recent-remove")
+                    .hover(|s| s.bg(theme::border()))
                     .tooltip(|_, cx| gpui::AnyView::from(cx.new(|_| Tip("Remove from recents"))))
-                    .child("×")
+                    .child(
+                        icon(Icon::Close, 14.0, theme::muted())
+                            .group_hover("compact-recent-remove", |s| s.text_color(theme::text())),
+                    )
                     .on_click(cx.listener(move |this, _, _, cx| {
                         cx.stop_propagation();
                         this.remove_recent(&remove, cx);

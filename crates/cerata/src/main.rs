@@ -20,6 +20,7 @@ mod app;
 mod app_menu;
 mod documents;
 mod editor;
+mod icons;
 mod inbox;
 mod menu;
 mod palette;

@@ -12,6 +12,7 @@ use gpui::{
 
 use super::actions::current_os;
 use super::{Editor, theme};
+use crate::icons::{Icon, icon};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum MenuAction {
@@ -328,7 +329,7 @@ fn menu_list(
                     .justify_between()
                     .hover(|s| s.bg(theme::panel()))
                     .child(label.clone())
-                    .child(div().text_color(theme::muted()).child("\u{203a}"))
+                    .child(icon(Icon::ChevronRight, 12.0, theme::muted()))
                     .on_hover(cx.listener(move |editor, hovered: &bool, _, cx| {
                         if *hovered && let Some(menu) = &mut editor.menu {
                             menu.open_submenu = Some(index);
