@@ -247,6 +247,8 @@ pub struct WindowView {
     picker_focus: FocusHandle,
     /// A file tab's open context menu.
     pub tab_menu: Option<crate::menu::Menu<WindowView>>,
+    /// The tab strip's horizontal scroll, read by its edge fades.
+    pub tab_scroll: gpui::ScrollHandle,
     /// The status bar's counts for an editor at a revision.
     stats_cache: Option<((EntityId, u64), status_bar::Stats)>,
     _settings_events: Option<Subscription>,
@@ -325,6 +327,7 @@ impl WindowView {
             recents_picker: None,
             picker_focus: cx.focus_handle(),
             tab_menu: None,
+            tab_scroll: gpui::ScrollHandle::new(),
             stats_cache: None,
             _settings_events: None,
             background: None,

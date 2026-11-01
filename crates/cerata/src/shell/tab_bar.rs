@@ -1,11 +1,17 @@
 //! The tab strip (`editor-tabs.tsx:104-225`): back and forward for the
-//! active tab, the tabs (at most 180 px, close button on hover and on the
-//! active tab, a red dot after a failed save), and a new-tab button. It
-//! sits in the title bar, so each control occludes the drag area.
+//! active tab, the tabs, and a new-tab button. It sits in the title bar, so
+//! each control occludes the drag area.
+//!
+//! The tabs take Paneflow's pane tabs at comfortable density (`pane.rs`,
+//! `unified_tab_chip`) but keep Cerata's width (at most 180 px): 32 px
+//! pills with a 12 px medium label, the active one raised by a border and a
+//! shadow, a round close button on hover only, a red dot after a failed
+//! save, and fades over the strip's hidden ends.
 
 use gpui::{
-    Context, FontWeight, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    StatefulInteractiveElement, Styled, div, prelude::FluentBuilder as _, px,
+    BoxShadow, Context, FontWeight, Hsla, InteractiveElement, IntoElement, MouseButton,
+    ParentElement, ScrollHandle, StatefulInteractiveElement, Styled, black, canvas, div, fill,
+    linear_color_stop, linear_gradient, point, prelude::FluentBuilder as _, px, size,
 };
 
 use super::{WindowView, file_name};
@@ -15,6 +21,13 @@ use crate::menu::{HasMenu, Item, Menu};
 use crate::tabs::Location;
 
 const TAB_MAX_WIDTH: f32 = 180.0;
+const TAB_HEIGHT: f32 = 32.0;
+const TAB_GAP: f32 = 3.0;
+const TAB_CLOSE_SIZE: f32 = 16.0;
+const TAB_CLOSE_GLYPH: f32 = 12.0;
+const TAB_FADE_WIDTH: f32 = 28.0;
+const NEW_TAB_SIZE: f32 = 22.0;
+const NEW_TAB_RADIUS: f32 = 14.0;
 
 fn label(location: &Location) -> String {
     match location {
@@ -25,6 +38,76 @@ fn label(location: &Location) -> String {
         Location::Launcher => "New Tab".into(),
         Location::Settings => "Settings".into(),
     }
+}
+
+/// The active chip's fill, border and shadow, and the hover fill of the
+/// others. Light themes raise the active chip on the editor's surface;
+/// dark ones fill it with the text at 16 %.
+struct ChipColors {
+    active: Hsla,
+    active_border: Hsla,
+    active_shadow: BoxShadow,
+    hover: Hsla,
+}
+
+fn chip_colors() -> ChipColors {
+    if theme::palette().dark {
+        ChipColors {
+            active: theme::row_active(),
+            active_border: theme::text().opacity(0.12),
+            active_shadow: BoxShadow::new(px(0.0), px(1.0), black().opacity(0.24))
+                .blur_radius(px(2.0)),
+            hover: theme::row_hover(),
+        }
+    } else {
+        ChipColors {
+            active: theme::background(),
+            active_border: theme::accent().opacity(0.14),
+            active_shadow: BoxShadow::new(px(0.0), px(1.0), black().opacity(0.10))
+                .blur_radius(px(3.0)),
+            hover: theme::text().opacity(0.05),
+        }
+    }
+}
+
+/// Gradients over the strip's ends while tabs hide past them.
+fn strip_fades(scroll: ScrollHandle, color: Hsla) -> impl IntoElement {
+    canvas(
+        |_, _, _| {},
+        move |bounds, _, window, _| {
+            let hidden_right = scroll.max_offset().x + scroll.offset().x;
+            let hidden_left = -scroll.offset().x;
+            let width = px(TAB_FADE_WIDTH).min(bounds.size.width);
+            if hidden_right > px(1.0) {
+                window.paint_quad(fill(
+                    gpui::Bounds {
+                        origin: point(bounds.right() - width, bounds.top()),
+                        size: size(width, bounds.size.height),
+                    },
+                    linear_gradient(
+                        90.0,
+                        linear_color_stop(color.opacity(0.0), 0.0),
+                        linear_color_stop(color, 1.0),
+                    ),
+                ));
+            }
+            if hidden_left > px(1.0) {
+                window.paint_quad(fill(
+                    gpui::Bounds {
+                        origin: bounds.origin,
+                        size: size(width, bounds.size.height),
+                    },
+                    linear_gradient(
+                        90.0,
+                        linear_color_stop(color, 0.0),
+                        linear_color_stop(color.opacity(0.0), 1.0),
+                    ),
+                ));
+            }
+        },
+    )
+    .absolute()
+    .inset_0()
 }
 
 pub fn nav_button(
@@ -53,13 +136,17 @@ pub fn render(view: &WindowView, cx: &mut Context<WindowView>) -> impl IntoEleme
     let can_back = active.can_go_back();
     let can_forward = active.can_go_forward();
     let active_ix = view.tabs.active_index();
+    let colors = chip_colors();
 
     let mut strip = div()
         .id("tab-strip")
         .flex()
+        .items_center()
         .min_w_0()
-        .gap(px(2.0))
-        .overflow_x_scroll();
+        .h_full()
+        .gap(px(TAB_GAP))
+        .overflow_x_scroll()
+        .track_scroll(&view.tab_scroll);
     for (ix, tab) in view.tabs.tabs().iter().enumerate() {
         let is_active = ix == active_ix;
         let failed = tab
@@ -80,16 +167,19 @@ pub fn render(view: &WindowView, cx: &mut Context<WindowView>) -> impl IntoEleme
                 .occlude()
                 .on_click(cx.listener(move |this, _, window, cx| this.activate_tab(ix, window, cx)))
                 .group(group.clone())
+                .flex_none()
                 .flex()
                 .items_center()
-                .gap(px(6.0))
+                .gap(px(10.0))
                 .max_w(px(TAB_MAX_WIDTH))
-                .h(px(30.0))
-                .pl(px(14.0))
-                .pr(px(6.0))
-                .rounded(px(8.0))
-                .text_size(px(13.0))
-                .cursor_pointer()
+                .h(px(TAB_HEIGHT))
+                .pl(px(12.0))
+                .pr(px(8.0))
+                .rounded_full()
+                .border_1()
+                .border_color(theme::transparent())
+                .text_size(px(12.0))
+                .font_weight(FontWeight::MEDIUM)
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, _, window, cx| this.activate_tab(ix, window, cx)),
@@ -108,19 +198,26 @@ pub fn render(view: &WindowView, cx: &mut Context<WindowView>) -> impl IntoEleme
                     )
                 });
         if is_active {
-            item = item.bg(theme::panel()).font_weight(FontWeight::MEDIUM);
-        } else {
             item = item
-                .text_color(theme::muted())
-                .hover(|s| s.bg(theme::panel()));
+                .bg(colors.active)
+                .border_color(colors.active_border)
+                .shadow(vec![colors.active_shadow.clone()])
+                .text_color(theme::text());
+        } else {
+            let hover = colors.hover;
+            item = item.text_color(theme::muted()).hover(move |s| s.bg(hover));
         }
         if loading {
             item = item.opacity(0.6);
         }
         if let Some(error) = failed {
-            item = item
-                .aria_description(format!("Not saved: {error}"))
-                .child(div().size(px(6.0)).rounded_full().bg(theme::danger()));
+            item = item.aria_description(format!("Not saved: {error}")).child(
+                div()
+                    .flex_none()
+                    .size(px(6.0))
+                    .rounded_full()
+                    .bg(theme::danger()),
+            );
         }
         item = item.child(
             div()
@@ -131,32 +228,35 @@ pub fn render(view: &WindowView, cx: &mut Context<WindowView>) -> impl IntoEleme
                 .text_ellipsis()
                 .child(name.clone()),
         );
-        // Inactive tabs show their close button on hover only; the keyboard
-        // closes the active one (or Ctrl+W).
+        // The close button shows on hover only; the keyboard reaches the
+        // active tab's (or Ctrl+W closes it).
         let close = crate::a11y::button(div().id(("tab-close", tab.id)), format!("Close {name}"))
             .tab_stop(is_active)
+            .flex_none()
             .flex()
             .items_center()
             .justify_center()
-            .size(px(20.0))
-            .rounded(px(4.0))
-            .hover(|s| s.bg(theme::border()))
-            .child(icon(Icon::Close, 14.0, theme::text()))
+            .size(px(TAB_CLOSE_SIZE))
+            .rounded_full()
+            .hover(|s| s.bg(theme::text().opacity(0.12)))
+            .opacity(0.0)
+            .group_hover(group, |s| s.opacity(1.0))
+            .child(icon(Icon::Close, TAB_CLOSE_GLYPH, theme::muted()))
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(move |this, _, window, cx| this.close_tab(ix, window, cx)));
-        item = item.child(if is_active {
-            close
-        } else {
-            close.opacity(0.0).group_hover(group, |s| s.opacity(1.0))
-        });
-        strip = strip.child(item);
+        strip = strip.child(item.child(close));
     }
 
+    let new_tab_hover = colors.hover;
     div()
         .id("tab-bar")
         .flex()
         .flex_1()
         .min_w_0()
+        .h_full()
+        // The drawn title bar's top pixel sits under the window border, so
+        // the chips center on the 38 px between it and the row's border.
+        .when(super::title_bar::DRAWN, |bar| bar.pt(px(1.0)))
         .items_center()
         .gap(px(4.0))
         .px(px(8.0))
@@ -168,18 +268,26 @@ pub fn render(view: &WindowView, cx: &mut Context<WindowView>) -> impl IntoEleme
             nav_button("tab-forward", Icon::ArrowRight, "Forward", can_forward)
                 .on_click(cx.listener(|this, _, window, cx| this.go_forward(window, cx))),
         )
-        .child(strip)
+        .child(
+            div()
+                .relative()
+                .flex()
+                .min_w_0()
+                .h_full()
+                .child(strip)
+                .child(strip_fades(view.tab_scroll.clone(), theme::background())),
+        )
         .child(
             crate::a11y::button(div().id("tab-new"), "New tab")
                 .occlude()
+                .flex_none()
                 .flex()
                 .items_center()
                 .justify_center()
-                .w(px(36.0))
-                .h(px(28.0))
-                .rounded(px(6.0))
-                .hover(|s| s.bg(theme::panel()))
-                .child(icon(Icon::Add, 16.0, theme::text()))
+                .size(px(NEW_TAB_SIZE))
+                .rounded(px(NEW_TAB_RADIUS))
+                .hover(move |s| s.bg(new_tab_hover))
+                .child(icon(Icon::Add, 14.0, theme::muted()))
                 .on_click(cx.listener(|this, _, window, cx| this.new_tab(window, cx))),
         )
 }
