@@ -1,6 +1,8 @@
 //! Sidebar rows and sections (`file-tree-node.tsx:31-173`,
-//! `sidebar-section.tsx:17-93`): 32 px rows, 10 px left padding at depth 0
-//! then `depth × 12 + 6`, 20 px section headers with a chevron.
+//! `sidebar-section.tsx:17-93`), on Paneflow's row measures: 8 px margin,
+//! 32 px rows padded 7 (plus 12 per depth), radius 9, a 20 px icon slot
+//! 8 from a 14 px label on a 20 px line; 20 px section headers with a
+//! chevron.
 
 use cerata_core::fs::DirEntry;
 use gpui::{
@@ -15,12 +17,19 @@ use super::{ClearSelection, ROW_HEIGHT, Section, Sidebar, SidebarEvent};
 use crate::editor::theme;
 use crate::icons::{Icon, icon};
 
+/// Margin from the sidebar's edges to the rows.
+const MARGIN: f32 = 8.0;
+/// Rows' inner padding, and the text edge of everything aligned on them.
+const PADDING: f32 = 7.0;
+const RADIUS: f32 = 9.0;
+const GAP: f32 = 8.0;
+const TEXT_SIZE: f32 = 14.0;
+const LINE_HEIGHT: f32 = 20.0;
+const ICON_SLOT: f32 = 20.0;
+const ICON_SIZE: f32 = 15.0;
+
 fn indent(depth: usize) -> f32 {
-    if depth == 0 {
-        10.0
-    } else {
-        depth as f32 * 12.0 + 6.0
-    }
+    PADDING + depth as f32 * 12.0
 }
 
 pub struct RowState {
@@ -79,8 +88,18 @@ pub fn row(
             .overflow_hidden()
             .whitespace_nowrap()
             .text_ellipsis()
-            .when(!(state.active || state.selected), |d| d.opacity(0.75))
-            .child(label_text)
+            // Full strength while filtering, so the matches keep their contrast.
+            .when(
+                !(state.active || state.selected || sidebar.filtering()),
+                |d| d.opacity(0.75),
+            )
+            .map(|d| {
+                if sidebar.filtering() {
+                    d.child(super::filter::highlight(label_text, &sidebar.filter.query))
+                } else {
+                    d.child(label_text)
+                }
+            })
             .into_any_element(),
     };
     let pressed = entry.path.clone();
@@ -142,28 +161,31 @@ pub fn row(
         }))
         .flex()
         .items_center()
-        .gap(px(6.0))
+        .gap(px(GAP))
+        .w_full()
         .h(px(ROW_HEIGHT))
         .pl(px(indent(state.depth)))
-        .pr(px(8.0))
-        .rounded(px(6.0))
-        .text_size(px(13.0))
-        .line_height(px(15.0))
+        .pr(px(PADDING))
+        .rounded(px(RADIUS))
+        .text_size(px(TEXT_SIZE))
+        .line_height(px(LINE_HEIGHT))
         .cursor_pointer()
-        .when(state.selected, |d| d.bg(theme::border()))
-        .when(!state.selected && state.active, |d| d.bg(theme::panel()))
-        .when(state.drop_target, |d| d.bg(theme::selection()))
-        .when(!state.selected && !state.drop_target, |d| {
-            d.hover(|s| s.bg(theme::panel()))
+        .when(state.selected || state.active, |d| {
+            d.bg(theme::row_active())
         })
+        .when(state.drop_target, |d| d.bg(theme::selection()))
+        .when(
+            !state.selected && !state.active && !state.drop_target,
+            |d| d.hover(|s| s.bg(theme::row_hover())),
+        )
         .when(state.dragged, |d| d.opacity(0.4))
         .child(
             div()
                 .flex_none()
-                .w(px(20.0))
+                .w(px(ICON_SLOT))
                 .flex()
                 .justify_center()
-                .child(icon(row_icon, 14.0, theme::muted())),
+                .child(icon(row_icon, ICON_SIZE, theme::muted())),
         )
         .child(label_el)
         .when_some(state.error, |d, error| {
@@ -227,7 +249,7 @@ fn header(
         .gap(px(4.0))
         .h(px(20.0))
         .mt(px(8.0))
-        .px(px(10.0))
+        .px(px(PADDING))
         .text_size(px(12.0))
         .font_weight(FontWeight::MEDIUM)
         .text_color(theme::muted())
@@ -259,17 +281,18 @@ fn show_more(section: Section, cx: &mut Context<Sidebar>) -> AnyElement {
     crate::a11y::button(div().id(("sidebar-more", section as usize)), name)
         .flex()
         .items_center()
-        .gap(px(6.0))
+        .gap(px(GAP))
         .h(px(ROW_HEIGHT))
-        .pl(px(10.0))
-        .rounded(px(6.0))
-        .text_size(px(13.0))
+        .px(px(PADDING))
+        .rounded(px(RADIUS))
+        .text_size(px(TEXT_SIZE))
+        .line_height(px(LINE_HEIGHT))
         .text_color(theme::muted())
         .cursor_pointer()
-        .hover(|s| s.bg(theme::panel()))
-        .child(div().w(px(20.0)).flex().justify_center().child(icon(
+        .hover(|s| s.bg(theme::row_hover()))
+        .child(div().w(px(ICON_SLOT)).flex().justify_center().child(icon(
             Icon::More,
-            14.0,
+            ICON_SIZE,
             theme::muted(),
         )))
         .child("Show More")
@@ -313,11 +336,100 @@ fn flat_rows(
         .collect()
 }
 
+/// The state of a filter row: never dragged, at depth 0.
+fn filter_row_state(sidebar: &Sidebar, entry: &DirEntry) -> RowState {
+    RowState {
+        depth: 0,
+        expanded: false,
+        selected: sidebar.selection.contains(&entry.path),
+        active: sidebar.active_path.as_deref() == Some(entry.path.as_path()),
+        error: None,
+        drop_target: false,
+        dragged: false,
+        draggable: false,
+    }
+}
+
+/// The matches while they change: each row at its opacity and a share of
+/// its height (Paneflow's rail rows). The list scrolls to the top on every
+/// query, so only the rows that fit the sidebar are drawn, unvirtualized.
+fn moving_results(sidebar: &Sidebar, window: &Window, cx: &mut Context<Sidebar>) -> AnyElement {
+    let fit = (f32::from(window.viewport_size().height) / ROW_HEIGHT).ceil() as usize + 1;
+    let mut list = div()
+        .id("sidebar-filter-motion")
+        .mt(px(8.0))
+        .flex_1()
+        .min_h_0()
+        .overflow_hidden()
+        .flex()
+        .flex_col();
+    for (ix, (_, entry, amount)) in sidebar.filter.motion.rows.iter().take(fit).enumerate() {
+        let text = label(entry, sidebar.options.label);
+        let state = filter_row_state(sidebar, entry);
+        list = list.child(
+            div()
+                .flex_none()
+                .w_full()
+                .h(px(ROW_HEIGHT * amount))
+                .overflow_hidden()
+                .opacity(*amount)
+                .child(row(
+                    ("sidebar-filter-row", ix),
+                    entry,
+                    state,
+                    text,
+                    sidebar,
+                    cx,
+                )),
+        );
+    }
+    list.into_any_element()
+}
+
+/// The files matching the filter, or why there are none.
+fn filter_results(sidebar: &Sidebar, cx: &mut Context<Sidebar>) -> AnyElement {
+    if sidebar.filter.results.is_empty() {
+        return div()
+            .px(px(PADDING))
+            .py(px(8.0))
+            .text_size(px(13.0))
+            .text_color(theme::muted())
+            .child(format!("No files match \"{}\"", sidebar.filter.query))
+            .into_any_element();
+    }
+    uniform_list(
+        "sidebar-filter-results",
+        sidebar.filter.results.len(),
+        cx.processor(|this, range: std::ops::Range<usize>, _window, cx| {
+            range
+                .filter_map(|ix| {
+                    let entry = this.filter.results.get(ix)?.clone();
+                    let state = filter_row_state(this, &entry);
+                    let text = label(&entry, this.options.label);
+                    Some(row(
+                        ("sidebar-filter-row", ix),
+                        &entry,
+                        state,
+                        text,
+                        this,
+                        cx,
+                    ))
+                })
+                .collect::<Vec<_>>()
+        }),
+    )
+    .track_scroll(&sidebar.scroll)
+    .mt(px(8.0))
+    .flex_1()
+    .min_h_0()
+    .into_any_element()
+}
+
 fn empty(text: &'static str) -> AnyElement {
     div()
-        .px(px(16.0))
+        .px(px(PADDING))
         .py(px(8.0))
-        .text_size(px(13.0))
+        .text_size(px(TEXT_SIZE))
         .text_color(theme::muted())
         .child(text)
         .into_any_element()
@@ -344,7 +456,7 @@ impl Render for Sidebar {
             .size_full()
             .flex()
             .flex_col()
-            .px(px(6.0))
+            .px(px(MARGIN))
             .on_action(cx.listener(|this, _: &ClearSelection, window, cx| {
                 if this.renaming.is_some() {
                     this.cancel_rename(window, cx);
@@ -386,28 +498,13 @@ impl Render for Sidebar {
             return root.child(empty("No folder open"));
         }
 
-        if self.setting_bool(super::SHOW_SEARCH_KEY).unwrap_or(true) {
-            root = root.child(
-                crate::a11y::button(div().id("sidebar-search"), "Search")
-                    .mt(px(8.0))
-                    .flex()
-                    .items_center()
-                    .gap(px(6.0))
-                    .h(px(ROW_HEIGHT))
-                    .pl(px(10.0))
-                    .rounded(px(6.0))
-                    .text_size(px(13.0))
-                    .text_color(theme::muted())
-                    .cursor_pointer()
-                    .hover(|s| s.bg(theme::panel()))
-                    .child(div().w(px(20.0)).flex().justify_center().child(icon(
-                        Icon::Search,
-                        14.0,
-                        theme::muted(),
-                    )))
-                    .child("Search")
-                    .on_click(cx.listener(|_, _, _, cx| cx.emit(SidebarEvent::Search))),
-            );
+        if self.filtering() {
+            self.filter.motion.sample(std::time::Instant::now());
+            if self.filter.motion.animating() {
+                window.request_animation_frame();
+                return root.child(moving_results(self, window, cx));
+            }
+            return root.child(filter_results(self, cx));
         }
 
         if !self.pinned_entries.is_empty() {
@@ -455,9 +552,9 @@ impl Render for Sidebar {
             Listing::Failed(error) => {
                 return root.child(
                     div()
-                        .px(px(16.0))
+                        .px(px(PADDING))
                         .py(px(8.0))
-                        .text_size(px(13.0))
+                        .text_size(px(TEXT_SIZE))
                         .text_color(theme::danger())
                         .child(format!("Cannot read the folder: {error}")),
                 );

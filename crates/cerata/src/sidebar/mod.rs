@@ -6,6 +6,7 @@
 //! in the background and carry the generation of the workspace they were
 //! started for: a read that finishes after a workspace switch is dropped.
 
+mod filter;
 pub mod ops;
 mod render;
 pub mod tree;
@@ -40,7 +41,7 @@ const LABEL_KEY: &str = "appearance.sidebar-file-label";
 const SORT_KEY: &str = "appearance.sidebar-sort";
 const FOLDERS_FIRST_KEY: &str = "appearance.sidebar-folders-first";
 const SHOW_RECENTS_KEY: &str = "appearance.sidebar-show-recents";
-const SHOW_SEARCH_KEY: &str = "appearance.sidebar-show-search";
+pub const SHOW_SEARCH_KEY: &str = "appearance.sidebar-show-search";
 
 actions!(sidebar, [ClearSelection]);
 
@@ -67,8 +68,6 @@ pub enum SidebarEvent {
     Duplicate(PathBuf),
     /// A sidebar setting changed (sort, sections).
     SettingsChanged,
-    /// The Search button.
-    Search,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -116,6 +115,7 @@ pub struct Sidebar {
     /// Where each shown row was drawn last frame: the keyboard opens a
     /// row's menu (Shift+F10) under it.
     pub row_bounds: std::rc::Rc<std::cell::RefCell<HashMap<PathBuf, gpui::Bounds<gpui::Pixels>>>>,
+    pub filter: filter::Filter,
     tasks: Vec<Task<()>>,
 }
 
@@ -166,6 +166,7 @@ impl Sidebar {
             focus_handle: cx.focus_handle(),
             scroll: UniformListScrollHandle::new(),
             row_bounds: Default::default(),
+            filter: Default::default(),
             tasks: Vec::new(),
         };
         sidebar.read_settings();
@@ -234,6 +235,7 @@ impl Sidebar {
         self.revealing = None;
         self.pinned_visible = PINNED_PAGE;
         self.recents_visible = RECENTS_PAGE;
+        self.reset_filter();
         self.tasks.clear();
         self.pinned = match self.root() {
             Some(root) => crate::app::core(cx)

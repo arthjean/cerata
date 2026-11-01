@@ -71,6 +71,9 @@ pub struct TextField {
     marked: Option<Range<usize>>,
     placeholder: SharedString,
     pub invalid: bool,
+    /// No border, background or padding: the parent draws the field.
+    bare: bool,
+    text_size: Pixels,
     last_layout: Option<(ShapedLine, Bounds<Pixels>)>,
 }
 
@@ -85,8 +88,18 @@ impl TextField {
             marked: None,
             placeholder: placeholder.into(),
             invalid: false,
+            bare: false,
+            text_size: px(13.0),
             last_layout: None,
         }
+    }
+
+    /// A field without its own chrome, its text `text_size` on a line 5
+    /// taller, for a parent that draws the field (the sidebar's Search).
+    pub fn bare(mut self, text_size: f32) -> Self {
+        self.bare = true;
+        self.text_size = px(text_size);
+        self
     }
 
     pub fn set_text(&mut self, text: &str, cx: &mut Context<Self>) {
@@ -205,12 +218,18 @@ impl Render for TextField {
             .w_full()
             .min_w_0()
             .overflow_hidden()
-            .h(px(26.0))
-            .px(px(6.0))
-            .rounded(px(4.0))
-            .border_1()
-            .border_color(border)
-            .bg(theme::background())
+            .map(|d| {
+                if self.bare {
+                    d.h(self.text_size + px(5.0))
+                } else {
+                    d.h(px(26.0))
+                        .px(px(6.0))
+                        .rounded(px(4.0))
+                        .border_1()
+                        .border_color(border)
+                        .bg(theme::background())
+                }
+            })
             .on_action(cx.listener(Self::on_backspace))
             .on_action(cx.listener(Self::on_delete))
             .on_action(cx.listener(|f: &mut Self, _: &Left, _, cx| {
@@ -375,7 +394,7 @@ impl Element for FieldElement {
         Some(
             window
                 .text_system()
-                .shape_line(text.into(), px(13.0), &[run], None),
+                .shape_line(text.into(), field.text_size, &[run], None),
         )
     }
 

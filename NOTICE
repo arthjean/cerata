@@ -65,7 +65,8 @@ Third-party notice: Hugeicons
 
 crates/cerata/assets/icons/*.svg are icons of the free Hugeicons Stroke
 Rounded set, copied from @hugeicons/core-free-icons 4.4.0
-(https://hugeicons.com). They are distributed under the MIT License (full text
+(https://hugeicons.com), except settings.svg, a Hugeicons gear copied from
+Paneflow's chrome icons. They are distributed under the MIT License (full text
 above, with this holder):
 
     Copyright (c) 2025 Hugeicons

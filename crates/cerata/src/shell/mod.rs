@@ -5,6 +5,7 @@ mod banner;
 mod commands;
 mod compact;
 mod pages;
+mod sidebar_footer;
 mod status_bar;
 mod tab_bar;
 pub mod title_bar;
@@ -235,6 +236,10 @@ pub struct WindowView {
     pub sidebar_visible: bool,
     resizing: bool,
     _sidebar_events: Option<Subscription>,
+    /// The sidebar footer's Search field, and whether the pointer is on it.
+    pub sidebar_filter: Entity<crate::editor::text_field::TextField>,
+    sidebar_filter_hovered: bool,
+    _sidebar_filter_events: Subscription,
     pub palette: Option<Entity<crate::palette::Palette>>,
     pub settings_panel: Option<Entity<crate::settings_panel::SettingsPanel>>,
     /// The compact window's open recents picker and its entries.
@@ -281,6 +286,9 @@ impl WindowView {
         let appearance_changes = window.observe_window_appearance(move |_, cx| {
             let _ = observed.update(cx, |this, cx| this.settings_applied(cx));
         });
+        let sidebar_filter =
+            cx.new(|cx| crate::editor::text_field::TextField::new("Search", cx).bare(15.0));
+        let sidebar_filter_events = cx.subscribe_in(&sidebar_filter, window, Self::on_filter_event);
         let this = cx.weak_entity();
         window.on_window_should_close(cx, move |_, cx| {
             let _ = this.update(cx, |view, _| view.before_close());
@@ -304,10 +312,13 @@ impl WindowView {
             handle: window.window_handle().downcast::<WindowView>(),
             editor_subscriptions: HashMap::new(),
             sidebar: None,
-            sidebar_width: 240.0,
+            sidebar_width: 300.0,
             sidebar_visible: true,
             resizing: false,
             _sidebar_events: None,
+            sidebar_filter,
+            sidebar_filter_hovered: false,
+            _sidebar_filter_events: sidebar_filter_events,
             palette: None,
             _palette_events: None,
             settings_panel: None,
@@ -329,7 +340,7 @@ impl WindowView {
         self.sidebar_width = settings
             .get(sidebar::WIDTH_KEY)
             .and_then(|v| v.as_f64())
-            .map_or(240.0, |w| w as f32);
+            .map_or(300.0, |w| w as f32);
         self.sidebar_visible = settings
             .get(sidebar::VISIBLE_KEY)
             .and_then(|v| v.as_bool())
@@ -346,6 +357,8 @@ impl WindowView {
         }
         if let Some(sidebar) = &self.sidebar {
             sidebar.update(cx, |sidebar, cx| sidebar.workspace_changed(cx));
+            self.sidebar_filter
+                .update(cx, |field, cx| field.set_text("", cx));
             return;
         }
         let state = self.core.clone();
@@ -373,9 +386,6 @@ impl WindowView {
                 this.duplicate(&path, window, cx)
             }),
             SidebarEvent::SettingsChanged => cx.notify(),
-            SidebarEvent::Search => self.with_window(cx, |this, window, cx| {
-                this.open_palette(crate::palette::Intent::Search, window, cx)
-            }),
         }
     }
 
@@ -1743,7 +1753,8 @@ impl Render for WindowView {
                         .flex_col()
                         .bg(theme::panel())
                         .child(title_bar::wordmark())
-                        .child(div().flex_1().min_h_0().child(sidebar)),
+                        .child(div().flex_1().min_h_0().child(sidebar))
+                        .child(sidebar_footer::render(self, window, cx)),
                 )
                 .child(
                     div()

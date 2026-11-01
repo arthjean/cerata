@@ -108,6 +108,27 @@ pub fn danger() -> Hsla {
 pub fn overlay() -> Hsla {
     palette().overlay
 }
+/// Sidebar row and button under the pointer: the text at 10 %.
+pub fn row_hover() -> Hsla {
+    text().opacity(0.10)
+}
+/// Active or selected sidebar row and button: the text at 16 %.
+pub fn row_active() -> Hsla {
+    text().opacity(0.16)
+}
+/// The sidebar filter's matches: the accent, darkened on light panels to
+/// keep 4.5:1 for 14 px text.
+pub fn filter_match() -> Hsla {
+    let palette = palette();
+    if palette.dark {
+        palette.accent
+    } else {
+        Hsla {
+            l: palette.accent.l.min(0.36),
+            ..palette.accent
+        }
+    }
+}
 pub fn transparent() -> Hsla {
     rgba(0x00000000).into()
 }

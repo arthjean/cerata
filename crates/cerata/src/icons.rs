@@ -21,6 +21,7 @@ pub enum Icon {
     Search,
     More,
     File,
+    Settings,
 }
 
 impl Icon {
@@ -38,6 +39,7 @@ impl Icon {
             Icon::Search => include_bytes!("../assets/icons/search-01.svg"),
             Icon::More => include_bytes!("../assets/icons/more-horizontal.svg"),
             Icon::File => include_bytes!("../assets/icons/file-02.svg"),
+            Icon::Settings => include_bytes!("../assets/icons/settings.svg"),
         }
     }
 
@@ -55,6 +57,7 @@ impl Icon {
             Icon::Search => "icons/search-01.svg",
             Icon::More => "icons/more-horizontal.svg",
             Icon::File => "icons/file-02.svg",
+            Icon::Settings => "icons/settings.svg",
         }
     }
 }

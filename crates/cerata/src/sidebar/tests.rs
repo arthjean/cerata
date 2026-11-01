@@ -692,3 +692,65 @@ fn a_huge_folder_shows_before_its_titles_then_fills_them_in(cx: &mut TestAppCont
     let kept = entries.iter().find(|entry| entry.path == first).unwrap();
     assert_eq!(kept.title.as_deref(), Some("Title 0"));
 }
+
+// ---- Sidebar filter ----
+
+fn filter_names(cx: &mut TestAppContext, sidebar: &Entity<Sidebar>) -> Vec<String> {
+    sidebar.read_with(cx, |s, _| {
+        s.filter
+            .results
+            .iter()
+            .map(|entry| entry.name.clone())
+            .collect()
+    })
+}
+
+#[gpui::test]
+fn the_filter_matches_titles_and_paths_of_every_indexed_file(cx: &mut TestAppContext) {
+    let env = setup(cx);
+    env.file("notes/inner.md", "# Moteur d'édition");
+    env.file("a.md", "no title");
+    env.file("b.md", "# Beta");
+    let (_handle, sidebar) = open(cx, &env);
+    wait_for_index(cx, &sidebar);
+
+    // A collapsed folder's file is found by its title, in any case.
+    sidebar.update(cx, |s, cx| s.set_filter("  MOTEUR ", cx));
+    cx.run_until_parked();
+    assert_eq!(filter_names(cx, &sidebar), ["inner.md"]);
+    // A folder name matches through the relative path.
+    sidebar.update(cx, |s, cx| s.set_filter("notes", cx));
+    assert_eq!(filter_names(cx, &sidebar), ["inner.md"]);
+    sidebar.update(cx, |s, cx| s.set_filter("zzz", cx));
+    assert!(filter_names(cx, &sidebar).is_empty());
+    assert!(sidebar.read_with(cx, |s, _| s.filtering()));
+    sidebar.update(cx, |s, cx| s.set_filter("", cx));
+    assert!(!sidebar.read_with(cx, |s, _| s.filtering()));
+}
+
+#[gpui::test]
+fn typing_in_the_search_field_filters_and_escape_clears(cx: &mut TestAppContext) {
+    let env = setup(cx);
+    env.file("a.md", "no title");
+    env.file("b.md", "# Beta");
+    let (handle, sidebar) = open(cx, &env);
+    wait_for_index(cx, &sidebar);
+    let mut vcx = VisualTestContext::from_window(handle.into(), cx);
+    handle
+        .update(&mut vcx, |view, window, cx| {
+            let focus = view.sidebar_filter.read(cx).focus_handle.clone();
+            window.focus(&focus, cx);
+        })
+        .unwrap();
+    vcx.simulate_input("bet");
+    vcx.run_until_parked();
+    assert_eq!(filter_names(&mut vcx, &sidebar), ["b.md"]);
+
+    vcx.simulate_keystrokes("escape");
+    vcx.run_until_parked();
+    assert!(!sidebar.read_with(&vcx, |s, _| s.filtering()));
+    let text = handle
+        .read_with(&vcx, |view, cx| view.sidebar_filter.read(cx).text.clone())
+        .unwrap();
+    assert_eq!(text, "");
+}

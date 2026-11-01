@@ -94,7 +94,7 @@
       "description": "Default sidebar width in pixels",
       "category": "Appearance",
       "type": "number",
-      "default": 240
+      "default": 300
     },
     {
       "key": "appearance.sidebar-visible",
