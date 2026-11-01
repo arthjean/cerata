@@ -66,7 +66,7 @@ pub fn row(
             .flex()
             .items_center()
             .justify_center()
-            .child(icon(kind, ICON_SIZE, theme::muted().opacity(visibility)))
+            .child(icon(kind, ICON_SIZE, theme::text().opacity(visibility)))
     };
     let row_icon = if entry.is_dir {
         let openness = sidebar.folder_openness(&entry.path, state.expanded, Instant::now());
@@ -104,11 +104,7 @@ pub fn row(
             .overflow_hidden()
             .whitespace_nowrap()
             .text_ellipsis()
-            // Full strength while filtering, so the matches keep their contrast.
-            .when(
-                !(state.active || state.selected || sidebar.filtering()),
-                |d| d.opacity(0.75),
-            )
+            .text_color(theme::text())
             .map(|d| {
                 if sidebar.filtering() {
                     d.child(super::filter::highlight(label_text, &sidebar.filter.query))
