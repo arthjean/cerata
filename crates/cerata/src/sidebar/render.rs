@@ -248,7 +248,11 @@ fn header(
         .items_center()
         .gap(px(4.0))
         .h(px(20.0))
-        .mt(px(8.0))
+        // Space groups the sections: the 6 px a row leaves above its label
+        // makes 10 below the title and 22 above it, so a header reads as
+        // belonging to its own rows, not to the section before it.
+        .mt(px(16.0))
+        .mb(px(4.0))
         .px(px(PADDING))
         .text_size(px(12.0))
         .font_weight(FontWeight::MEDIUM)
