@@ -1,6 +1,6 @@
 [package]
 name = "cerata_render"
-description = "Rendering helpers with heavy dependencies for Cerata: tree-sitter code highlighting. No GPUI."
+description = "Rendering helpers with heavy dependencies for Cerata: tree-sitter code highlighting, diagrams and formulas. No GPUI."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,6 +9,11 @@ authors.workspace = true
 
 [dependencies]
 cerata_markdown.workspace = true
+log.workspace = true
+# Diagrams (Pele) and formulas (MathJax) in an isolated QuickJS runtime
+# (docs/adr/0005-diagram-and-math-rendering.md). No feature: no `std`/`os`
+# module, no loader.
+rquickjs = "0.14.0"
 # Code highlighting: tree-sitter at the version the workspace already uses,
 # and the grammar crates that ship a highlight query (all MIT). A language is
 # one dependency plus one row in `src/highlight.rs`.
@@ -51,3 +56,76 @@ tree-sitter-zig = "1.1.2"
 
 [lints]
 workspace = true
+
+# US-031 throwaway spike comparing the diagram and formula engines
+# (docs/adr/0005-diagram-and-math-rendering.md). Behind a feature so the
+# heavy candidates never reach `cargo test --workspace`:
+# `cargo run -p cerata_render --example render_spike --features spike --release`.
+[features]
+spike = ["dep:mermaid-svg", "dep:mitex", "dep:typst", "dep:typst-svg", "dep:typst-layout", "dep:typst-assets", "dep:resvg"]
+
+[dependencies.mermaid-svg]
+version = "0.7.0"
+optional = true
+
+[dependencies.mitex]
+version = "0.2.4"
+optional = true
+
+[dependencies.typst]
+version = "0.15.1"
+optional = true
+
+[dependencies.typst-svg]
+version = "0.15.1"
+optional = true
+
+[dependencies.typst-layout]
+version = "0.15.1"
+optional = true
+
+[dependencies.typst-assets]
+version = "0.15.1"
+features = ["fonts"]
+optional = true
+
+[dependencies.resvg]
+version = "0.46.0"
+optional = true
+
+[[example]]
+name = "render_spike"
+required-features = ["spike"]
+
+[[example]]
+name = "weight_base"
+path = "examples/weight/base.rs"
+required-features = ["spike"]
+
+[[example]]
+name = "weight_mermaid_svg"
+path = "examples/weight/mermaid_svg.rs"
+required-features = ["spike"]
+
+[[example]]
+name = "weight_pele"
+path = "examples/weight/pele.rs"
+required-features = ["spike"]
+
+[[example]]
+name = "weight_mathjax"
+path = "examples/weight/mathjax.rs"
+required-features = ["spike"]
+
+[[example]]
+name = "weight_pele_mathjax"
+path = "examples/weight/pele_mathjax.rs"
+required-features = ["spike"]
+
+[[example]]
+name = "weight_typst"
+path = "examples/weight/typst.rs"
+required-features = ["spike"]
+
+[dev-dependencies]
+serde_json.workspace = true

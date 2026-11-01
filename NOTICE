@@ -83,3 +83,26 @@ crates/cerata/assets/fonts/OFL.txt:
     Copyright (c) 2010, j. 'mach' wust, with Reserved Font Name
     UnifrakturMaguntia.
     Copyright (c) 2009, Peter Wiegel.
+
+Third-party notice: Pele
+------------------------
+
+crates/cerata_render/assets/js/pele.global.js is the browser bundle of Pele
+1.13.0 (https://github.com/obsidianmd/pele), the Mermaid diagram renderer,
+run in Cerata's isolated QuickJS context. It is distributed under the MIT
+License (full text above, and crates/cerata_render/assets/js/LICENSE-pele,
+with this holder):
+
+    Copyright (c) 2026 kepano
+
+Third-party notice: MathJax
+---------------------------
+
+crates/cerata_render/assets/js/mathjax-tex-svg-full.js and mathjax-liteDOM.js
+are bundles of MathJax 3.2.2 (https://www.mathjax.org), the TeX to SVG
+renderer, run in Cerata's isolated QuickJS context. They are distributed
+under the Apache License, version 2.0, whose full text is
+crates/cerata_render/assets/js/LICENSE-mathjax:
+
+    Copyright (c) The MathJax Consortium
+    mhchem parser: Copyright (c) 2015-2021 Martin Hensel
