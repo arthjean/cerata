@@ -670,6 +670,50 @@ fn a_deleted_dirty_file_offers_recreate_and_close(cx: &mut TestAppContext) {
     assert_eq!(tabs, [Location::Launcher]);
 }
 
+/// A file rewritten on disk before the watcher reports it (a sync client,
+/// `git checkout`) is not overwritten by the autosave that was due: the save
+/// reads the disk first and raises the conflict itself.
+#[gpui::test]
+fn an_unreported_external_change_is_not_overwritten(cx: &mut TestAppContext) {
+    let env = setup(cx);
+    let a = env.file("a.md", "base");
+    let handle = workspace(cx, &env);
+    update(cx, handle, |view, window, cx| {
+        view.open_file(&a, window, cx)
+    });
+    make_dirty(cx, handle, &a);
+    std::fs::write(&a, "theirs").unwrap();
+    wait_until(cx, |cx| conflict(cx, handle).is_some());
+    assert_eq!(
+        conflict(cx, handle),
+        Some(Conflict::Modified {
+            disk: "theirs".into()
+        })
+    );
+    assert_eq!(std::fs::read_to_string(&a).unwrap(), "theirs");
+    assert_eq!(editor_text(cx, handle), "base mine more");
+}
+
+/// A clean file deleted on disk is not brought back by the next edit's
+/// autosave: the edit raises the deleted-file banner.
+#[gpui::test]
+fn an_edit_after_a_deletion_asks_before_recreating(cx: &mut TestAppContext) {
+    let env = setup(cx);
+    let a = env.file("a.md", "base");
+    let handle = workspace(cx, &env);
+    update(cx, handle, |view, window, cx| {
+        view.open_file(&a, window, cx)
+    });
+    std::fs::remove_file(&a).unwrap();
+    update(cx, handle, |view, window, cx| {
+        view.on_watch_event(file_event(&a, FileChange::Removed), window, cx)
+    });
+    type_text(cx, handle, " mine");
+    wait_until(cx, |cx| conflict(cx, handle).is_some());
+    assert_eq!(conflict(cx, handle), Some(Conflict::Deleted));
+    assert!(!a.exists());
+}
+
 #[gpui::test]
 fn a_change_during_a_save_is_compared_with_the_last_write(cx: &mut TestAppContext) {
     let env = setup(cx);

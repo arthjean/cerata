@@ -90,12 +90,18 @@ pub enum SaveResult {
         revision: u64,
         error: String,
     },
+    /// The disk changed before the watcher said so; nothing was written.
+    Conflicted { path: PathBuf, revision: u64 },
 }
 
 /// The [`SaveTarget`] of a window: the dirty texts, copied in on every
 /// edit, and the results queued for the window.
 pub struct SaveBridge {
     dirty: Mutex<HashMap<PathBuf, SaveSnapshot>>,
+    /// The text each open file holds on disk as far as the window knows,
+    /// kept here so a write that just finished counts before the window
+    /// hears of it.
+    disk: Mutex<HashMap<PathBuf, String>>,
     results: Arc<Inbox<SaveResult>>,
     in_flight: Mutex<HashMap<PathBuf, usize>>,
 }
@@ -105,6 +111,7 @@ impl SaveBridge {
         let (results, wakeups) = Inbox::new();
         let bridge = Arc::new(Self {
             dirty: Mutex::new(HashMap::new()),
+            disk: Mutex::new(HashMap::new()),
             results,
             in_flight: Mutex::new(HashMap::new()),
         });
@@ -130,10 +137,30 @@ impl SaveBridge {
         self.dirty.lock().remove(path);
     }
 
+    /// What `path` holds on disk, just read or chosen in a conflict;
+    /// `None` lets the next write go unchecked (Recreate).
+    pub fn set_disk(&self, path: &Path, text: Option<String>) {
+        let mut disk = self.disk.lock();
+        match text {
+            Some(text) => disk.insert(path.to_path_buf(), text),
+            None => disk.remove(path),
+        };
+    }
+
+    /// `path` is no longer open.
+    pub fn forget(&self, path: &Path) {
+        self.dirty.lock().remove(path);
+        self.disk.lock().remove(path);
+    }
+
     pub fn rename(&self, old: &Path, new: &Path) {
         let mut dirty = self.dirty.lock();
         if let Some(snapshot) = dirty.remove(old) {
             dirty.insert(new.to_path_buf(), snapshot);
+        }
+        let mut disk = self.disk.lock();
+        if let Some(text) = disk.remove(old) {
+            disk.insert(new.to_path_buf(), text);
         }
     }
 
@@ -168,6 +195,9 @@ impl SaveTarget for SaveBridge {
                 dirty.remove(path);
             }
         }
+        self.disk
+            .lock()
+            .insert(path.to_path_buf(), disk_text.to_owned());
         self.done(path);
         self.push(SaveResult::Saved {
             path: path.to_path_buf(),
@@ -183,6 +213,18 @@ impl SaveTarget for SaveBridge {
             path: path.to_path_buf(),
             revision,
             error: error.to_string(),
+        });
+    }
+
+    fn expected_disk(&self, path: &Path) -> Option<String> {
+        self.disk.lock().get(path).cloned()
+    }
+
+    fn save_conflicted(&self, path: &Path, revision: u64) {
+        self.done(path);
+        self.push(SaveResult::Conflicted {
+            path: path.to_path_buf(),
+            revision,
         });
     }
 }

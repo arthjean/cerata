@@ -822,6 +822,17 @@ impl WindowView {
                 }
                 self.refresh_sidebar_for(&path, cx);
             }
+            SaveResult::Conflicted { path, .. } => {
+                // Decided as a watched change; a disk that matches again
+                // lets the edit go out.
+                self.check_disk(&path, cx);
+                let resume = self.docs.get(&path).is_some_and(|doc| {
+                    doc.conflict.is_none() && doc.editor.read(cx).state.is_dirty()
+                });
+                if resume {
+                    self.resume_saves(&path, cx);
+                }
+            }
             SaveResult::Failed { path, error, .. } => {
                 log::error!("save of {} failed: {error}", path.display());
                 let Some(doc) = self.docs.get_mut(&path) else {
@@ -878,6 +889,7 @@ impl WindowView {
         let editor = self.new_editor(&file.path, file.content.clone(), cx);
         let mut doc = Doc::new(editor.clone(), false);
         doc.seen_revision = editor.read(cx).state.revision();
+        self.bridge.set_disk(&file.path, Some(file.content.clone()));
         doc.disk_text = file.content;
         doc.format = file.format;
         doc.modified_at = file.modified_at;
@@ -940,6 +952,7 @@ impl WindowView {
                     return;
                 };
                 doc.loading_since = None;
+                self.bridge.set_disk(path, Some(file.content.clone()));
                 doc.disk_text = file.content.clone();
                 doc.format = file.format;
                 doc.modified_at = file.modified_at;
@@ -974,7 +987,7 @@ impl WindowView {
         if let Some(doc) = self.docs.remove(path) {
             self.editor_subscriptions.remove(&doc.editor.entity_id());
         }
-        self.bridge.clear(path);
+        self.bridge.forget(path);
         if let Some(saver) = &self.saver {
             saver.cancel(path);
         }
@@ -1414,6 +1427,7 @@ impl WindowView {
             doc.conflict = Some(Conflict::Modified { disk: file.content });
             self.hold_saves(path);
         } else {
+            self.bridge.set_disk(path, Some(file.content.clone()));
             doc.disk_text = file.content.clone();
             doc.format = file.format;
             doc.modified_at = file.modified_at;
@@ -1459,6 +1473,7 @@ impl WindowView {
             return;
         };
         if let Some(Conflict::Modified { disk }) = doc.conflict.take() {
+            self.bridge.set_disk(&path, Some(disk.clone()));
             doc.disk_text = disk;
         }
         doc.compare = false;
@@ -1474,6 +1489,7 @@ impl WindowView {
             doc.conflict = None;
             doc.disk_text.clear();
         }
+        self.bridge.set_disk(&path, None);
         self.resume_saves(&path, cx);
     }
 
@@ -1508,6 +1524,7 @@ impl WindowView {
             return;
         };
         doc.compare = false;
+        self.bridge.set_disk(&path, Some(disk.clone()));
         doc.disk_text = disk.clone();
         let editor = doc.editor.clone();
         let revision = editor.update(cx, |editor, cx| {

@@ -40,6 +40,14 @@ pub trait SaveTarget: Send + Sync + 'static {
     /// The write of `revision` failed; the document stays dirty and nothing
     /// partial is left on disk.
     fn save_failed(&self, path: &Path, revision: u64, error: &FsError);
+    /// The text `path` holds on disk as far as the target knows (what it
+    /// last read or wrote). An autosave writes only while the disk still
+    /// holds it; `None` writes without checking.
+    fn expected_disk(&self, path: &Path) -> Option<String>;
+    /// The disk no longer holds [`Self::expected_disk`]: an external change
+    /// the watcher has not reported yet. `revision` was not written and no
+    /// later save is queued until the target schedules one.
+    fn save_conflicted(&self, path: &Path, revision: u64);
 }
 
 #[derive(Debug, Default)]
@@ -161,8 +169,10 @@ impl AutoSaver {
                     }
                 }
                 drop(controllers);
+                // The window is going away: its text is written even over a
+                // change the watcher has not reported, as Writer does.
                 for path in due {
-                    perform_save(&self.shared, path);
+                    perform_save(&self.shared, path, false);
                 }
                 controllers = self.shared.controllers.lock();
                 continue;
@@ -251,7 +261,7 @@ fn run_timer(shared: &Arc<Shared>) {
             let worker = shared.clone();
             let spawned = std::thread::Builder::new()
                 .name("cerata-save".into())
-                .spawn(move || perform_save(&worker, path));
+                .spawn(move || perform_save(&worker, path, true));
             if let Err(error) = spawned {
                 log::error!("could not start a save thread: {error}");
             }
@@ -270,9 +280,30 @@ fn run_timer(shared: &Arc<Shared>) {
     }
 }
 
-fn perform_save(shared: &Shared, path: PathBuf) {
+/// Whether the disk no longer holds the text the target last read or
+/// wrote. A read error other than a missing file lets the write go on and
+/// report it.
+fn disk_moved(shared: &Shared, path: &Path) -> bool {
+    let Some(expected) = shared.target.expected_disk(path) else {
+        return false;
+    };
+    match shared.fs.read_file(path) {
+        Ok(file) => file.content != expected,
+        Err(FsError::NotFound(_)) => true,
+        Err(_) => false,
+    }
+}
+
+/// Writes the dirty text of `path`. With `check`, a disk that changed since
+/// the target last read or wrote it is reported instead of overwritten.
+fn perform_save(shared: &Shared, path: PathBuf, check: bool) {
     let mut follow_up = false;
     if let Some(snapshot) = shared.target.dirty_snapshot(&path) {
+        if check && disk_moved(shared, &path) {
+            shared.target.save_conflicted(&path, snapshot.revision);
+            finish_save(shared, &path, false);
+            return;
+        }
         let options = *shared.options.lock();
         let disk_text = prepare_for_save(&snapshot.text, options);
         let bytes = encode(&disk_text, snapshot.format);
@@ -295,16 +326,19 @@ fn perform_save(shared: &Shared, path: PathBuf) {
             }
         }
     }
+    finish_save(shared, &path, follow_up);
+}
 
+fn finish_save(shared: &Shared, path: &Path, follow_up: bool) {
     let mut controllers = shared.controllers.lock();
-    if let Some(controller) = controllers.get_mut(&path) {
+    if let Some(controller) = controllers.get_mut(path) {
         controller.in_flight = false;
         if controller.pending || follow_up {
             controller.pending = true;
             queue(controller, shared.throttle);
         }
     }
-    cleanup(&mut controllers, &path, shared.throttle);
+    cleanup(&mut controllers, path, shared.throttle);
     shared.wake.notify_all();
 }
 
@@ -321,6 +355,8 @@ mod tests {
         saved_revision: u64,
         disk_text: String,
         errors: Vec<String>,
+        expected: Option<String>,
+        conflicts: Vec<u64>,
     }
 
     type Hook = Box<dyn Fn(&FakeEditor) + Send + Sync>;
@@ -380,7 +416,20 @@ mod tests {
                 let _ = sender.send(u64::MAX);
             }
         }
+
+        fn expected_disk(&self, _path: &Path) -> Option<String> {
+            self.doc.lock().expected.clone()
+        }
+
+        fn save_conflicted(&self, _path: &Path, revision: u64) {
+            self.doc.lock().conflicts.push(revision);
+            if let Some(sender) = &*self.saved_events.lock() {
+                let _ = sender.send(CONFLICT);
+            }
+        }
     }
+
+    const CONFLICT: u64 = u64::MAX - 1;
 
     const THROTTLE: Duration = Duration::from_millis(300);
     const WAIT: Duration = Duration::from_secs(5);
@@ -410,6 +459,32 @@ mod tests {
         )
         .unwrap();
         (dir, path, editor, saver, receiver)
+    }
+
+    /// A file rewritten on disk before the watcher reports it (sync client,
+    /// `git checkout`) is never overwritten by an autosave: the target hears
+    /// of the conflict, and a disk that matches again is written.
+    #[test]
+    fn an_unreported_external_change_is_reported_instead_of_overwritten() {
+        let (_dir, path, editor, saver, saved) = setup();
+        editor.doc.lock().expected = Some("initial".into());
+        std::fs::write(&path, "theirs").unwrap();
+        editor.edit("mine");
+        saver.schedule(&path);
+        assert_eq!(saved.recv_timeout(WAIT).unwrap(), CONFLICT);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "theirs");
+        assert_eq!(editor.doc.lock().conflicts, [1]);
+
+        std::fs::remove_file(&path).unwrap();
+        saver.schedule(&path);
+        assert_eq!(saved.recv_timeout(WAIT).unwrap(), CONFLICT, "deleted");
+        assert!(!path.exists(), "a deleted file is not recreated");
+
+        std::fs::write(&path, "theirs").unwrap();
+        editor.doc.lock().expected = Some("theirs".into());
+        saver.schedule(&path);
+        assert_eq!(saved.recv_timeout(WAIT).unwrap(), 1);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "mine");
     }
 
     /// Writer `save.test.ts`: "keeps newer edits dirty until a follow-up save
