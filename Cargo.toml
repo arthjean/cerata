@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/cerata_core", "crates/cerata_markdown", "crates/cerata"]
+members = ["crates/cerata_core", "crates/cerata_markdown", "crates/cerata_render", "crates/cerata"]
 default-members = ["crates/cerata"]
 
 [workspace.package]
