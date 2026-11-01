@@ -79,7 +79,7 @@ impl EventEmitter<FieldEvent> for TextField {}
 impl TextField {
     pub fn new(placeholder: impl Into<SharedString>, cx: &mut Context<Self>) -> Self {
         Self {
-            focus_handle: cx.focus_handle(),
+            focus_handle: cx.focus_handle().tab_stop(true),
             text: String::new(),
             selection: 0..0,
             marked: None,
@@ -200,7 +200,11 @@ impl Render for TextField {
             .key_context(CONTEXT)
             .track_focus(&self.focus_handle)
             .cursor(CursorStyle::IBeam)
-            .w(px(220.0))
+            // The parent sets the width; a fixed one overflowed the
+            // settings cards.
+            .w_full()
+            .min_w_0()
+            .overflow_hidden()
             .h(px(26.0))
             .px(px(6.0))
             .rounded(px(4.0))
@@ -397,7 +401,9 @@ impl Element for FieldElement {
             let field = self.field.read(cx);
             (field.selection.clone(), field.text.is_empty())
         };
-        if !empty && !selection.is_empty() {
+        // A selection shows only while the field has the focus: an
+        // unfocused field with highlighted text reads as selected.
+        if !empty && !selection.is_empty() && focus.is_focused(window) {
             let x0 = line.x_for_index(selection.start);
             let x1 = line.x_for_index(selection.end);
             window.paint_quad(fill(

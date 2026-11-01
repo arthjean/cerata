@@ -2,15 +2,43 @@
 
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
+/// A keystroke with the OS's command modifier: Cmd on macOS, Ctrl
+/// elsewhere, as a static string for `KeyBinding::new`. `editor` keeps its
+/// own copy for the examples that compile it on its own.
+macro_rules! secondary {
+    ($keys:literal) => {
+        if cfg!(target_os = "macos") {
+            concat!("cmd-", $keys)
+        } else {
+            concat!("ctrl-", $keys)
+        }
+    };
+}
+
+mod a11y;
+mod app;
+mod app_menu;
+mod documents;
 mod editor;
-mod window;
+mod inbox;
+mod menu;
+mod palette;
+mod routing;
+mod settings_panel;
+mod shell;
+mod sidebar;
+mod single_instance;
+mod tabs;
+mod theme;
+mod zoom;
 
 use cerata_core::cli;
 use cerata_core::open_target;
-use cerata_core::startup::{CoreApp, startup};
-use cerata_core::watcher::WatchEnvelope;
+use cerata_core::startup::CoreApp;
+use futures::StreamExt as _;
 use gpui::App;
 use gpui_platform::application;
+use single_instance::{Claim, Endpoint, LaunchRequest};
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -23,82 +51,82 @@ fn main() -> ExitCode {
     }
 
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-    // The app takes at most one target: a folder or a Markdown file, as
-    // handed over by the CLI, the OS or a shell.
-    let target = argv
-        .get(1)
-        .and_then(|arg| open_target::resolve(&cwd.join(arg)));
-
-    application().run(move |cx: &mut App| {
-        cx.on_window_closed(|cx, _| {
-            if cx.windows().is_empty() {
-                cx.quit();
-            }
-        })
-        .detach();
-        editor::actions::init(cx);
-        start(cx, target.clone());
-    });
-    ExitCode::SUCCESS
-}
-
-fn start(cx: &mut App, target: Option<open_target::OpenTarget>) {
     let core = match CoreApp::open_default() {
         Ok(core) => core,
         Err(error) => {
             log::error!("cannot start: {error}");
-            cx.quit();
-            return;
+            return ExitCode::FAILURE;
         }
     };
-    let (events, receiver) = std::sync::mpsc::channel::<WatchEnvelope>();
-    let mut document = window::Document::default();
-    let mut config = editor::EditorConfig::default();
-    match startup(&core, target, events) {
-        Ok((window_state, bundle)) => {
-            config = editor::EditorConfig::from_settings(&bundle.settings);
-            if let Some(file) = bundle.standalone_file.clone() {
-                document = window::Document {
-                    text: file.content,
-                    path: Some(file.path),
-                    root: None,
-                };
-            } else if let Some(file) = bundle.active_file.clone() {
-                document = window::Document {
-                    text: file.content,
-                    path: Some(file.path),
-                    root: bundle.workspace.as_ref().map(|info| info.root.clone()),
-                };
-            }
-            log::info!(
-                "startup: workspace {:?}, {} entries, {} recent workspaces, {} recent files",
-                bundle.workspace.as_ref().map(|info| &info.root),
-                bundle.entries.len(),
-                bundle.recent_workspaces.len(),
-                bundle.recent_files.len(),
-            );
-            // The shell (EP-004) consumes these; until then they are logged
-            // so the index and watcher pipeline stays observable.
-            let spawned = std::thread::Builder::new()
-                .name("cerata-events".into())
-                .spawn(move || {
-                    for envelope in receiver {
-                        let current = window_state
-                            .snapshot()
-                            .is_some_and(|s| envelope.is_for(&s.root, s.epoch));
-                        if current {
-                            log::info!("workspace event: {:?}", envelope.event);
-                        }
-                    }
-                });
-            if let Err(error) = spawned {
-                log::warn!("workspace events not logged: {error}");
-            }
+    let request = LaunchRequest::from_env(argv.into_iter().skip(1), cwd);
+    let listener = match single_instance::claim(&Endpoint::for_data_dir(&core.data_dir), &request) {
+        Ok(Claim::Forwarded) => return ExitCode::SUCCESS,
+        Ok(Claim::Primary(listener)) => Some(listener),
+        Err(error) => {
+            log::warn!("single instance unavailable, running on its own: {error}");
+            None
         }
-        Err(error) => log::error!("startup failed: {error}"),
+    };
+
+    application().run(move |cx: &mut App| {
+        editor::actions::init(cx);
+        cx.bind_keys(shell::bindings());
+        let positional = shell::positional_bindings(cx);
+        cx.bind_keys(positional);
+        cx.bind_keys(a11y::bindings());
+        cx.bind_keys(sidebar::bindings());
+        cx.bind_keys(palette::bindings());
+        app_menu::init(cx);
+        app::init(cx, core);
+        if let Some(listener) = listener {
+            serve_launches(cx, listener);
+        }
+        start(cx, request);
+    });
+    ExitCode::SUCCESS
+}
+
+/// Later launches reach the main thread in arrival order.
+fn serve_launches(cx: &mut App, listener: interprocess::local_socket::Listener) {
+    let (sender, mut launches) = futures::channel::mpsc::unbounded();
+    if let Err(error) = single_instance::serve(listener, move |request| {
+        let _ = sender.unbounded_send(request);
+    }) {
+        log::warn!("second launches will not be received: {error}");
+        return;
     }
-    if let Err(error) = window::open_main_window(cx, document, config) {
+    cx.spawn(async move |cx| {
+        while let Some(request) = launches.next().await {
+            cx.update(|cx| app::handle_launch(cx, request));
+        }
+    })
+    .detach();
+}
+
+/// The first window opens on the first target that resolves (or restores
+/// the last workspace); the other targets follow in order.
+fn start(cx: &mut App, request: LaunchRequest) {
+    let paths = request.paths();
+    let first = paths
+        .iter()
+        .position(|path| open_target::resolve(path).is_some());
+    let target = first.and_then(|ix| open_target::resolve(&paths[ix]));
+    if let Err(error) = app::open_window(cx, target, None) {
         log::error!("failed to open the main window: {error:#}");
         cx.quit();
+        return;
+    }
+    let rest = LaunchRequest {
+        cwd: request.cwd.clone(),
+        args: request
+            .args
+            .iter()
+            .enumerate()
+            .filter(|(ix, _)| Some(*ix) != first)
+            .map(|(_, arg)| arg.clone())
+            .collect(),
+    };
+    if !rest.args.is_empty() {
+        app::handle_launch(cx, rest);
     }
 }

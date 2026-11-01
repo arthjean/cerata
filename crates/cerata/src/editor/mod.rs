@@ -31,8 +31,8 @@ mod layout;
 mod menu;
 mod mouse;
 pub mod search;
-mod text_field;
-mod theme;
+pub mod text_field;
+pub mod theme;
 
 #[cfg(test)]
 mod tests;
@@ -191,6 +191,19 @@ impl Editor {
     fn column_width(&self) -> f32 {
         self.viewport
             .map_or(self.config.content_width, |viewport| viewport.column_width)
+    }
+
+    /// New settings (size, zoom, fonts, width): fonts resolve again and
+    /// every line height is estimated afresh on the next frame.
+    pub fn set_config(&mut self, config: EditorConfig, cx: &mut Context<Self>) {
+        if self.config == config {
+            return;
+        }
+        self.config = config;
+        self.fonts = None;
+        self.ch = None;
+        self.estimated_for = 0.0;
+        cx.notify();
     }
 
     fn reestimate_heights(&mut self) {

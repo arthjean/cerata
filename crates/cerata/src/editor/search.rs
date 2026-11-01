@@ -224,7 +224,7 @@ impl Render for SearchBar {
             .gap(px(6.0))
             .p(px(8.0))
             .rounded(px(8.0))
-            .bg(theme::panel())
+            .bg(theme::overlay())
             .border_1()
             .border_color(theme::border())
             .text_size(px(13.0))
@@ -233,7 +233,7 @@ impl Render for SearchBar {
                     .flex()
                     .items_center()
                     .gap(px(6.0))
-                    .child(self.find.clone())
+                    .child(div().w(px(220.0)).child(self.find.clone()))
                     .child(
                         div()
                             .id("search-counter")
@@ -257,7 +257,7 @@ impl Render for SearchBar {
                     .flex()
                     .items_center()
                     .gap(px(6.0))
-                    .child(self.replace.clone())
+                    .child(div().w(px(220.0)).child(self.replace.clone()))
                     .child(
                         button("search-replace", "Replace")
                             .on_click(cx.listener(|_, _, _, cx| cx.emit(SearchEvent::ReplaceNext))),
@@ -314,10 +314,6 @@ impl Editor {
 
     /// The editor's tab became active or inactive; an inactive tab closes
     /// its search (`use-close-editor-search-when-inactive.ts`).
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the tab bar of US-024 calls it")
-    )]
     pub fn set_active(&mut self, active: bool, cx: &mut Context<Self>) {
         if !active && self.search.take().is_some() {
             cx.notify();

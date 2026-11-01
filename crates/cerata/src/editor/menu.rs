@@ -256,7 +256,7 @@ fn menu_list(
         .min_w(px(220.0))
         .py(px(4.0))
         .rounded(px(6.0))
-        .bg(theme::background())
+        .bg(theme::overlay())
         .border_1()
         .border_color(theme::border())
         .shadow_md()
@@ -366,11 +366,14 @@ const OPENABLE: &[&str] = &[
 ];
 
 /// The existing folder or document a local link opens, checked under its
-/// own name and through symlinks.
+/// own name and through symlinks. A folder with an extension is refused:
+/// macOS runs bundles (`.app`, `.prefPane`, `.workflow`...) rather than
+/// showing them.
 fn openable(path: &std::path::Path) -> Option<std::path::PathBuf> {
     let real = std::fs::canonicalize(path).ok()?;
     if real.is_dir() {
-        return Some(path.to_path_buf());
+        let plain = |p: &std::path::Path| p.extension().is_none();
+        return (plain(path) && plain(&real)).then(|| path.to_path_buf());
     }
     let shown = |p: &std::path::Path| {
         p.extension()
@@ -455,6 +458,8 @@ mod tests {
             "doc.pdf",
             "Note.MD",
             "notes",
+            "Tool.app",
+            "Prefs.prefPane",
             "tool.EXE",
             "run.bat",
             "short.lnk",
@@ -466,7 +471,7 @@ mod tests {
             "noext",
         ] {
             let path = dir.path().join(name);
-            if name == "notes" {
+            if ["notes", "Tool.app", "Prefs.prefPane"].contains(&name) {
                 std::fs::create_dir(&path).unwrap();
             } else {
                 std::fs::write(&path, b"x").unwrap();
@@ -476,6 +481,8 @@ mod tests {
             assert!(openable(&dir.path().join(name)).is_some(), "{name}");
         }
         for name in [
+            "Tool.app",
+            "Prefs.prefPane",
             "tool.EXE",
             "run.bat",
             "short.lnk",
