@@ -21,6 +21,9 @@
 
 #![allow(clippy::single_range_in_vec_init)]
 
+#[allow(dead_code)]
+#[path = "../src/a11y.rs"]
+mod a11y;
 #[allow(dead_code, unused_imports)]
 #[path = "../src/editor/mod.rs"]
 mod editor;

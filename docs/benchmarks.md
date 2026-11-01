@@ -52,10 +52,10 @@ Writer ne tourne pas sous Windows ni sous Linux : ces colonnes n'existent pas po
 |---|---|---|---|---|
 | Indexation, 10 000 fichiers (cache disque chaud) | médiane 32 ms (min 30, max 33, 7 runs) | US-046 | US-045 | `index_bench index <ws10k> 7` |
 | Indexation, 50 000 fichiers (cache disque chaud) | médiane 457 ms (min 379, max 492, 5 runs) | US-046 | US-045 | `index_bench index <ws50k> 5` |
-| Éditeur, 1 Mo : ouverture jusqu'à la première frame présentée | 18,6 à 21,0 ms (5 runs) | US-046 | US-045 | `cargo run -p cerata --example editor_bench --release` |
-| Éditeur, 1 Mo : frappe, travail de l'application (frame vers présentée) | p99 1,50 à 1,68 ms, aucune frappe hors de la frame suivante (5 × 200 frappes) | US-046 | US-045 | idem |
-| Éditeur, 1 Mo : frappe, gestionnaire d'entrée seul | p99 1,88 à 2,14 ms | US-046 | US-045 | idem |
-| Éditeur, 1 Mo : saut de défilement à froid, travail de la frame | p99 3,55 à 4,02 ms (5 × 60 sauts) | US-046 | US-045 | idem |
+| Éditeur, 1 Mo : ouverture jusqu'à la première frame présentée | 24,4 à 25,5 ms (3 runs) | US-046 | US-045 | `cargo run -p cerata --example editor_bench --release` |
+| Éditeur, 1 Mo : frappe, travail de l'application (frame vers présentée) | p99 2,13 à 2,18 ms, aucune frappe hors de la frame suivante (3 × 200 frappes) | US-046 | US-045 | idem |
+| Éditeur, 1 Mo : frappe, gestionnaire d'entrée seul | p99 3,27 à 3,74 ms | US-046 | US-045 | idem |
+| Éditeur, 1 Mo : saut de défilement à froid, travail de la frame | p99 4,26 à 4,81 ms (3 × 60 sauts) | US-046 | US-045 | idem |
 | Sidebar, dossier plat de 50 000 notes : lancement jusqu'à l'arbre affiché (cache disque chaud) | médiane 486 ms (min 450, max 524, 5 runs), indexation comprise | US-046 | US-045 | mesure manuelle ci-dessous |
 | Sidebar, 50 000 lignes : défilement à la molette, travail de la frame | p99 1,26 à 1,32 ms, max 1,71 ms, aucune frame au-delà de 16,7 ms (5 × 300 crans, sidebar reconstruite) | US-046 | US-045 | `ZED_MEASUREMENTS=1`, mesure manuelle ci-dessous |
 | Sidebar, 50 000 lignes : reconstruction de l'arbre pendant le remplissage des titres | 10 à 13 reconstructions de 39 à 71 ms sur le thread de l'interface | US-046 | US-045 | idem |
@@ -64,6 +64,8 @@ Writer ne tourne pas sous Windows ni sous Linux : ces colonnes n'existent pas po
 Mesures Windows du 2026-10-31, build release, workspace généré dans le dossier temporaire de l'utilisateur sur le SSD NVMe. Les valeurs à froid demandent un redémarrage et n'ont pas encore été prises.
 
 Mesures de l'éditeur (EP-003) du 2026-11-01, build release, fixture de 1 Mo du spike (`fixture::generate`). `editor_bench` ouvre la note dans une fenêtre déjà affichée, tape 200 caractères par `EntityInputHandler::replace_text_in_range` à une phase aléatoire du rafraîchissement, puis fait 60 sauts de 2,5 hauteurs de vue. La métrique est celle de l'ADR 0001 (attente du vsync exclue) ; le coût du gestionnaire d'entrée y est isolé.
+
+L'éditeur a été remesuré le 2026-11-01 à la revue d'EP-005, même fixture et même procédure. La première mesure de l'epic donnait une frappe à p99 17,9 à 18,4 ms et un défilement à p99 13,4 à 14,1 ms : le rail des sections construisait un repère interactif par titre à chaque frame (environ 1 800 sur la fixture) et relisait les titres du document entier à chaque frappe. Le rail ne construit plus que les repères visibles, et les titres sont relus 150 ms après la dernière frappe, comme dans Writer (`use-document-headings.ts:85-87`). Les valeurs EP-003 (ouverture 18,6 à 21,0 ms, frappe p99 1,50 à 1,68 ms, gestionnaire p99 1,88 à 2,14 ms, défilement p99 3,55 à 4,02 ms) sont remplacées. L'écart qui reste, surtout sur le gestionnaire d'entrée (+1,4 ms), n'a pas été attribué ; il tient dans le budget de 16 ms.
 
 Mesures de la sidebar (US-026) du 2026-11-01, build release, sur la machine Windows de référence. Le corpus est un cas limite : 50 000 notes `note NNNNNN.md` (titre `# Note N`) dans un seul dossier, à la racine du workspace, pour que l'arbre affiche 50 000 lignes sans dépliage ; le corpus du générateur n'affiche jamais plus de 100 lignes par dossier. Le binaire est lancé avec `ZED_MEASUREMENTS=1`, qui fait journaliser par GPUI la durée de chaque frame dessinée (`gpui_util::measure`, attente du vsync exclue). Les 300 crans de molette sont envoyés par `SendInput` à 16 ms d'intervalle, le pointeur sur l'arbre, une fois les titres remplis. Le délai jusqu'à l'arbre va du lancement du processus à la première reconstruction des lignes (journal temporaire, retiré depuis).
 
