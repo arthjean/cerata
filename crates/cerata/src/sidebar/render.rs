@@ -1,8 +1,9 @@
 //! Sidebar rows and sections (`file-tree-node.tsx:31-173`,
 //! `sidebar-section.tsx:17-93`), on Paneflow's row measures: 8 px margin,
 //! 32 px rows padded 7 (plus 12 per depth), radius 9, a 20 px icon slot
-//! 8 from a 14 px label on a 20 px line; 20 px section headers with a
-//! chevron, flush with the wordmark.
+//! 8 from a 14 px label on a 20 px line (Paneflow's workspace folder
+//! glyphs on folder rows, crossfading as they open and close); 20 px
+//! section headers with a chevron, flush with the wordmark.
 
 use cerata_core::fs::DirEntry;
 use gpui::{
@@ -58,14 +59,26 @@ pub fn row(
     cx: &mut Context<Sidebar>,
 ) -> gpui::Stateful<gpui::Div> {
     let label_name = label_text.clone();
+    let glyph = |kind: Icon, visibility: f32| {
+        div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(icon(kind, ICON_SIZE, theme::muted().opacity(visibility)))
+    };
     let row_icon = if entry.is_dir {
-        if state.expanded {
-            Icon::ChevronDown
-        } else {
-            Icon::ChevronRight
-        }
+        let openness = sidebar.folder_openness(&entry.path, state.expanded, Instant::now());
+        div()
+            .when(openness < 1., |slot| {
+                slot.child(glyph(Icon::FolderClosed, 1. - openness))
+            })
+            .when(openness > 0., |slot| {
+                slot.child(glyph(Icon::FolderOpen, openness))
+            })
     } else {
-        Icon::File
+        div().child(glyph(Icon::File, 1.))
     };
     let renaming = sidebar
         .renaming
@@ -182,14 +195,7 @@ pub fn row(
             |d| d.hover(|s| s.bg(theme::row_hover())),
         )
         .when(state.dragged, |d| d.opacity(0.4))
-        .child(
-            div()
-                .flex_none()
-                .w(px(ICON_SLOT))
-                .flex()
-                .justify_center()
-                .child(icon(row_icon, ICON_SIZE, theme::muted())),
-        )
+        .child(row_icon.relative().flex_none().size(px(ICON_SLOT)))
         .child(label_el)
         .when_some(state.error, |d, error| {
             d.child(
@@ -518,7 +524,11 @@ impl Render for Sidebar {
 
         let now = Instant::now();
         let reduce = cx.reduce_motion();
-        if self.section_moving(now) || self.folder_fade(now).is_some() {
+        self.folder_glyphs.retain(|_, fade| fade.animating(now));
+        if self.section_moving(now)
+            || self.folder_fade(now).is_some()
+            || !self.folder_glyphs.is_empty()
+        {
             window.request_animation_frame();
         }
 

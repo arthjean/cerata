@@ -102,6 +102,8 @@ pub struct Sidebar {
     pub section_reveals: HashMap<Section, reveal::Reveal>,
     /// The folder last expanded, and its rows' fade once its listing is read.
     pub opening: Option<(PathBuf, Option<reveal::Reveal>)>,
+    /// Folders whose closed and open glyphs are crossfading.
+    pub folder_glyphs: HashMap<PathBuf, reveal::Reveal>,
     /// Everything's list height last frame it was settled open: the height
     /// it opens to and closes from.
     pub everything_height: std::rc::Rc<std::cell::Cell<f32>>,
@@ -164,6 +166,7 @@ impl Sidebar {
             collapsed: HashSet::new(),
             section_reveals: HashMap::new(),
             opening: None,
+            folder_glyphs: HashMap::new(),
             everything_height: Default::default(),
             sections_version: 0,
             read_versions: HashMap::new(),
@@ -245,6 +248,7 @@ impl Sidebar {
         self.pending_rename = None;
         self.revealing = None;
         self.opening = None;
+        self.folder_glyphs.clear();
         self.pinned_visible = PINNED_PAGE;
         self.recents_visible = RECENTS_PAGE;
         self.reset_filter();
@@ -405,17 +409,41 @@ impl Sidebar {
             if self.opening.as_ref().is_some_and(|(opening, _)| opening == dir) {
                 self.opening = None;
             }
+            self.fade_folder_glyph(dir, false, cx);
             self.rebuild_rows();
             cx.notify();
             return;
         }
         self.expanded.insert(dir.to_path_buf());
         self.opening = Some((dir.to_path_buf(), None));
+        self.fade_folder_glyph(dir, true, cx);
         if !matches!(self.listings.get(dir), Some(Listing::Loaded(_))) {
             self.load_dir(dir, cx);
         }
         self.rebuild_rows();
         cx.notify();
+    }
+
+    /// Crossfades a folder's glyph toward open or closed, from what is
+    /// shown (Paneflow's workspace folders). Reduced motion swaps it.
+    fn fade_folder_glyph(&mut self, dir: &Path, open: bool, cx: &Context<Self>) {
+        if cx.reduce_motion() {
+            self.folder_glyphs.remove(dir);
+            return;
+        }
+        self.folder_glyphs
+            .entry(dir.to_path_buf())
+            .or_insert_with(|| reveal::Reveal::new(!open, reveal::GLYPH_MOTION))
+            .retarget(open, std::time::Instant::now());
+    }
+
+    /// How open a folder's glyph is drawn, from 0 (closed) to 1 (open).
+    pub fn folder_openness(&self, dir: &Path, expanded: bool, now: std::time::Instant) -> f32 {
+        let settled = if expanded { 1. } else { 0. };
+        self.folder_glyphs
+            .get(dir)
+            .filter(|fade| fade.animating(now) && fade.heads_open() == expanded)
+            .map_or(settled, |fade| fade.amount(now))
     }
 
     pub fn expand(&mut self, dir: &Path, cx: &mut Context<Self>) {
