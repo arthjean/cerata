@@ -54,7 +54,12 @@ fn main() -> ExitCode {
         return ExitCode::from(cli::run(&cli_argv, &cwd, &cli::SystemLauncher));
     }
 
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    // Debug builds turn on wgpu's Vulkan debug messenger, which relays loader
+    // chatter (an ICD that cannot start, like Mesa's Dozen outside WSL) as warnings.
+    env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("info,wgpu_hal::vulkan::instance=error"),
+    )
+    .init();
     let core = match CoreApp::open_default() {
         Ok(core) => core,
         Err(error) => {
