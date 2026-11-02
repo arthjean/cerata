@@ -982,6 +982,7 @@ dependencies = [
  "dirs",
  "dunce",
  "ignore",
+ "image",
  "log",
  "notify",
  "parking_lot",

@@ -234,6 +234,34 @@ impl WorkspaceFs {
         Ok(modified_time(&path))
     }
 
+    /// Atomically writes `bytes` to a path that must not exist yet (an
+    /// imported image): an existing entry is refused, never replaced.
+    pub fn write_new_bytes(&self, path: &Path, bytes: &[u8]) -> Result<u64, FsError> {
+        let path = self.confine_new(path)?;
+        if fs::symlink_metadata(&path).is_ok() {
+            return Err(FsError::AlreadyExists(path));
+        }
+        atomic::atomic_write(&path, bytes).map_err(|e| FsError::io(&path, e))?;
+        Ok(modified_time(&path))
+    }
+
+    /// Makes sure the folder `path` exists (an assets folder): created
+    /// when missing, kept when it is already a folder.
+    pub fn ensure_directory(&self, path: &Path) -> Result<PathBuf, FsError> {
+        match self.confine_existing(path) {
+            Ok(dir) if dir.is_dir() => return Ok(dir),
+            Ok(other) => return Err(FsError::AlreadyExists(other)),
+            Err(FsError::NotFound(_)) => {}
+            Err(error) => return Err(error),
+        }
+        let path = self.confine_new(path)?;
+        match fs::create_dir(&path) {
+            Ok(()) => Ok(path),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists && path.is_dir() => Ok(path),
+            Err(error) => Err(FsError::io(&path, error)),
+        }
+    }
+
     /// Creates a new Markdown file containing `# `; never overwrites.
     pub fn create_file(&self, path: &Path) -> Result<FileContent, FsError> {
         let path = self.confine_new(path)?;

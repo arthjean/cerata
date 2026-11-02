@@ -12,6 +12,8 @@ cerata_markdown.workspace = true
 dirs = "6"
 dunce = "1"
 ignore = "0.4"
+# Image signatures and headers for imports (US-059); same crate as GPUI.
+image = { version = "0.25.10", default-features = false, features = ["bmp", "gif", "ico", "jpeg", "png", "tiff", "webp"] }
 log.workspace = true
 notify = "7"
 parking_lot = "0.12"
