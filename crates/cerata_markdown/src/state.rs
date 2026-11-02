@@ -165,6 +165,9 @@ pub struct EditorState {
     /// The rectangle of cells the selection projects (US-054), until the
     /// next commit that does not set it.
     pub(crate) cell_selection: Option<crate::table_select::TableSelection>,
+    /// Positions callers follow across edits ([`EditorState::track`]), by id.
+    tracked: Vec<(u64, usize)>,
+    next_tracked: u64,
 }
 
 impl EditorState {
@@ -192,6 +195,8 @@ impl EditorState {
             atomic_blocks: true,
             table_source: None,
             cell_selection: None,
+            tracked: Vec::new(),
+            next_tracked: 0,
         }
     }
 
@@ -269,6 +274,9 @@ impl EditorState {
         }
         self.history.clear();
         self.scroll.pos = self.text.floor_char_boundary(self.scroll.pos);
+        for (_, pos) in &mut self.tracked {
+            *pos = self.text.floor_char_boundary(*pos);
+        }
         self.revision += 1;
         self.saved_revision = self.revision;
         self.loading = false;
@@ -399,6 +407,25 @@ impl EditorState {
         };
     }
 
+    /// Follows `pos` through every later edit (an import's insertion point
+    /// while its files are copied); read it back with
+    /// [`EditorState::untrack`].
+    pub fn track(&mut self, pos: usize) -> u64 {
+        let id = self.next_tracked;
+        self.next_tracked += 1;
+        self.tracked.push((id, self.text.floor_char_boundary(pos)));
+        id
+    }
+
+    /// Where the position tracked as `id` is now, and stops following it.
+    pub fn untrack(&mut self, id: u64) -> Option<usize> {
+        let at = self
+            .tracked
+            .iter()
+            .position(|(tracked, _)| *tracked == id)?;
+        Some(self.tracked.swap_remove(at).1)
+    }
+
     /// Applies `tr` atomically: on error nothing changes.
     pub fn apply(&mut self, tr: Transaction) -> Result<Applied, TransactionError> {
         let changes = ChangeSet::new(&self.text, tr.changes)?;
@@ -500,6 +527,9 @@ impl EditorState {
                 .tree
                 .reparse(previous_text.as_str(), self.text.as_str(), &changes);
             self.scroll.pos = changes.map_pos(self.scroll.pos, Bias::Left);
+            for (_, pos) in &mut self.tracked {
+                *pos = changes.map_pos(*pos, Bias::Left);
+            }
             // A frozen drag is only remapped by edits.
             self.drag = self.drag.take().map(|frozen| frozen.map(&changes));
             self.revision += 1;
