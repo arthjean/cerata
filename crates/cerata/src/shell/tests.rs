@@ -1070,11 +1070,15 @@ fn the_palette_commands_are_writers_filtered_by_substring(cx: &mut TestAppContex
     });
     focus_shell(cx, handle);
     keys(cx, handle, secondary!("shift-p"));
-    let all: Vec<Choice> = Command::ALL.into_iter().map(Choice::Command).collect();
+    let all: Vec<Choice> = Command::ALL
+        .into_iter()
+        .chain([Command::InsertImage])
+        .map(Choice::Command)
+        .collect();
     assert_eq!(
         choices(cx, handle),
         all,
-        "with a workspace and a file every command applies"
+        "with a workspace and a note every command applies, Insert image last"
     );
     let mut vcx = VisualTestContext::from_window(handle.into(), cx);
     vcx.simulate_input("ZOOM");
@@ -2287,5 +2291,192 @@ mod links {
         assert!(completion(cx, handle).is_none());
         let caret = cx.update(|cx| editor.read(cx).state.selection().main().head);
         assert_eq!(caret, "[[Roadmap]]".len());
+    }
+}
+
+// ---- EP-012: images dropped on the editor and picked ----
+
+mod images {
+    use super::*;
+    use gpui::Entity;
+
+    use crate::editor::Editor;
+    use crate::palette::Command;
+
+    fn png() -> Vec<u8> {
+        let mut bytes = Vec::new();
+        image::RgbaImage::new(4, 3)
+            .write_to(
+                &mut std::io::Cursor::new(&mut bytes),
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+        bytes
+    }
+
+    fn editor(cx: &mut TestAppContext, handle: WindowHandle<WindowView>) -> Entity<Editor> {
+        read(cx, handle, |view, _| {
+            view.active_doc().unwrap().editor.clone()
+        })
+    }
+
+    fn doc(cx: &mut TestAppContext, handle: WindowHandle<WindowView>) -> String {
+        let editor = editor(cx, handle);
+        cx.update(|cx| editor.read(cx).state.doc().to_owned())
+    }
+
+    fn open_note(
+        cx: &mut TestAppContext,
+        env: &Env,
+        text: &str,
+    ) -> (WindowHandle<WindowView>, PathBuf) {
+        let note = env.file("notes/a.md", text);
+        let handle = workspace(cx, env);
+        update(cx, handle, |view, window, cx| {
+            view.open_file(&note, window, cx)
+        });
+        (handle, note)
+    }
+
+    /// A mixed drop on the editor: the image goes in at the block boundary
+    /// under the drop point, the note opens through the shell's routing.
+    #[gpui::test]
+    fn a_mixed_drop_inserts_images_and_routes_notes(cx: &mut TestAppContext) {
+        let env = setup(cx);
+        let text = "# Title\n\nPara one\n\nPara two\n";
+        let (handle, _) = open_note(cx, &env, text);
+        let other = env.file("other.md", "# Other");
+        let outside = TempDir::new().unwrap();
+        let shot = outside.path().join("shot.png");
+        std::fs::write(&shot, png()).unwrap();
+        let editor = editor(cx, handle);
+        let mut vcx = VisualTestContext::from_window(handle.into(), cx);
+        vcx.run_until_parked();
+        let at = editor.update_in(&mut vcx, |editor, window, cx| {
+            let pos = text.find("Para two").unwrap() + 4;
+            let caret = editor.caret_bounds(pos, window, cx).expect("caret");
+            caret.origin + gpui::point(gpui::px(0.5), caret.size.height / 2.0)
+        });
+        editor.update(&mut vcx, |editor, cx| {
+            let paths = ExternalPaths([shot.clone(), other.clone()].into_iter().collect());
+            editor.on_file_drop(&paths, Some(at), cx);
+        });
+        vcx.run_until_parked();
+        wait_until(cx, |cx| {
+            read(cx, handle, |view, _| {
+                view.tabs.active_path().map(Path::to_path_buf)
+            })
+            .is_some_and(|p| p.ends_with("other.md"))
+        });
+        let inserted = cx.update(|cx| editor.read(cx).state.doc().to_owned());
+        assert_eq!(
+            inserted, "# Title\n\nPara one\n\n![shot](a-assets/shot.png)\n\nPara two\n",
+            "inserted at the boundary before the hovered block"
+        );
+        assert!(env.root().join("notes/a-assets/shot.png").is_file());
+    }
+
+    /// A drop of anything but notes, folders and images keeps the window's
+    /// notice; on the sidebar or welcome screen the shell's own drop runs.
+    #[gpui::test]
+    fn a_drop_without_images_is_routed_as_before(cx: &mut TestAppContext) {
+        let env = setup(cx);
+        let (handle, _) = open_note(cx, &env, "text\n");
+        let other = env.file("b.md", "# B");
+        let editor = editor(cx, handle);
+        update(cx, handle, |_, _, cx| {
+            editor.update(cx, |editor, cx| {
+                let paths = ExternalPaths([other.clone()].into_iter().collect());
+                editor.on_file_drop(&paths, None, cx);
+            })
+        });
+        wait_until(cx, |cx| {
+            read(cx, handle, |view, _| {
+                view.tabs.active_path().map(Path::to_path_buf)
+            })
+            .is_some_and(|p| p.ends_with("b.md"))
+        });
+        let editor_doc = cx.update(|cx| editor.read(cx).state.doc().to_owned());
+        assert_eq!(editor_doc, "text\n", "nothing inserted");
+    }
+
+    /// "Insert image…" in the palette reaches the active note and inserts
+    /// what the picker returns at the caret.
+    #[gpui::test]
+    fn the_palette_command_inserts_picked_images(cx: &mut TestAppContext) {
+        let env = setup(cx);
+        let (handle, _) = open_note(cx, &env, "Intro");
+        let outside = TempDir::new().unwrap();
+        let a = outside.path().join("a.png");
+        let b = outside.path().join("b.png");
+        std::fs::write(&a, png()).unwrap();
+        std::fs::write(&b, png()).unwrap();
+        let commands = read(cx, handle, |view, cx| view.editor_commands(cx));
+        assert!(commands.contains(&Command::InsertImage));
+        assert_eq!(Command::InsertImage.label(), "Insert image\u{2026}");
+        let editor = editor(cx, handle);
+        update(cx, handle, |_, _, cx| {
+            editor.update(cx, |e, cx| e.caret_to_end(cx))
+        });
+        update(cx, handle, |view, window, cx| {
+            view.run_command(Command::InsertImage, window, cx)
+        });
+        assert!(cx.did_prompt_for_paths());
+        let picked = vec![a.clone(), b.clone()];
+        cx.simulate_path_prompt_response(move |options| {
+            assert!(options.files && !options.directories && options.multiple);
+            assert_eq!(options.prompt.as_ref().map(|p| p.as_ref()), Some("Insert"));
+            Some(picked)
+        });
+        cx.run_until_parked();
+        assert_eq!(
+            doc(cx, handle),
+            "Intro\n\n![a](a-assets/a.png)\n\n![b](a-assets/b.png)\n"
+        );
+    }
+
+    /// A tab closed while its images are copied: nothing is inserted, the
+    /// note on disk is untouched, and the copies stay.
+    #[gpui::test]
+    fn closing_the_tab_during_a_copy_inserts_nothing(cx: &mut TestAppContext) {
+        let env = setup(cx);
+        let (handle, note) = open_note(cx, &env, "Intro");
+        let outside = TempDir::new().unwrap();
+        let a = outside.path().join("a.png");
+        std::fs::write(&a, png()).unwrap();
+        let editor = editor(cx, handle);
+        let weak = editor.downgrade();
+        // Added and closed in one turn: the copy is still pending.
+        handle
+            .update(cx, |view, window, cx| {
+                editor.update(cx, |e, cx| {
+                    let source = cerata_core::images::ImportSource::File(a.clone());
+                    e.add_images(vec![source], crate::editor::import::ImageTarget::Caret, cx);
+                });
+                view.close_tab(0, window, cx);
+            })
+            .unwrap();
+        drop(editor);
+        cx.run_until_parked();
+        assert!(weak.upgrade().is_none(), "the closed note's editor is gone");
+        assert_eq!(std::fs::read_to_string(&note).unwrap(), "Intro");
+        assert!(
+            env.root().join("notes/a-assets/a.png").is_file(),
+            "copies stay"
+        );
+    }
+
+    #[gpui::test]
+    fn a_canceled_picker_changes_nothing(cx: &mut TestAppContext) {
+        let env = setup(cx);
+        let (handle, _) = open_note(cx, &env, "Intro");
+        update(cx, handle, |view, window, cx| {
+            view.run_command(Command::InsertImage, window, cx)
+        });
+        cx.simulate_path_prompt_response(|_| None);
+        cx.run_until_parked();
+        assert_eq!(doc(cx, handle), "Intro");
+        let editor = editor(cx, handle);
+        assert!(cx.update(|cx| editor.read(cx).notice.is_none()));
     }
 }

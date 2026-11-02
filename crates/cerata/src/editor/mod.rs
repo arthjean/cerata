@@ -31,6 +31,7 @@ pub mod frontmatter;
 mod height_map;
 mod html;
 pub mod images;
+pub mod import;
 mod input;
 mod layout;
 mod links;
@@ -174,6 +175,11 @@ pub struct Editor {
     last_query: String,
     pub menu: Option<ContextMenu>,
     pub notice: Option<SharedString>,
+    /// Image batches being copied, by the id of their tracked insertion
+    /// point (`import.rs`).
+    importing: Vec<u64>,
+    /// The insertion bar of a file drag carrying images (US-061).
+    drop_bar: Option<import::DropBar>,
     /// Lines laid out by the last frame.
     pub laid_out: Range<usize>,
     /// Tables laid out for the current state, by line.
@@ -242,6 +248,8 @@ impl Editor {
             last_query: String::new(),
             menu: None,
             notice: None,
+            importing: Vec::new(),
+            drop_bar: None,
             laid_out: 0..0,
             tables: TableCache::default(),
             #[cfg(test)]
@@ -935,7 +943,33 @@ impl Render for Editor {
             .cursor(CursorStyle::IBeam);
         root = actions::register(root, cx);
         root = mouse::register(root, cx);
+        if !self.source_only {
+            root = root
+                .on_drag_move(cx.listener(
+                    |this, event: &gpui::DragMoveEvent<gpui::ExternalPaths>, _, cx| {
+                        this.on_file_drag_move(event, cx)
+                    },
+                ))
+                .on_file_drop_exit(cx.listener(|this, _, _, cx| this.clear_drop_bar(cx)))
+                .on_drop(
+                    cx.listener(|this, paths: &gpui::ExternalPaths, window, cx| {
+                        this.on_file_drop(paths, Some(window.mouse_position()), cx)
+                    }),
+                );
+        }
         let mut root = root.child(EditorElement::new(cx.entity()));
+        if let (Some(bar), Some(viewport)) = (self.drop_bar, self.viewport) {
+            // A 2 px accent line across the column, centered on the boundary.
+            root = root.child(
+                div()
+                    .absolute()
+                    .top(self.screen_y(bar.y) - viewport.bounds.top() - px(1.0))
+                    .left(viewport.column_left - viewport.bounds.left())
+                    .w(px(viewport.column_width))
+                    .h(px(2.0))
+                    .bg(theme::accent()),
+            );
+        }
         if let Some(search) = &self.search {
             root = root.child(
                 // Occluding: a click in the bar never reaches the text

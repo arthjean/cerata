@@ -10,9 +10,11 @@ use gpui::{
     Stateful, Window, actions,
 };
 
+use super::import::{ImageTarget, named_like_image};
 use super::layout::BlockKind;
 use super::table::TextLine;
 use super::{Editor, images};
+use cerata_core::images::ImportSource;
 
 actions!(
     editor,
@@ -756,13 +758,23 @@ impl Editor {
         });
     }
 
-    /// Paste as plain text; an image is saved next to the note; a whole
-    /// document pasted into a note without frontmatter moves its YAML to
-    /// the top (`editor-clipboard.ts:37-78`).
+    /// Paste: files copied in the file manager when one is named like an
+    /// image, else an image (both through [`Editor::add_images`]), else
+    /// cells, else plain text; a whole document pasted into a note without
+    /// frontmatter moves its YAML to the top (`editor-clipboard.ts:37-78`).
     pub fn paste(&mut self, cx: &mut Context<Self>) {
         let Some(item) = cx.read_from_clipboard() else {
             return;
         };
+        for entry in item.entries() {
+            if let ClipboardEntry::ExternalPaths(paths) = entry
+                && paths.paths().iter().any(|path| named_like_image(path))
+            {
+                let sources = paths.paths().iter().cloned().map(ImportSource::File);
+                self.add_images(sources.collect(), ImageTarget::Caret, cx);
+                return;
+            }
+        }
         for entry in item.entries() {
             if let ClipboardEntry::Image(image) = entry {
                 self.paste_image(image, cx);
@@ -810,15 +822,10 @@ impl Editor {
         }
     }
 
+    /// A pasted image, saved under a time-stamped name in the assets folder.
     pub fn paste_image(&mut self, image: &gpui::Image, cx: &mut Context<Self>) {
-        let Some(path) = self.path.clone() else {
-            self.show_notice(images::PasteError::NoFolder.to_string(), cx);
-            return;
-        };
-        match images::save_pasted_image(&path, image, chrono::Local::now()) {
-            Ok(markdown) => self.insert_at_selection(&markdown, UserEvent::Command, cx),
-            Err(error) => self.show_notice(error.to_string(), cx),
-        }
+        let source = images::pasted_source(image, chrono::Local::now());
+        self.add_images(vec![source], ImageTarget::Caret, cx);
     }
 
     pub fn paste_text(&mut self, text: &str, cx: &mut Context<Self>) {

@@ -929,6 +929,14 @@ impl WindowView {
                     this.open_note_at(&path, anchor, window, cx)
                 });
             }
+            EditorEvent::OpenDropped(paths) => {
+                let paths = paths.clone();
+                this.with_window(cx, move |this, window, cx| {
+                    if !open_dropped(&paths, window, cx) {
+                        this.show_notice(DROP_REFUSED, cx);
+                    }
+                });
+            }
         });
         self.editor_subscriptions
             .insert(editor.entity_id(), [changes, events]);
@@ -1635,22 +1643,9 @@ impl WindowView {
     }
 
     fn on_drop(&mut self, paths: &ExternalPaths, window: &mut Window, cx: &mut Context<Self>) {
-        let requests: Vec<OpenRequest> = paths
-            .paths()
-            .iter()
-            .filter_map(|path| OpenRequest::from_drop(path))
-            .collect();
-        if requests.is_empty() {
-            self.show_notice("Only folders and Markdown files can be opened", cx);
-            return;
+        if !open_dropped(paths.paths(), window, cx) {
+            self.show_notice(DROP_REFUSED, cx);
         }
-        let origin = window.window_handle().downcast::<WindowView>();
-        // Deferred: a route may update this very window.
-        cx.defer(move |cx| {
-            for request in requests {
-                crate::app::open(cx, request, origin);
-            }
-        });
     }
 
     /// The window title (`window-title/index.tsx`).
@@ -1689,6 +1684,30 @@ impl Focusable for WindowView {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
     }
+}
+
+/// The notice for a drop holding nothing Cerata opens.
+pub const DROP_REFUSED: &str = "Only folders and Markdown files can be opened";
+
+/// Opens what a drop on `window` holds (folders, Markdown files): the
+/// window's own drop, and the editor's for what it does not insert.
+/// `false` when nothing can be opened.
+pub fn open_dropped(paths: &[PathBuf], window: &Window, cx: &mut App) -> bool {
+    let requests: Vec<OpenRequest> = paths
+        .iter()
+        .filter_map(|path| OpenRequest::from_drop(path))
+        .collect();
+    if requests.is_empty() {
+        return false;
+    }
+    let origin = window.window_handle().downcast::<WindowView>();
+    // Deferred: a route may update this very window.
+    cx.defer(move |cx| {
+        for request in requests {
+            crate::app::open(cx, request, origin);
+        }
+    });
+    true
 }
 
 impl Render for WindowView {

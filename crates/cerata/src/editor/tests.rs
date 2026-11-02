@@ -1146,10 +1146,23 @@ fn a_pasted_image_is_saved_next_to_the_note(cx: &mut TestAppContext) {
     });
     let before = chrono::Local::now().format("%Y%m%d").to_string();
     cx.simulate_keystrokes(&secondary("v"));
+    cx.run_until_parked();
     let text = doc(&editor, cx);
     assert!(
-        text.starts_with("start![image.png](<my note-assets/"),
+        text.starts_with(
+            "start
+
+![image.png](<my note-assets/"
+        ) && text.ends_with(
+            ">)
+"
+        ),
         "{text}"
+    );
+    assert_eq!(
+        selection(&editor, cx),
+        [(text.len(), text.len())],
+        "the caret is on the blank line after the image"
     );
     let assets: Vec<_> = std::fs::read_dir(dir.path().join("my note-assets"))
         .unwrap()
@@ -3668,4 +3681,348 @@ mod rail {
             Some("[Sources & Notes](#sources-notes)")
         );
     }
+}
+
+// EP-012: images added by paste, drop and picker ----------------------
+
+/// A note in a fresh folder, and a folder outside it holding `files`.
+fn note_with_files<'a>(
+    cx: &'a mut TestAppContext,
+    text: &str,
+    files: &[(&str, &[u8])],
+) -> (
+    Entity<Editor>,
+    &'a mut VisualTestContext,
+    tempfile::TempDir,
+    tempfile::TempDir,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    for (name, bytes) in files {
+        std::fs::write(outside.path().join(name), bytes).unwrap();
+    }
+    let path = dir.path().join("note.md");
+    std::fs::write(&path, text).unwrap();
+    let (editor, cx) = open_at(cx, text, Some(path), EditorConfig::default());
+    (editor, cx, dir, outside)
+}
+
+fn notice(editor: &Entity<Editor>, cx: &mut VisualTestContext) -> Option<String> {
+    editor.read_with(cx, |e, _| e.notice.as_ref().map(|n| n.to_string()))
+}
+
+fn add_file(editor: &Entity<Editor>, cx: &mut VisualTestContext, path: PathBuf) {
+    editor.update(cx, |editor, cx| {
+        let source = cerata_core::images::ImportSource::File(path);
+        editor.add_images(vec![source], super::import::ImageTarget::Caret, cx);
+    });
+}
+
+const SVG: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"></svg>"#;
+
+/// Files copied in the file manager paste as images; one undo removes them
+/// all, the copies stay, and one notice names the file that is no image.
+#[gpui::test]
+fn pasted_files_insert_image_blocks_in_one_undo_step(cx: &mut TestAppContext) {
+    let png = png(4, 3);
+    let (editor, cx, dir, outside) = note_with_files(
+        cx,
+        "Intro",
+        &[
+            ("a.png", &png[..]),
+            ("b.png", &png[..]),
+            ("notes.txt", b"hello"),
+        ],
+    );
+    set_cursor(&editor, cx, 5);
+    let paths = ["a.png", "b.png", "notes.txt"].map(|name| outside.path().join(name));
+    cx.write_to_clipboard(ClipboardItem {
+        entries: vec![
+            ClipboardEntry::ExternalPaths(gpui::ExternalPaths(paths.into_iter().collect())),
+            ClipboardEntry::String(gpui::ClipboardString::new("ignored".into())),
+        ],
+    });
+    cx.simulate_keystrokes(&secondary("v"));
+    cx.run_until_parked();
+    assert_eq!(
+        doc(&editor, cx),
+        "Intro\n\n![a](note-assets/a.png)\n\n![b](note-assets/b.png)\n"
+    );
+    assert_eq!(
+        notice(&editor, cx).as_deref(),
+        Some("notes.txt is not an image")
+    );
+    cx.simulate_keystrokes(&secondary("z"));
+    assert_eq!(doc(&editor, cx), "Intro", "one undo step");
+    assert!(
+        dir.path().join("note-assets/a.png").is_file(),
+        "copies stay"
+    );
+    assert!(dir.path().join("note-assets/b.png").is_file());
+}
+
+/// A 6 MB file copied in the file manager has no paste limit.
+#[gpui::test]
+fn a_pasted_file_has_no_byte_limit(cx: &mut TestAppContext) {
+    let mut big = png(4, 3);
+    big.resize(6 * 1024 * 1024, 0);
+    let (editor, cx, dir, outside) = note_with_files(cx, "", &[("big.png", &big[..])]);
+    cx.write_to_clipboard(ClipboardItem {
+        entries: vec![ClipboardEntry::ExternalPaths(gpui::ExternalPaths(
+            [outside.path().join("big.png")].into_iter().collect(),
+        ))],
+    });
+    cx.simulate_keystrokes(&secondary("v"));
+    cx.run_until_parked();
+    assert_eq!(doc(&editor, cx), "![big](note-assets/big.png)\n");
+    assert_eq!(
+        std::fs::metadata(dir.path().join("note-assets/big.png"))
+            .unwrap()
+            .len(),
+        6 * 1024 * 1024
+    );
+}
+
+/// Inside a list item the images go inline at the caret.
+#[gpui::test]
+fn images_added_in_a_list_item_stay_inline(cx: &mut TestAppContext) {
+    let png = png(4, 3);
+    let (editor, cx, _dir, outside) = note_with_files(cx, "- item", &[("a.png", &png[..])]);
+    set_cursor(&editor, cx, 6);
+    add_file(&editor, cx, outside.path().join("a.png"));
+    cx.run_until_parked();
+    assert_eq!(doc(&editor, cx), "- item![a](note-assets/a.png)");
+}
+
+/// The insertion point follows what is typed while the files are copied,
+/// a batch still copying after 300 ms shows a notice, and the notice goes
+/// with the insertion.
+#[gpui::test]
+fn a_slow_batch_shows_a_notice_and_lands_where_it_was_asked(cx: &mut TestAppContext) {
+    let (editor, cx, _dir, _outside) = note_with_files(cx, "Intro", &[]);
+    use gpui::AppContext as _;
+    let (done, gate) = futures::channel::oneshot::channel::<()>();
+    editor.update(cx, |editor, cx| {
+        let work = cx.background_spawn(async move {
+            let _ = gate.await;
+            vec![Ok("![a](a.png)".to_owned()), Ok("![b](b.png)".to_owned())]
+        });
+        editor.insert_when_done(super::import::ImageTarget::At(5), 2, work, cx);
+    });
+    cx.run_until_parked();
+    assert_eq!(notice(&editor, cx), None, "not before 300 ms");
+    cx.executor()
+        .advance_clock(super::import::LOADING_NOTICE_DELAY);
+    cx.run_until_parked();
+    assert_eq!(
+        notice(&editor, cx).as_deref(),
+        Some("Adding 2 images\u{2026}")
+    );
+    // Typed while copying, before the insertion point.
+    editor.update(cx, |editor, cx| {
+        editor.update_state(cx, |state| {
+            let _ =
+                state.apply(Transaction::new().change(cerata_markdown::Change::insert(0, "So ")));
+        });
+    });
+    done.send(()).unwrap();
+    cx.run_until_parked();
+    assert_eq!(doc(&editor, cx), "So Intro\n\n![a](a.png)\n\n![b](b.png)\n");
+    assert_eq!(notice(&editor, cx), None);
+}
+
+/// A tab closed during the copy inserts nothing and keeps the copies.
+#[gpui::test]
+fn a_closed_note_keeps_the_copies_and_inserts_nothing(cx: &mut TestAppContext) {
+    let png = png(4, 3);
+    let (editor, cx, dir, outside) = note_with_files(cx, "Intro", &[("a.png", &png[..])]);
+    add_file(&editor, cx, outside.path().join("a.png"));
+    cx.update(|window, _| window.remove_window());
+    drop(editor);
+    cx.run_until_parked();
+    assert!(dir.path().join("note-assets/a.png").is_file());
+}
+
+/// A write error inserts nothing for the file and names the OS error.
+#[gpui::test]
+fn a_write_error_inserts_nothing(cx: &mut TestAppContext) {
+    let png = png(4, 3);
+    let (editor, cx, dir, outside) = note_with_files(cx, "Intro", &[("a.png", &png[..])]);
+    // A file where the assets folder should be.
+    std::fs::write(dir.path().join("note-assets"), b"").unwrap();
+    add_file(&editor, cx, outside.path().join("a.png"));
+    cx.run_until_parked();
+    assert_eq!(doc(&editor, cx), "Intro");
+    let notice = notice(&editor, cx).unwrap_or_default();
+    assert!(notice.starts_with("Image not added: "), "{notice}");
+}
+
+#[gpui::test]
+fn a_note_without_a_path_adds_no_image(cx: &mut TestAppContext) {
+    let (editor, cx) = open(cx, "text");
+    editor.update(cx, |editor, cx| editor.pick_images(cx));
+    cx.run_until_parked();
+    assert!(!cx.did_prompt_for_paths(), "no picker");
+    assert_eq!(
+        notice(&editor, cx).as_deref(),
+        Some("Image not added: the note is not saved in a folder")
+    );
+}
+
+/// The context menu's Insert > Image… opens the picker; canceling it
+/// changes nothing.
+#[gpui::test]
+fn the_menu_entry_opens_the_picker(cx: &mut TestAppContext) {
+    use super::menu::{MenuAction, MenuItem, body_items};
+    let (editor, cx, _dir, _outside) = note_with_files(cx, "Intro", &[]);
+    let insert = editor.read_with(cx, |editor, _| {
+        body_items(false, None, &editor.state)
+            .into_iter()
+            .find_map(|item| match item {
+                MenuItem::Submenu { label, items } if label.as_ref() == "Insert" => Some(items),
+                _ => None,
+            })
+    });
+    assert!(insert.unwrap().iter().any(|item| matches!(
+        item,
+        MenuItem::Action { label, action: MenuAction::InsertImage, .. }
+            if label.as_ref() == "Image\u{2026}"
+    )));
+    editor.update_in(cx, |editor, window, cx| {
+        editor.run_menu_action(MenuAction::InsertImage, window, cx)
+    });
+    assert!(cx.did_prompt_for_paths());
+    cx.simulate_path_prompt_response(|_| None);
+    cx.run_until_parked();
+    assert_eq!(doc(&editor, cx), "Intro", "canceled: nothing changes");
+}
+
+/// A file drag carrying an image shows the bar at the nearest block
+/// boundary, starts no selection, and inserts there on drop.
+#[gpui::test]
+fn a_file_drag_shows_a_bar_and_drops_at_the_boundary(cx: &mut TestAppContext) {
+    let png = png(4, 3);
+    let text = "# Title\n\nPara one\n\nPara two\n";
+    let (editor, cx, dir, outside) =
+        note_with_files(cx, text, &[("a.png", &png[..]), ("b.svg", SVG)]);
+    set_cursor(&editor, cx, 3);
+    let before = selection(&editor, cx);
+    let over = point_at(&editor, cx, text.find("Para two").unwrap() + 3);
+    let paths = gpui::ExternalPaths(
+        [outside.path().join("a.png"), outside.path().join("b.svg")]
+            .into_iter()
+            .collect(),
+    );
+    cx.simulate_event(gpui::FileDropEvent::Entered {
+        position: over,
+        paths: paths.clone(),
+    });
+    cx.simulate_event(gpui::FileDropEvent::Pending { position: over });
+    let bar = editor.read_with(cx, |e, _| e.drop_bar);
+    assert_eq!(bar.map(|b| b.pos), text.find("Para two"));
+    assert_eq!(selection(&editor, cx), before, "no drag selection");
+    // Leaving the window hides the bar and keeps the selection.
+    cx.simulate_event(gpui::FileDropEvent::Exited);
+    assert_eq!(editor.read_with(cx, |e, _| e.drop_bar), None);
+    assert_eq!(selection(&editor, cx), before);
+    // Back in, then dropped.
+    cx.simulate_event(gpui::FileDropEvent::Entered {
+        position: over,
+        paths,
+    });
+    cx.simulate_event(gpui::FileDropEvent::Submit { position: over });
+    cx.run_until_parked();
+    assert_eq!(
+        doc(&editor, cx),
+        "# Title\n\nPara one\n\n![a](note-assets/a.png)\n\n![b](note-assets/b.svg)\n\nPara two\n"
+    );
+    assert_eq!(editor.read_with(cx, |e, _| e.drop_bar), None);
+    assert!(dir.path().join("note-assets/b.svg").is_file());
+}
+
+/// No bar for a drag without an image; inside a code block the bar snaps
+/// to one of its boundaries.
+#[gpui::test]
+fn the_drop_bar_snaps_to_block_boundaries(cx: &mut TestAppContext) {
+    let text = "Intro\n\n```\ncode\nmore\n```\n\nEnd\n";
+    let (editor, cx, _dir, outside) = note_with_files(cx, text, &[]);
+    let in_code = point_at(&editor, cx, text.find("more").unwrap() + 1);
+    cx.simulate_event(gpui::FileDropEvent::Entered {
+        position: in_code,
+        paths: gpui::ExternalPaths([outside.path().join("notes.md")].into_iter().collect()),
+    });
+    cx.simulate_event(gpui::FileDropEvent::Pending { position: in_code });
+    assert_eq!(editor.read_with(cx, |e, _| e.drop_bar), None, "no image");
+    cx.simulate_event(gpui::FileDropEvent::Exited);
+    cx.simulate_event(gpui::FileDropEvent::Entered {
+        position: in_code,
+        paths: gpui::ExternalPaths([outside.path().join("a.png")].into_iter().collect()),
+    });
+    cx.simulate_event(gpui::FileDropEvent::Pending { position: in_code });
+    let pos = editor.read_with(cx, |e, _| e.drop_bar.map(|b| b.pos));
+    assert!(
+        pos == text.find("```") || pos == text.find("End"),
+        "{pos:?} is a boundary of the code block"
+    );
+    cx.simulate_event(gpui::FileDropEvent::Exited);
+}
+
+/// A screenshot copied as a bitmap (`CF_DIB`, a BMP once read) over 5 MB
+/// is pasted as a PNG under the limit.
+#[gpui::test]
+fn a_pasted_bitmap_over_the_limit_is_saved_as_png(cx: &mut TestAppContext) {
+    let (editor, cx, dir, _outside) = note_with_files(cx, "", &[]);
+    let mut bmp = Vec::new();
+    image::RgbImage::from_pixel(1400, 1400, image::Rgb([40, 90, 160]))
+        .write_to(&mut std::io::Cursor::new(&mut bmp), image::ImageFormat::Bmp)
+        .unwrap();
+    cx.write_to_clipboard(ClipboardItem {
+        entries: vec![ClipboardEntry::Image(Image::from_bytes(
+            ImageFormat::Bmp,
+            bmp,
+        ))],
+    });
+    cx.simulate_keystrokes(&secondary("v"));
+    cx.run_until_parked();
+    let text = doc(&editor, cx);
+    assert!(text.starts_with("![image.png](note-assets/"), "{text}");
+    let saved: Vec<_> = std::fs::read_dir(dir.path().join("note-assets"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    assert_eq!(saved.len(), 1);
+    assert!(saved[0].extension().is_some_and(|e| e == "png"));
+    assert!(std::fs::metadata(&saved[0]).unwrap().len() < 5 * 1024 * 1024);
+}
+
+/// A drop at the boundary that starts a list or a table inserts blocks
+/// before it, never inline in its first item or row.
+#[gpui::test]
+fn a_drop_before_a_list_or_a_table_inserts_blocks(cx: &mut TestAppContext) {
+    let png = png(4, 3);
+    let text = "Intro\n\n- item\n\n| A | B |\n| --- | --- |\n| x | y |\n";
+    let (editor, cx, _dir, outside) = note_with_files(cx, text, &[("a.png", &png[..])]);
+    let drop_over = |editor: &Entity<Editor>, cx: &mut VisualTestContext, needle: &str| {
+        let text = doc(editor, cx);
+        let over = point_at(editor, cx, text.find(needle).unwrap() + 1);
+        cx.simulate_event(gpui::FileDropEvent::Entered {
+            position: over,
+            paths: gpui::ExternalPaths([outside.path().join("a.png")].into_iter().collect()),
+        });
+        cx.simulate_event(gpui::FileDropEvent::Pending { position: over });
+        let bar = editor.read_with(cx, |e, _| e.drop_bar.map(|b| b.pos));
+        assert_eq!(bar, text.find(needle), "the bar is at the block's start");
+        cx.simulate_event(gpui::FileDropEvent::Submit { position: over });
+        cx.run_until_parked();
+    };
+    drop_over(&editor, cx, "- item");
+    assert_eq!(
+        doc(&editor, cx),
+        "Intro\n\n![a](note-assets/a.png)\n\n- item\n\n| A | B |\n| --- | --- |\n| x | y |\n"
+    );
+    drop_over(&editor, cx, "| A |");
+    assert_eq!(
+        doc(&editor, cx),
+        "Intro\n\n![a](note-assets/a.png)\n\n- item\n\n![a](<note-assets/a 1.png>)\n\n| A | B |\n| --- | --- |\n| x | y |\n"
+    );
 }

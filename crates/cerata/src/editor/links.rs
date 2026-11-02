@@ -25,6 +25,9 @@ pub enum EditorEvent {
         path: PathBuf,
         anchor: Option<String>,
     },
+    /// Notes and folders dropped on the editor (with images or not), for
+    /// the shell to open as a drop on the window would (US-061).
+    OpenDropped(Vec<PathBuf>),
 }
 
 impl EventEmitter<EditorEvent> for Editor {}

@@ -1,5 +1,5 @@
 //! Block widget host: image sources, their measured sizes, the elements
-//! drawn for them, and pasted images saved next to the note.
+//! drawn for them, and pasted images as import sources (`cerata_core::images`).
 //!
 //! Writer's references: `fold/image.ts:12-121` (height cache per
 //! destination), `image-src-resolver.ts:5-24` and `paths.ts:217-225`
@@ -8,7 +8,7 @@
 //! https:`: never `http:`).
 
 use std::collections::HashMap;
-use std::io::{Cursor, Read as _};
+use std::io::Read as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -17,19 +17,16 @@ use gpui::{
     SharedString, StatefulInteractiveElement as _, Styled, div, img, px,
 };
 
+pub use cerata_core::images::natural_size;
+use cerata_core::images::{
+    ImageKind, ImportSource, MAX_PIXELS, MAX_SVG_BYTES, is_svg, svg_is_self_contained,
+};
+
 use super::layout::ImageBox;
 use super::theme;
 
-/// Writer's paste limit (`editor-clipboard.ts:9-10`).
-pub const MAX_PASTE_BYTES: usize = 5 * 1024 * 1024;
 /// A remote image larger than this is not loaded.
 const MAX_REMOTE_BYTES: u64 = 25 * 1024 * 1024;
-/// A local SVG larger than this is not loaded (it is read whole, to be
-/// checked before GPUI sees it).
-const MAX_SVG_BYTES: u64 = 8 * 1024 * 1024;
-/// GPUI decodes an image to RGBA at its natural size: a header claiming
-/// more pixels than this (a decompression bomb) is not loaded.
-const MAX_PIXELS: f32 = 50_000_000.0;
 
 /// Where an image destination points.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -168,107 +165,23 @@ fn base64_decode(s: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
-/// The image format of `bytes`, SVG included.
+/// The image format of `bytes`, SVG included: the import pipeline's
+/// detection (`cerata_core::images::sniff`), as GPUI names it.
 pub fn sniff_format(bytes: &[u8]) -> Option<ImageFormat> {
-    if is_svg(bytes) {
-        return Some(ImageFormat::Svg);
-    }
-    Some(match image::guess_format(bytes).ok()? {
-        image::ImageFormat::Png => ImageFormat::Png,
-        image::ImageFormat::Jpeg => ImageFormat::Jpeg,
-        image::ImageFormat::WebP => ImageFormat::Webp,
-        image::ImageFormat::Gif => ImageFormat::Gif,
-        image::ImageFormat::Bmp => ImageFormat::Bmp,
-        image::ImageFormat::Tiff => ImageFormat::Tiff,
-        image::ImageFormat::Ico => ImageFormat::Ico,
-        _ => return None,
-    })
+    cerata_core::images::sniff(bytes).map(gpui_format)
 }
 
-fn is_svg(bytes: &[u8]) -> bool {
-    let head = &bytes[..bytes.len().min(1024)];
-    std::str::from_utf8(head).is_ok_and(|s| s.contains("<svg"))
-}
-
-/// Natural size of an image, read from its header without decoding it.
-pub fn natural_size(bytes: &[u8]) -> Option<(f32, f32)> {
-    if is_svg(bytes) {
-        return svg_size(bytes);
+fn gpui_format(kind: ImageKind) -> ImageFormat {
+    match kind {
+        ImageKind::Png => ImageFormat::Png,
+        ImageKind::Jpeg => ImageFormat::Jpeg,
+        ImageKind::Gif => ImageFormat::Gif,
+        ImageKind::Webp => ImageFormat::Webp,
+        ImageKind::Bmp => ImageFormat::Bmp,
+        ImageKind::Tiff => ImageFormat::Tiff,
+        ImageKind::Ico => ImageFormat::Ico,
+        ImageKind::Svg => ImageFormat::Svg,
     }
-    let (w, h) = image::ImageReader::new(Cursor::new(bytes))
-        .with_guessed_format()
-        .ok()?
-        .into_dimensions()
-        .ok()?;
-    (w > 0 && h > 0).then_some((w as f32, h as f32))
-}
-
-/// `width` and `height` of the root `<svg>`, else its `viewBox`.
-fn svg_size(bytes: &[u8]) -> Option<(f32, f32)> {
-    let text = String::from_utf8_lossy(&bytes[..bytes.len().min(8192)]);
-    let start = text.find("<svg")?;
-    let tag = &text[start..start + text[start..].find('>')?];
-    let attr = |name: &str| -> Option<&str> {
-        let key = format!(" {name}=");
-        let at = tag.find(&key)? + key.len();
-        let quote = tag[at..].chars().next()?;
-        let rest = &tag[at + quote.len_utf8()..];
-        Some(&rest[..rest.find(quote)?])
-    };
-    let number = |s: &str| s.trim().trim_end_matches("px").parse::<f32>().ok();
-    if let (Some(w), Some(h)) = (
-        attr("width").and_then(number),
-        attr("height").and_then(number),
-    ) {
-        return Some((w, h));
-    }
-    let view_box: Vec<f32> = attr("viewBox")?
-        .split([' ', ','])
-        .filter_map(|v| v.parse().ok())
-        .collect();
-    (view_box.len() == 4 && view_box[2] > 0.0 && view_box[3] > 0.0)
-        .then(|| (view_box[2], view_box[3]))
-}
-
-/// Whether GPUI can render `svg` without reaching outside it. Its SVG
-/// renderer (usvg's default resolver) reads any `href` naming a file,
-/// network shares included, and parses nested SVG data with the same rule;
-/// FR-13 forbids an SVG's external resources. Only fragment references and
-/// inline raster images pass; entity declarations, character references
-/// and anything else reject the whole image.
-fn svg_is_self_contained(svg: &[u8]) -> bool {
-    const INLINE_RASTER: &[&str] = &[
-        "data:image/png",
-        "data:image/jpeg",
-        "data:image/jpg",
-        "data:image/gif",
-        "data:image/webp",
-    ];
-    let Ok(svg) = std::str::from_utf8(svg) else {
-        return false;
-    };
-    if svg.contains("<!ENTITY") {
-        return false;
-    }
-    let mut rest = svg;
-    while let Some(at) = rest.find("href") {
-        rest = &rest[at + "href".len()..];
-        let Some(value) = rest.trim_start().strip_prefix('=') else {
-            continue;
-        };
-        let value = value.trim_start();
-        let Some(quote) = value.chars().next().filter(|c| matches!(c, '"' | '\'')) else {
-            return false;
-        };
-        let value = &value[1..];
-        let value = value[..value.find(quote).unwrap_or(value.len())]
-            .trim()
-            .to_ascii_lowercase();
-        if !value.starts_with('#') && !INLINE_RASTER.iter().any(|p| value.starts_with(p)) {
-            return false;
-        }
-    }
-    true
 }
 
 /// What a load produces.
@@ -572,70 +485,24 @@ impl ImageHost {
     }
 }
 
-/// Why a pasted image was not saved.
-#[derive(Debug, thiserror::Error)]
-pub enum PasteError {
-    #[error("Image not pasted: {0:.1} MB is over the 5 MB limit")]
-    TooLarge(f64),
-    #[error("Image not pasted: the note is not saved in a folder")]
-    NoFolder,
-    #[error("Image not pasted: {0}")]
-    Io(#[from] std::io::Error),
-}
-
-/// Saves a pasted image as `{stem}-assets/YYYYMMDD-HHMMSS-xxxx.ext` next to
-/// `note` (local time; Writer used UTC) and returns the Markdown to insert.
-pub fn save_pasted_image(
-    note: &Path,
-    image: &Image,
-    now: chrono::DateTime<chrono::Local>,
-) -> Result<String, PasteError> {
-    if image.bytes.len() > MAX_PASTE_BYTES {
-        return Err(PasteError::TooLarge(
-            image.bytes.len() as f64 / (1024.0 * 1024.0),
-        ));
-    }
-    let dir = note.parent().ok_or(PasteError::NoFolder)?;
-    let stem = note
-        .file_stem()
-        .ok_or(PasteError::NoFolder)?
-        .to_string_lossy()
-        .into_owned();
-    let assets = format!("{stem}-assets");
-    std::fs::create_dir_all(dir.join(&assets))?;
-    let ext = match image.format {
-        ImageFormat::Jpeg => "jpg",
-        ImageFormat::Webp => "webp",
-        ImageFormat::Gif => "gif",
-        ImageFormat::Svg => "svg",
-        ImageFormat::Bmp => "bmp",
-        ImageFormat::Tiff => "tiff",
-        _ => "png",
+/// A pasted image as an import source, named
+/// `YYYYMMDD-HHMMSS-xxxx` in local time (Writer used UTC).
+pub fn pasted_source(image: &Image, now: chrono::DateTime<chrono::Local>) -> ImportSource {
+    let declared = match image.format {
+        ImageFormat::Jpeg => ImageKind::Jpeg,
+        ImageFormat::Webp => ImageKind::Webp,
+        ImageFormat::Gif => ImageKind::Gif,
+        ImageFormat::Svg => ImageKind::Svg,
+        ImageFormat::Bmp => ImageKind::Bmp,
+        ImageFormat::Tiff => ImageKind::Tiff,
+        ImageFormat::Ico => ImageKind::Ico,
+        _ => ImageKind::Png,
     };
-    let stamp = now.format("%Y%m%d-%H%M%S");
-    let mut suffix = (image.id ^ now.timestamp_nanos_opt().unwrap_or(0) as u64) & 0xffff;
-    let name = loop {
-        let name = format!("{stamp}-{suffix:04x}.{ext}");
-        if !dir.join(&assets).join(&name).exists() {
-            break name;
-        }
-        suffix = (suffix + 1) & 0xffff;
-    };
-    cerata_core::fs::atomic::atomic_write(&dir.join(&assets).join(&name), &image.bytes)?;
-    let relative = format!("{assets}/{name}");
-    Ok(format!(
-        "![image.{ext}]({})",
-        markdown_destination(&relative)
-    ))
-}
-
-/// Writer's `formatMarkdownDestination`: angle brackets around a
-/// destination with spaces or parentheses.
-pub fn markdown_destination(path: &str) -> String {
-    if path.contains([' ', '\t', '(', ')', '<', '>']) {
-        format!("<{}>", path.replace('<', "%3C").replace('>', "%3E"))
-    } else {
-        path.to_owned()
+    let suffix = (image.id ^ now.timestamp_nanos_opt().unwrap_or(0) as u64) & 0xffff;
+    ImportSource::Bytes {
+        bytes: image.bytes.clone(),
+        declared,
+        stem: format!("{}-{suffix:04x}", now.format("%Y%m%d-%H%M%S")),
     }
 }
 
@@ -649,6 +516,7 @@ fn accessible_name(url: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Cursor;
 
     #[test]
     fn images_are_named_by_their_file() {
@@ -656,21 +524,6 @@ mod tests {
         assert_eq!(accessible_name("https://example.com/a/b.jpg"), "b.jpg");
         assert_eq!(accessible_name("C:\\notes\\shot.png"), "shot.png");
         assert_eq!(accessible_name("plain.gif"), "plain.gif");
-    }
-
-    /// `paths.test.ts:102-110`: a written destination with spaces goes in
-    /// angle brackets; one without is left as is.
-    #[test]
-    fn written_destinations_bracket_spaces() {
-        assert_eq!(
-            markdown_destination("Writer TODOs-assets/image.png"),
-            "<Writer TODOs-assets/image.png>"
-        );
-        assert_eq!(
-            markdown_destination("note-assets/image.png"),
-            "note-assets/image.png"
-        );
-        assert_eq!(markdown_destination("a <b>.png"), "<a %3Cb%3E.png>");
     }
 
     /// `\\?\` and `\??\` name device paths: never touched.

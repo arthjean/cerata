@@ -24,6 +24,8 @@ pub enum MenuAction {
     OpenLink(String),
     CopyLink(String),
     Command(&'static str),
+    /// "Image…": the file picker, which a pure state command cannot open.
+    InsertImage,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -166,7 +168,7 @@ pub fn body_items(
         MenuItem::Separator,
     ];
     for (label, layout) in SUBMENUS {
-        let sub = layout
+        let mut sub = layout
             .iter()
             .map(|entry| match entry {
                 None => MenuItem::Separator,
@@ -187,7 +189,15 @@ pub fn body_items(
                     }
                 }
             })
-            .collect();
+            .collect::<Vec<_>>();
+        if *label == "Insert" {
+            // After the block insertions, before the dates.
+            let at = sub
+                .iter()
+                .position(|item| *item == MenuItem::Separator)
+                .unwrap_or(sub.len());
+            sub.insert(at, item("Image\u{2026}", true, MenuAction::InsertImage));
+        }
         items.push(MenuItem::Submenu {
             label: SharedString::new_static(label),
             items: sub,
@@ -280,6 +290,7 @@ impl Editor {
                 let clock = super::actions::clock();
                 self.update_state(cx, |state| state.run_command(id, &clock));
             }
+            MenuAction::InsertImage => self.pick_images(cx),
         }
         cx.notify();
     }

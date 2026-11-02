@@ -138,6 +138,11 @@ impl WindowView {
             Command::ZoomOut => self.set_zoom(zoom::zoom_out(Some(self.zoom())), cx),
             Command::ResetZoom => self.set_zoom(zoom::DEFAULT, cx),
             Command::Settings => self.open_settings(window, cx),
+            Command::InsertImage => {
+                if let super::Page::Editor(editor) = self.page(cx) {
+                    editor.update(cx, |editor, cx| editor.pick_images(cx));
+                }
+            }
             Command::Editor(id) => {
                 if let super::Page::Editor(editor) = self.page(cx) {
                     let clock = crate::editor::actions::clock();
@@ -149,17 +154,21 @@ impl WindowView {
         }
     }
 
-    /// The active editor's table commands that apply at its caret (US-053).
-    fn editor_commands(&self, cx: &gpui::App) -> Vec<Command> {
+    /// The active note's commands: "Insert image…" (US-062), then the
+    /// table commands that apply at its caret (US-053).
+    pub(super) fn editor_commands(&self, cx: &gpui::App) -> Vec<Command> {
         let super::Page::Editor(editor) = self.page(cx) else {
             return Vec::new();
         };
         let state = &editor.read(cx).state;
-        cerata_markdown::table_ops::IDS
-            .iter()
-            .filter_map(|id| cerata_markdown::commands::command(id))
-            .filter(|c| c.enabled(state))
-            .map(|c| Command::Editor(c.id))
+        std::iter::once(Command::InsertImage)
+            .chain(
+                cerata_markdown::table_ops::IDS
+                    .iter()
+                    .filter_map(|id| cerata_markdown::commands::command(id))
+                    .filter(|c| c.enabled(state))
+                    .map(|c| Command::Editor(c.id)),
+            )
             .collect()
     }
 
