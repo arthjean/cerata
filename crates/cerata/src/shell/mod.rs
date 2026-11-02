@@ -469,18 +469,41 @@ impl WindowView {
     }
 
     /// Moves `paths` to the trash; their tabs close and unsaved text goes.
+    /// The trash runs off the main thread: on Windows it goes through a
+    /// COM single-threaded apartment that pumps window messages, which
+    /// re-enter GPUI while the App is borrowed ("RefCell already borrowed").
     pub fn delete_now(&mut self, paths: &[PathBuf], cx: &mut Context<Self>) {
         let Some(fs) = self.fs() else { return };
+        let paths = paths.to_vec();
+        let task = cx.background_spawn(async move {
+            paths
+                .into_iter()
+                .map(|path| {
+                    let result = fs.delete(&path);
+                    (path, result)
+                })
+                .collect::<Vec<_>>()
+        });
+        cx.spawn(async move |this, cx| {
+            let results = task.await;
+            let _ = this.update(cx, |this, cx| this.deleted(results, cx));
+        })
+        .detach();
+    }
+
+    fn deleted(&mut self, results: Vec<(PathBuf, Result<(), FsError>)>, cx: &mut Context<Self>) {
+        let several = results.len() > 1;
         let mut failures = Vec::new();
-        for path in paths {
-            match fs.delete(path) {
+        for (path, result) in &results {
+            let path = path.as_path();
+            match result {
                 Ok(()) => {
                     self.path_removed(path, cx);
                     if let Some(sidebar) = self.sidebar.clone() {
                         sidebar.update(cx, |sidebar, cx| sidebar.removed(path, cx));
                     }
                 }
-                Err(error) if paths.len() > 1 => {
+                Err(error) if several => {
                     failures.push(format!("Failed to delete \"{}\": {error}", file_name(path)))
                 }
                 Err(error) => failures.push(format!("Failed to delete: {error}")),

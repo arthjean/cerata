@@ -979,6 +979,7 @@ fn delete_asks_only_for_unsaved_work_and_uses_the_trash(cx: &mut TestAppContext)
     update(cx, handle, |view, _, cx| {
         view.delete_now(std::slice::from_ref(&b), cx)
     });
+    cx.run_until_parked();
     let notice = read(cx, handle, |view, _| view.notice.clone());
     match notice {
         // Headless sessions may have no trash: the file must survive.
