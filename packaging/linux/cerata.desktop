@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Cerata
+GenericName=Markdown Editor
+Comment=Native Markdown editor with live preview
+Exec=cerata %F
+Icon=cerata
+Terminal=false
+Categories=Office;TextEditor;Utility;
+MimeType=text/markdown;text/x-markdown;
+Keywords=markdown;notes;editor;writing;
+StartupNotify=true
+StartupWMClass=cerata

@@ -180,8 +180,26 @@ pub fn window_options(cx: &App) -> WindowOptions {
         window_min_size: Some(size(px(MIN_SIZE.width), px(MIN_SIZE.height))),
         app_id: Some("cerata".into()),
         titlebar: title_bar::options(),
+        #[cfg(target_os = "linux")]
+        icon: x11_icon(),
         ..Default::default()
     }
+}
+
+/// `_NET_WM_ICON`, which GPUI only sets on X11: Wayland compositors resolve the
+/// icon from `app_id` through the installed `cerata.desktop`, and Windows and
+/// macOS from the exe resource and the app bundle.
+#[cfg(target_os = "linux")]
+fn x11_icon() -> Option<Arc<image::RgbaImage>> {
+    static ICON: std::sync::LazyLock<Option<Arc<image::RgbaImage>>> =
+        std::sync::LazyLock::new(|| {
+            let png = include_bytes!("../../assets/brand/cerata-icon-256.png");
+            image::load_from_memory_with_format(png, image::ImageFormat::Png)
+                .map(|icon| Arc::new(icon.into_rgba8()))
+                .inspect_err(|error| log::warn!("cannot decode the window icon: {error}"))
+                .ok()
+        });
+    ICON.clone()
 }
 
 /// Opens the window of a startup bundle. Everything the first frame shows

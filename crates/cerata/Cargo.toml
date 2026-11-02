@@ -33,6 +33,10 @@ parking_lot = "0.12"
 [target.'cfg(target_os = "linux")'.dependencies]
 gpui_platform = { workspace = true, features = ["wayland", "x11"] }
 
+# Embeds assets/brand/cerata.ico into the exe (build.rs), as Paneflow does.
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1.31"
+
 [lints]
 workspace = true
 
