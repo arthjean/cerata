@@ -44,6 +44,9 @@ pub struct FrameRecord {
     pub code_scroll: Vec<(usize, f32)>,
     pub selections: Vec<Bounds<Pixels>>,
     pub carets: Vec<Bounds<Pixels>>,
+    /// Window bounds of each drawn table cell, named `table-cell-{row}-{column}`
+    /// (row 0 is the header).
+    pub cells: Vec<(String, Bounds<Pixels>)>,
 }
 
 struct Painted {
@@ -331,6 +334,31 @@ impl Element for EditorElement {
             let mut selections = Vec::new();
             let mut carets = Vec::new();
             for painted in &lines {
+                // A drawn table: selection and carets in its cells' lines.
+                if let Some(block) = &painted.line.block
+                    && let BlockKind::Table(table) = &block.kind
+                {
+                    let top = painted.top + px(block.top);
+                    for range in &ranges {
+                        for cell in &table.cells {
+                            for segment in &cell.segments {
+                                selections.extend(range_rects(segment, top, column_left, range));
+                            }
+                        }
+                    }
+                    for r in editor.state.selection().ranges() {
+                        if editor.marked_range.is_some() && !r.is_empty() {
+                            continue;
+                        }
+                        if let Some((c, s)) = table.segment_for(r.head)
+                            && let Some(caret) =
+                                caret_rect(&table.cells[c].segments[s], top, column_left, r.head)
+                        {
+                            carets.push(caret);
+                        }
+                    }
+                    continue;
+                }
                 for range in &ranges {
                     selections.extend(code_clip(
                         &painted.line,
@@ -487,6 +515,31 @@ impl Element for EditorElement {
                         .collect(),
                     selections: selections.clone(),
                     carets: carets.clone(),
+                    cells: lines
+                        .iter()
+                        .filter_map(|p| match &p.line.block {
+                            Some(block) => match &block.kind {
+                                BlockKind::Table(t) => Some((t.clone(), p.top + px(block.top))),
+                                _ => None,
+                            },
+                            None => None,
+                        })
+                        .flat_map(|(t, top)| {
+                            t.cells
+                                .iter()
+                                .map(|cell| {
+                                    let b = t.cell_bounds(cell);
+                                    (
+                                        format!("table-cell-{}-{}", cell.row, cell.column),
+                                        Bounds::new(
+                                            point(column_left + b.origin.x, top + b.origin.y),
+                                            b.size,
+                                        ),
+                                    )
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .collect(),
                 });
             }
 
@@ -581,7 +634,7 @@ impl Element for EditorElement {
                                     .math_block(tex, *display, block.width, &style, window, cx),
                                 cerata_markdown::Widget::Mermaid { source } => editor
                                     .mermaid_element(source, painted.line.start, block.width, cx),
-                                _ => editor.rich.element(widget, block.width, &style, window, cx),
+                                _ => gpui::div().into_any_element(),
                             };
                         blocks.push(PendingBlock {
                             element,
@@ -590,7 +643,7 @@ impl Element for EditorElement {
                             rich: Some(widget.clone()),
                         });
                     }
-                    BlockKind::Rule => {}
+                    BlockKind::Rule | BlockKind::Table(_) => {}
                 }
             }
             (
@@ -767,7 +820,12 @@ fn paint_chrome(painted: &Painted, left: Pixels, width: Pixels, window: &mut Win
         ));
     }
     if let Some(block) = &line.block
-        && block.kind == BlockKind::Rule
+        && let BlockKind::Table(table) = &block.kind
+    {
+        super::table::paint_grid(table, left, top + px(block.top), window);
+    }
+    if let Some(block) = &line.block
+        && matches!(block.kind, BlockKind::Rule)
     {
         let y = top + px(block.top + block.height / 2.0);
         window.paint_quad(fill(
@@ -832,6 +890,11 @@ fn paint_text(painted: &Painted, left: Pixels, width: Pixels, window: &mut Windo
                 );
             }
         }
+    }
+    if let Some(block) = &line.block
+        && let BlockKind::Table(table) = &block.kind
+    {
+        super::table::paint_text(table, left, painted.top + px(block.top), window, cx);
     }
     let Some(wrapped) = &line.wrapped else {
         return;

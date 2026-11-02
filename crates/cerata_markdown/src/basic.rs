@@ -183,7 +183,25 @@ impl EditorState {
 
     /// Word left or right (Alt on macOS, Ctrl elsewhere).
     pub fn move_group(&mut self, forward: bool, extend: bool) -> bool {
-        self.motion(extend, forward, |text, pos| group_step(text, pos, forward))
+        // In a table cell, a word motion stops at the cell's edge before
+        // it leaves it (`cells.rs`).
+        let cells = self.cell_contents();
+        let heads: Vec<usize> = self.selection().ranges().iter().map(|r| r.head).collect();
+        self.motion(extend, forward, |text, pos| {
+            let to = group_step(text, pos, forward);
+            let cell = heads
+                .iter()
+                .position(|h| *h == pos)
+                .and_then(|i| cells.get(i).cloned().flatten());
+            match cell {
+                Some((c, _, _)) if forward && pos < c.end && to > c.end => c.end,
+                Some((c, _, _)) if !forward && pos > c.start && to < c.start => c.start,
+                // At the edge: the neighboring cell.
+                Some((c, next, _)) if forward && pos == c.end => next,
+                Some((c, _, prev)) if !forward && pos == c.start => prev,
+                _ => to,
+            }
+        })
     }
 
     /// Start or end of the document.
@@ -205,15 +223,15 @@ impl EditorState {
 
     /// Delete: the selection or the character after each caret.
     pub fn delete_forward(&mut self) -> bool {
-        self.delete_by(true, |text, pos| char_step(text, pos, true))
+        self.delete_by(|text, pos| char_step(text, pos, true))
     }
 
     /// Word deletion before or after each caret.
     pub fn delete_group(&mut self, forward: bool) -> bool {
-        self.delete_by(forward, |text, pos| group_step(text, pos, forward))
+        self.delete_by(|text, pos| group_step(text, pos, forward))
     }
 
-    fn delete_by(&mut self, forward: bool, step: impl Fn(&Text, usize) -> usize) -> bool {
+    fn delete_by(&mut self, step: impl Fn(&Text, usize) -> usize) -> bool {
         if self.is_loading() {
             return false;
         }
@@ -230,23 +248,11 @@ impl EditorState {
                 false => r.range(),
             })
             .collect();
-        if self.guard_atomic_deletes(&cut) {
+        if self.guard_atomic_deletes(&cut) || self.guard_table_joins(&cut) {
             return true;
         }
-        let text = self.text();
-        let changes: Vec<Change> = self
-            .selection()
-            .ranges()
-            .iter()
-            .filter_map(|r| {
-                if !r.is_empty() {
-                    return Some(Change::delete(r.range()));
-                }
-                let to = step(text, r.head);
-                let range = if forward { r.head..to } else { to..r.head };
-                (!range.is_empty()).then(|| Change::delete(range))
-            })
-            .collect();
+        // A caret in a table cell deletes inside it only (`cells.rs`).
+        let changes: Vec<Change> = self.cell_cuts(&cut).into_iter().flatten().collect();
         if changes.is_empty() {
             return true;
         }

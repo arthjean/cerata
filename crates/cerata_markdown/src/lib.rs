@@ -9,6 +9,7 @@
 
 pub mod atomic;
 pub mod basic;
+pub mod cells;
 pub mod change;
 pub mod code;
 pub mod commands;

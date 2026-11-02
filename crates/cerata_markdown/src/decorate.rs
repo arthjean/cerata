@@ -12,9 +12,10 @@
 
 use std::collections::HashMap;
 use std::ops::Range;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use crate::selection::Selection;
+use crate::table::Grid;
 use crate::text::Text;
 use crate::tree::{MarkdownTree, Node, NodeKind};
 
@@ -87,7 +88,7 @@ impl LineStyle {
 }
 
 /// What a fold shows in place of its source.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Widget {
     /// An image, by its normalized destination.
     Image {
@@ -112,9 +113,11 @@ pub enum Widget {
     NestedQuoteBorder,
     /// A tab, drawn `TAB_WIDTH_CH` wide (`tabWidthExtension.ts`).
     Tab,
-    /// A folded GFM table: its rows, quote prefixes removed, one per line.
+    /// A GFM table drawn as its grid (ADR 0007): the table node's range
+    /// and the source ranges of its cells.
     Table {
-        source: String,
+        range: Range<usize>,
+        grid: Arc<Grid>,
     },
     /// A folded wiki link: its alias, else its target
     /// (`wiki-link-extension.ts` `WikiLinkWidget`).
@@ -260,6 +263,7 @@ pub fn decorate_range(
         text,
         selection: &selection,
         out: Vec::new(),
+        drawn_tables: HashMap::new(),
     };
     for node in tree.iter_range(range.clone()) {
         cx.hide(node);
@@ -290,6 +294,9 @@ struct Cx<'a> {
     text: &'a Text,
     selection: &'a Selection,
     out: Vec<Decoration>,
+    /// Whether each table, by its start, is drawn as its grid: decided
+    /// once per table, not once per `\|` of its cells.
+    drawn_tables: HashMap<usize, bool>,
 }
 
 impl Cx<'_> {
@@ -368,6 +375,11 @@ impl Cx<'_> {
                 if !self.touches(node.range()) {
                     self.hide_descendants(node, &[K::StrikethroughMark], HideMode::Remove);
                 }
+            }
+            // A cell's `\|` reads as `|` while its table is drawn: the caret
+            // never splits it (ADR 0007, decision 5).
+            K::Escape if self.text.slice(node.range()) == "\\|" && self.in_drawn_table(node) => {
+                self.hide_descendants(node, &[K::EscapeMark], HideMode::Collapse);
             }
             K::Escape => {
                 // Revealed while the WORD around it (or, for a lone `\x`,
@@ -548,24 +560,16 @@ impl Cx<'_> {
         });
     }
 
-    /// `table-decorations.ts:507-523`: the rendered grid while untouched,
-    /// else the source lines on the code background.
+    /// The grid stays drawn while every selection range touching the table
+    /// lies in one cell's content (ADR 0007, decision 2); a range that
+    /// crosses a cell's or the table's edge, or covers the whole table,
+    /// reveals the source lines on the code background
+    /// (`table-decorations.ts:507-523`).
     fn fold_table(&mut self, node: Node<'_>) {
-        let rows: Vec<&str> = node
-            .children()
-            .filter(|c| {
-                matches!(
-                    c.kind(),
-                    NodeKind::TableHeader | NodeKind::TableDelimiter | NodeKind::TableRow
-                )
-            })
-            .map(|c| self.text.slice(c.range()))
-            .collect();
-        let source = rows.join("\n");
-        if crate::table::parse(&source, |l| l).is_none() {
+        let Some(grid) = Grid::from_node(self.text, node) else {
             return;
-        }
-        if self.touches(node.range()) {
+        };
+        if self.table_revealed(&grid) {
             let (first, last) = (
                 self.text.line_at(node.from()).number,
                 self.text.line_at(node.to()).number,
@@ -582,10 +586,42 @@ impl Cx<'_> {
         } else {
             self.out.push(Decoration::Replace {
                 range: node.range(),
-                widget: Widget::Table { source },
+                widget: Widget::Table {
+                    range: node.range(),
+                    grid: Arc::new(grid),
+                },
                 block: true,
             });
         }
+    }
+
+    /// `node` is in a table drawn as its grid ([`Self::table_revealed`]).
+    fn in_drawn_table(&mut self, node: Node<'_>) -> bool {
+        let Some(table) = node.ancestors().find(|n| n.kind() == NodeKind::Table) else {
+            return false;
+        };
+        if let Some(drawn) = self.drawn_tables.get(&table.from()) {
+            return *drawn;
+        }
+        let drawn = Grid::from_node(self.text, table).is_some_and(|g| !self.table_revealed(&g));
+        self.drawn_tables.insert(table.from(), drawn);
+        drawn
+    }
+
+    fn table_revealed(&self, grid: &Grid) -> bool {
+        // Cells past the header are not drawn: such a table reveals its
+        // source on contact, as in Writer, so they stay in sight.
+        if grid.has_extra() {
+            return self.touches(grid.range.clone());
+        }
+        let zone = grid.zone();
+        self.selection.ranges().iter().any(|r| {
+            let touches = r.from() <= zone.end && r.to() >= zone.start;
+            touches
+                && !grid
+                    .drawn_cells()
+                    .any(|(_, _, c)| c.holds_edit(r.from()) && c.holds_edit(r.to()))
+        })
     }
 
     /// `fold/image.ts:94-121`: replaced when untouched, a widget after the

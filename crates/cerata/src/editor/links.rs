@@ -52,7 +52,20 @@ impl Editor {
     ) -> Option<LinkTarget> {
         let viewport = self.viewport?;
         let (ix, y) = self.line_at_point(position)?;
-        let line = self.layout_line(ix, window, cx);
+        let laid = self.layout_line(ix, window, cx);
+        // In a drawn table: the cell line under the pointer.
+        let line = match &laid.block {
+            Some(block) => match &block.kind {
+                super::layout::BlockKind::Table(table) => {
+                    let x = (position.x - viewport.column_left).as_f32();
+                    let local = (y - self.heights.prefix(ix)) as f32 - block.top;
+                    let (c, s) = table.segment_at(x, local, false)?;
+                    &table.cells[c].segments[s]
+                }
+                _ => &laid,
+            },
+            None => &laid,
+        };
         let wrapped = line.wrapped.as_ref()?;
         let row_height = line.metrics.row_height;
         let local_y = (y - self.heights.prefix(ix)) as f32 - line.text_top;

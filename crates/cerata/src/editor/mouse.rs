@@ -15,7 +15,7 @@ use gpui::{
 };
 
 use super::code_scroll::{self, CodeScroll};
-use super::layout::{LaidLine, Marker};
+use super::layout::{BlockKind, LaidLine, Marker};
 use super::{Editor, TOP_INSET};
 
 /// Selection granularity of a press: single, double, triple click.
@@ -120,6 +120,20 @@ impl Editor {
         let local_y = (y - self.heights.prefix(ix)) as f32;
         let x = (position.x - viewport.column_left).as_f32();
         if let Some(block) = &line.block {
+            // A drawn table: the nearest cell line, whatever the border or
+            // padding under the pointer (US-051).
+            if let BlockKind::Table(table) = &block.kind {
+                let local = local_y - block.top;
+                let Some((c, s)) = table.segment_at(x, local, true) else {
+                    return line.start;
+                };
+                let segment = &table.cells[c].segments[s];
+                let row = (((local - segment.text_top) / segment.metrics.row_height)
+                    .floor()
+                    .max(0.0) as usize)
+                    .min(segment.rows().saturating_sub(1));
+                return Self::offset_in_row(segment, row, x);
+            }
             if block.replaces {
                 return if local_y < block.height / 2.0 {
                     line.start
@@ -157,6 +171,10 @@ impl Editor {
         let (ix, y) = self.line_at_point(position)?;
         let line = self.layout_line(ix, window, cx);
         let block = line.block.as_ref()?;
+        // A table's cells take the caret, never a whole-table selection.
+        if matches!(block.kind, BlockKind::Table(_)) {
+            return None;
+        }
         let local_y = (y - self.heights.prefix(ix)) as f32;
         let inside = local_y >= block.top && local_y < block.top + block.height;
         if !inside {
@@ -188,9 +206,27 @@ impl Editor {
 
     fn unit_range(&self, pos: usize, unit: Unit) -> std::ops::Range<usize> {
         let text = self.state.text();
+        // In a drawn table: a word stays in its cell, a line is the table
+        // (whose source the selection then reveals).
+        let cell = cerata_markdown::cells::cell_at(&self.state, pos);
         match unit {
             Unit::Char => pos..pos,
-            Unit::Word => cerata_markdown::basic::word_around(text, pos).unwrap_or(pos..pos),
+            Unit::Word => {
+                let word = cerata_markdown::basic::word_around(text, pos).unwrap_or(pos..pos);
+                match &cell {
+                    Some((grid, r, c)) => match grid.cell(*r, *c) {
+                        Some(cell) => {
+                            let start = word.start.clamp(cell.content.start, cell.content.end);
+                            start..word.end.clamp(start, cell.content.end)
+                        }
+                        None => word,
+                    },
+                    None => word,
+                }
+            }
+            Unit::Line if cell.is_some() => {
+                cell.map_or(pos..pos, |(grid, _, _)| grid.range.clone())
+            }
             Unit::Line => {
                 let line = text.line_at(pos);
                 let next = if line.number + 1 < text.line_count() {

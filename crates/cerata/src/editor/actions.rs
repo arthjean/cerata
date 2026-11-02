@@ -10,6 +10,8 @@ use gpui::{
     Stateful, Window, actions,
 };
 
+use super::layout::BlockKind;
+use super::table::TextLine;
 use super::{Editor, images};
 
 actions!(
@@ -21,6 +23,7 @@ actions!(
         DeleteWordLeft,
         DeleteWordRight,
         Newline,
+        SoftNewline,
         Indent,
         Outdent,
         Left,
@@ -117,7 +120,7 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("shift-backspace", Backspace, c),
         KeyBinding::new("delete", Delete, c),
         KeyBinding::new("enter", Newline, c),
-        KeyBinding::new("shift-enter", Newline, c),
+        KeyBinding::new("shift-enter", SoftNewline, c),
         KeyBinding::new("tab", Indent, c),
         KeyBinding::new("shift-tab", Outdent, c),
         // CodeMirror's `toggleTabFocusMode` (Mod-m, Shift-Alt-m on macOS):
@@ -265,12 +268,26 @@ pub fn register(mut root: Stateful<Div>, cx: &mut Context<Editor>) -> Stateful<D
         .update_state(cx, |s| s.delete_group(false)));
     on!(root, cx, DeleteWordRight, |e, _w, cx| e
         .update_state(cx, |s| s.delete_group(true)));
+    // Enter in a table cell goes to the cell below (US-052); during an IME
+    // composition it commits it.
+    on!(root, cx, Newline, |e, _w, cx| if !e.commit_composition(cx)
+        && !e.completion_accept(None, cx)
+    {
+        e.update_state(cx, |s| s.table_enter() || s.insert_newline());
+    });
+    // Shift+Enter: a `<br>` in a table cell, else a newline.
     on!(
         root,
         cx,
-        Newline,
-        |e, _w, cx| if !e.completion_accept(None, cx) {
-            e.update_state(cx, |s| s.insert_newline());
+        SoftNewline,
+        |e, _w, cx| if !e.commit_composition(cx) && !e.completion_accept(None, cx) {
+            e.update_state(cx, |s| {
+                if cerata_markdown::cells::cell_at(s, s.selection().main().head).is_some() {
+                    s.type_text(None, "\n", UserEvent::Type)
+                } else {
+                    s.insert_newline()
+                }
+            });
         }
     );
     // Tab indents the text it has the focus of. With Ctrl+M on, or from a
@@ -279,15 +296,16 @@ pub fn register(mut root: Stateful<Div>, cx: &mut Context<Editor>) -> Stateful<D
     root = root.on_action(cx.listener(|e: &mut Editor, _: &Indent, window, cx| {
         if !e.focus_handle.is_focused(window) || e.tab_focus {
             window.focus_next(cx);
-        } else if !e.completion_accept(None, cx) {
-            e.update_state(cx, |s| s.indent());
+        } else if !e.commit_composition(cx) && !e.completion_accept(None, cx) {
+            // In a table cell: the next cell (US-052).
+            e.update_state(cx, |s| s.table_tab(false) || s.indent());
         }
     }));
     root = root.on_action(cx.listener(|e: &mut Editor, _: &Outdent, window, cx| {
         if !e.focus_handle.is_focused(window) || e.tab_focus {
             window.focus_prev(cx);
-        } else {
-            e.update_state(cx, |s| s.outdent());
+        } else if !e.commit_composition(cx) {
+            e.update_state(cx, |s| s.table_tab(true) || s.outdent());
         }
     }));
     on!(root, cx, ToggleTabFocus, |e, _w, cx| {
@@ -351,7 +369,7 @@ pub fn register(mut root: Stateful<Div>, cx: &mut Context<Editor>) -> Stateful<D
     on!(root, cx, SelectPageDown, |e, w, cx| e
         .page(true, true, w, cx));
     on!(root, cx, SelectAll, |e, _w, cx| e
-        .update_state(cx, |s| s.select_all()));
+        .update_state(cx, |s| s.select_cell_or_all()));
     on!(root, cx, Undo, |e, _w, cx| e.update_state(cx, |s| s.undo()));
     on!(root, cx, Redo, |e, _w, cx| e.update_state(cx, |s| s.redo()));
     on!(root, cx, SelectNextOccurrence, |e, _w, cx| e
@@ -422,7 +440,9 @@ impl Editor {
         }
         let ranges: Vec<SelectionRange> = self.state.selection().ranges().to_vec();
         let main = self.state.selection().main_index();
+        let single = ranges.len() == 1;
         let mut goal = self.goal_x;
+        let mut leave = false;
         let moved: Vec<SelectionRange> = ranges
             .iter()
             .enumerate()
@@ -432,13 +452,20 @@ impl Editor {
                 } else {
                     range.head
                 };
-                let (target, x) = self.vertical_target(
+                let (target, x) = match self.vertical_target(
                     start,
                     down,
                     if i == main { goal } else { None },
                     window,
                     cx,
-                );
+                ) {
+                    Some(found) => found,
+                    None => {
+                        leave |= i == main && single && !extend;
+                        let end = if down { self.state.text().len() } else { 0 };
+                        (end, goal.unwrap_or(0.0))
+                    }
+                };
                 if i == main {
                     goal = Some(x);
                 }
@@ -449,12 +476,20 @@ impl Editor {
                 }
             })
             .collect();
+        if leave {
+            // A table bordering the document: a line is created past it.
+            self.update_state(cx, |state| state.leave_table(down));
+            self.goal_x = goal;
+            return;
+        }
         self.select(Selection::new(moved, main), cx);
         self.goal_x = goal;
     }
 
     /// The position one row above or below `pos` at pixel column `goal`
-    /// (the caret's own x when `None`), and that column.
+    /// (the caret's own x when `None`), and that column. In a drawn table
+    /// the rows are the cells' (US-052); `None` when the move leaves a
+    /// table that borders the document, which needs a new line.
     fn vertical_target(
         &mut self,
         pos: usize,
@@ -462,7 +497,7 @@ impl Editor {
         goal: Option<f32>,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> (usize, f32) {
+    ) -> Option<(usize, f32)> {
         let (line, row) = self.row_at(pos, window, cx);
         let x = goal.unwrap_or_else(|| {
             line.wrapped.as_ref().map_or(line.text_left, |wrapped| {
@@ -476,28 +511,58 @@ impl Editor {
         });
         let rows = line.rows().max(1);
         if down && row + 1 < rows {
-            return (Self::offset_in_row(&line, row + 1, x), x);
+            return Some((Self::offset_in_row(&line, row + 1, x), x));
         }
         if !down && row > 0 {
-            return (Self::offset_in_row(&line, row - 1, x), x);
+            return Some((Self::offset_in_row(&line, row - 1, x), x));
+        }
+        let mut ix = line.ix;
+        let mut in_table = false;
+        if let TextLine::Cell {
+            table,
+            cell,
+            segment,
+        } = &line
+        {
+            // The cell's next line, else the cell above or below.
+            if let Some((c, s, r)) = table.step(*cell, *segment, down, x) {
+                return Some((Self::offset_in_row(&table.cells[c].segments[s], r, x), x));
+            }
+            // Out by the edge: from the table's last line down, its first up.
+            if down {
+                ix = self.state.text().line_at(table.grid.zone().end).number;
+            }
+            in_table = true;
         }
         let count = self.state.text().line_count();
-        let mut ix = line.ix;
         loop {
             if down && ix + 1 >= count {
-                return (self.state.text().len(), x);
+                return (!in_table).then(|| (self.state.text().len(), x));
             }
             if !down && ix == 0 {
-                return (0, x);
+                return (!in_table).then_some((0, x));
             }
             ix = if down { ix + 1 } else { ix - 1 };
             let next = self.layout_line(ix, window, cx);
             if next.height <= 0.0 {
                 continue;
             }
+            // Into a drawn table: the cell under the column, source kept.
+            if let Some(block) = &next.block
+                && let BlockKind::Table(table) = &block.kind
+            {
+                let row = if down {
+                    0
+                } else {
+                    table.row_count().saturating_sub(1)
+                };
+                if let Some((c, s, r)) = table.enter(row, down, x) {
+                    return Some((Self::offset_in_row(&table.cells[c].segments[s], r, x), x));
+                }
+            }
             let rows = next.rows().max(1);
             let target_row = if down { 0 } else { rows - 1 };
-            return (Self::offset_in_row(&next, target_row, x), x);
+            return Some((Self::offset_in_row(&next, target_row, x), x));
         }
     }
 
@@ -691,26 +756,8 @@ impl Editor {
     }
 
     /// Replaces every selection range with `text`; carets land after it.
+    /// In a table cell the text is escaped (`cerata_markdown::cells`).
     pub fn insert_at_selection(&mut self, text: &str, event: UserEvent, cx: &mut Context<Self>) {
-        let text = text.to_owned();
-        self.update_state(cx, |state| {
-            let mut changes = Vec::new();
-            let mut carets = Vec::new();
-            let mut shift: isize = 0;
-            for range in state.selection().ranges() {
-                changes.push(Change::new(range.range(), text.clone()));
-                let end = range.from() as isize + shift + text.len() as isize;
-                carets.push(SelectionRange::cursor(end.max(0) as usize));
-                shift += text.len() as isize - range.range().len() as isize;
-            }
-            let main = state.selection().main_index();
-            let _ = state.apply(
-                Transaction::new()
-                    .changes(changes)
-                    .select(Selection::new(carets, main))
-                    .event(event)
-                    .scroll(),
-            );
-        });
+        self.update_state(cx, |state| state.type_text(None, text, event));
     }
 }

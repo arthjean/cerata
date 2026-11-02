@@ -294,6 +294,11 @@ impl EditorState {
         self.drag.is_some()
     }
 
+    /// The selection a pointer drag started from, while it is in flight.
+    pub fn drag_selection(&self) -> Option<&Selection> {
+        self.drag.as_ref()
+    }
+
     pub fn is_loading(&self) -> bool {
         self.loading
     }
@@ -440,13 +445,21 @@ impl EditorState {
                 self.selection = filtered.clamp(&self.text);
             }
         }
-        // Never inside a diagram's source (`atomic.rs`).
+        // Never inside a diagram's source (`atomic.rs`), nor on a drawn
+        // table's structure (`cells.rs`).
         if self.atomic_blocks {
             self.selection = crate::atomic::skip(
                 &self.tree,
                 &self.text,
                 std::mem::take(&mut self.selection),
                 &previous_selection,
+            );
+            self.selection = crate::cells::snap(
+                &self.tree,
+                &self.text,
+                std::mem::take(&mut self.selection),
+                &previous_selection,
+                doc_changed && explicit_selection,
             );
         }
         if doc_changed && add_to_history {

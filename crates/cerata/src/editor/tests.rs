@@ -1419,77 +1419,445 @@ mod tables {
     use super::*;
     use crate::editor::layout::BlockKind;
 
-    const DOC: &str =
-        "intro\n\n| Link | N |\n|:--|--:|\n| [site](https://example.test) | 2 |\n\nend";
+    /// Header, a link row, a row with an empty cell.
+    const DOC: &str = "intro\n\n| Link | N |\n|:--|--:|\n| [site](https://example.test) | 2 |\n| alpha beta | |\n\nend";
 
-    fn table_from() -> usize {
-        DOC.find("| Link").unwrap()
+    fn pos(needle: &str) -> usize {
+        DOC.find(needle).unwrap()
     }
 
-    /// US-032: folded while the caret is away, at its measured height, with
-    /// its other lines hidden; a link in a cell opens without moving the
-    /// caret; a click elsewhere selects the table, which shows its source.
+    /// The last frame's bounds of cell `row`-`column` (row 0 is the header).
+    fn cell(
+        editor: &Entity<Editor>,
+        cx: &mut VisualTestContext,
+        row: usize,
+        column: usize,
+    ) -> gpui::Bounds<Pixels> {
+        let name = format!("table-cell-{row}-{column}");
+        editor.read_with(cx, |editor, _| {
+            editor
+                .frames
+                .last()
+                .and_then(|f| f.cells.iter().find(|(n, _)| *n == name).map(|(_, b)| *b))
+                .unwrap_or_else(|| panic!("{name} not drawn"))
+        })
+    }
+
+    fn table_drawn(editor: &Entity<Editor>, cx: &mut VisualTestContext) -> bool {
+        editor.update_in(cx, |editor, window, cx| {
+            let line = editor.layout_line(2, window, cx);
+            matches!(
+                line.block.as_ref().map(|b| &b.kind),
+                Some(BlockKind::Table(_))
+            )
+        })
+    }
+
+    fn click(cx: &mut VisualTestContext, at: Point<Pixels>, clicks: usize, shift: bool) {
+        press(cx, at, clicks, shift);
+        release(cx, at);
+        cx.run_until_parked();
+    }
+
+    fn last_caret(editor: &Entity<Editor>, cx: &mut VisualTestContext) -> gpui::Bounds<Pixels> {
+        editor.read_with(cx, |editor, _| {
+            *editor
+                .frames
+                .last()
+                .and_then(|f| f.carets.last())
+                .expect("a caret drawn")
+        })
+    }
+
+    /// A row with a cell past the header: the grid while untouched, then a
+    /// click in a cell reveals the source, so the extra cell shows.
     #[gpui::test]
-    fn a_table_folds_measures_and_reveals_its_source(cx: &mut TestAppContext) {
+    fn a_click_in_a_table_with_an_extra_cell_reveals_its_source(cx: &mut TestAppContext) {
+        let src = "intro\n\n| a | b |\n|---|---|\n| 1 | 2 | extra |\n\nend";
+        let (editor, cx) = open(cx, src);
+        set_cursor(&editor, cx, src.len());
+        assert!(table_drawn(&editor, cx));
+        let one = cell(&editor, cx, 1, 0);
+        click(cx, one.center(), 1, false);
+        assert!(!table_drawn(&editor, cx), "the source is shown");
+        assert_eq!(doc(&editor, cx), src);
+        let head = selection(&editor, cx)[0].1;
+        assert!((src.find("| 1").unwrap()..src.find("extra").unwrap()).contains(&head));
+    }
+
+    /// The table's layout is cached per state; a palette change that keeps
+    /// the mode (a new accent) still invalidates it, since the cells' runs
+    /// carry their colors.
+    #[gpui::test]
+    fn a_theme_change_in_the_same_mode_lays_the_table_out_again(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, DOC);
         set_cursor(&editor, cx, DOC.len());
-        cx.run_until_parked();
+        let table =
+            |editor: &mut Editor, window: &mut gpui::Window, cx: &mut gpui::Context<Editor>| {
+                match editor.layout_line(2, window, cx).block.map(|b| b.kind) {
+                    Some(BlockKind::Table(table)) => table,
+                    other => panic!("not a table: {other:?}"),
+                }
+            };
+        let (first, again) = editor.update_in(cx, |editor, window, cx| {
+            (table(editor, window, cx), table(editor, window, cx))
+        });
+        assert!(std::rc::Rc::ptr_eq(&first, &again), "one layout per state");
+        let mut palette = super::super::theme::palette();
+        palette.accent = gpui::rgb(0x00aa00).into();
+        super::super::theme::set(palette);
+        let recolored = editor.update_in(cx, |editor, window, cx| table(editor, window, cx));
+        assert!(
+            !std::rc::Rc::ptr_eq(&first, &recolored),
+            "the links take the new accent"
+        );
+    }
+
+    /// US-049: the editor lays the table out in the frame (no measuring
+    /// frame), its rows on the first line, the others folded away; cells
+    /// are named by row and column.
+    #[gpui::test]
+    fn a_table_is_laid_out_by_the_editor_in_its_frame(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, DOC);
+        set_cursor(&editor, cx, DOC.len());
         let (first, rest) = editor.update_in(cx, |editor, window, cx| {
             let first = editor.layout_line(2, window, cx);
-            let rest: Vec<f32> = (3..5)
+            let rest: Vec<f32> = (3..6)
                 .map(|ix| editor.layout_line(ix, window, cx).height)
                 .collect();
             (first, rest)
         });
         let block = first.block.as_ref().expect("table block");
-        assert!(matches!(
-            block.kind,
-            BlockKind::Rich(cerata_markdown::Widget::Table { .. })
-        ));
+        let BlockKind::Table(table) = &block.kind else {
+            panic!("not a table: {:?}", block.kind);
+        };
         assert!(block.replaces);
-        assert_eq!(rest, vec![0.0, 0.0], "the other rows are folded away");
-        let header = cx
-            .debug_bounds("table-header-0")
-            .expect("header cell drawn");
-        let cell = cx.debug_bounds("table-cell-0").expect("body cell drawn");
-        assert!(cell.top() >= header.bottom() - px(1.0));
-        // The line takes the height the frame measured, not the estimate.
-        let measured = cx.debug_bounds("table-cell-1").expect("cell").bottom() - header.top();
+        assert_eq!(rest, vec![0.0, 0.0, 0.0], "the other rows are folded away");
+        assert_eq!(first.height, table.height, "the height is the layout's");
+        assert_eq!(table.rows.len(), 3);
+        let header = cell(&editor, cx, 0, 0);
+        let body = cell(&editor, cx, 1, 0);
+        assert!(body.top() >= header.bottom() - px(1.0));
+        // Right-aligned column: its text ends at the cell's right padding.
+        let n = table
+            .cells
+            .iter()
+            .find(|c| c.row == 0 && c.column == 1)
+            .unwrap();
+        let segment = &n.segments[0];
+        let right = segment.text_left + segment.wrapped.as_ref().unwrap().width().as_f32();
+        let (x, w) = table.columns[1];
+        let em = editor.read_with(cx, |e, _| e.config.text_size());
+        let inner_right = x + w
+            - cerata_markdown::table::BORDER_WIDTH
+            - cerata_markdown::table::CELL_HORIZONTAL_PADDING_EM * em;
         assert!(
-            first.height >= measured.as_f32() - 1.0,
-            "{} < {measured:?}",
-            first.height
+            (inner_right - right).abs() < 1.5,
+            "{right} vs {inner_right}"
+        );
+        // The empty cell is drawn and holds an insertion point.
+        let empty = table
+            .cells
+            .iter()
+            .find(|c| c.row == 2 && c.column == 1)
+            .unwrap();
+        assert!(empty.content.is_empty() && !empty.missing);
+    }
+
+    /// US-048: the keystroke that wraps a cell to a second row shows the
+    /// taller row in the first frame drawn after it, with the layout's
+    /// height: there is no measuring frame.
+    #[gpui::test]
+    fn a_wrapping_keystroke_grows_the_row_in_the_next_frame(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, DOC);
+        set_cursor(&editor, cx, pos("alpha beta") + 10);
+        let row_height = cell(&editor, cx, 2, 0).size.height;
+        let mut grown = None;
+        for step in 0..120 {
+            let before = editor.read_with(cx, |e, _| e.frames.len());
+            cx.simulate_input(if step % 2 == 0 { "word" } else { " " });
+            let first = editor.read_with(cx, |e, _| {
+                assert!(e.frames.len() > before, "the keystroke drew a frame");
+                let frame = &e.frames[before];
+                frame
+                    .cells
+                    .iter()
+                    .find(|(n, _)| n == "table-cell-2-0")
+                    .map(|(_, b)| *b)
+                    .expect("the cell drawn")
+            });
+            if first.size.height > row_height {
+                grown = Some(first);
+                break;
+            }
+        }
+        let first = grown.expect("the cell wrapped");
+        assert!(table_drawn(&editor, cx));
+        let (block_height, table) = editor.update_in(cx, |editor, window, cx| {
+            let line = editor.layout_line(2, window, cx);
+            let Some(BlockKind::Table(table)) = line.block.map(|b| b.kind) else {
+                panic!("not a table");
+            };
+            (line.height, table)
+        });
+        let (_, layout_row) = table.rows[2];
+        assert!(
+            (first.size.height.as_f32() - layout_row).abs() < 0.5,
+            "{first:?} vs {layout_row}"
+        );
+        assert_eq!(
+            block_height, table.height,
+            "the line is as tall as the table"
+        );
+        let caret = last_caret(&editor, cx);
+        assert!(
+            first.contains(&caret.center()),
+            "the caret stays in the grown cell"
+        );
+    }
+
+    /// US-051: a click puts the caret in the cell, a click on a padding in
+    /// the nearest cell, never a whole-table selection; the caret is drawn
+    /// in the cell, one text row tall, even in an empty cell.
+    #[gpui::test]
+    fn clicks_put_the_caret_in_cells(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, DOC);
+        set_cursor(&editor, cx, DOC.len());
+        let alpha = pos("alpha");
+        let at = point_at(&editor, cx, alpha + 2);
+        click(cx, at, 1, false);
+        assert_eq!(selection(&editor, cx), vec![(alpha + 2, alpha + 2)]);
+        assert!(table_drawn(&editor, cx), "a click keeps the table drawn");
+        let caret = last_caret(&editor, cx);
+        let alpha_cell = cell(&editor, cx, 2, 0);
+        assert!(
+            alpha_cell.contains(&caret.center()),
+            "{caret:?} in {alpha_cell:?}"
+        );
+        let row_height = editor.read_with(cx, |e, _| {
+            e.config.text_size() * cerata_markdown::table::CELL_LINE_HEIGHT
+        });
+        assert!((caret.size.height.as_f32() - row_height).abs() < 0.5);
+
+        // On the right padding of the header's first cell: its content's end.
+        let link = cell(&editor, cx, 0, 0);
+        click(cx, point(link.right() - px(3.0), link.center().y), 1, false);
+        assert_eq!(
+            selection(&editor, cx),
+            vec![(pos("Link") + 4, pos("Link") + 4)]
         );
 
-        // A link in a cell opens; the caret stays where it was.
-        let inside = point(cell.left() + px(16.0), cell.top() + cell.size.height / 2.0);
-        press(cx, inside, 1, false);
-        release(cx, inside);
-        cx.run_until_parked();
+        // In the empty cell: its insertion point, the caret drawn there.
+        let empty = cell(&editor, cx, 2, 1);
+        click(cx, empty.center(), 1, false);
+        let point_in = DOC.rfind("| |").unwrap() + 2;
+        assert_eq!(selection(&editor, cx), vec![(point_in, point_in)]);
+        let caret = last_caret(&editor, cx);
+        assert!(empty.contains(&caret.center()));
+        assert!((caret.size.height.as_f32() - row_height).abs() < 0.5);
+        assert!(table_drawn(&editor, cx));
+    }
+
+    /// US-051: a link in a cell opens and the caret stays; a double click
+    /// takes a word of the cell, a triple click the table, whose source
+    /// then shows.
+    #[gpui::test]
+    fn links_words_and_the_whole_table(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, DOC);
+        set_cursor(&editor, cx, DOC.len());
+        let link = cell(&editor, cx, 1, 0);
+        click(cx, point(link.left() + px(16.0), link.center().y), 1, false);
         assert_eq!(cx.opened_url().as_deref(), Some("https://example.test"));
         assert_eq!(selection(&editor, cx), vec![(DOC.len(), DOC.len())]);
 
-        // Anywhere else selects the whole table and reveals its source.
-        let header = cx.debug_bounds("table-header-1").expect("header");
-        let blank = point(header.right() - px(4.0), header.top() + px(4.0));
-        press(cx, blank, 1, false);
-        release(cx, blank);
+        let beta = pos("beta");
+        let at = point_at(&editor, cx, beta + 1);
+        press(cx, at, 1, false);
+        release(cx, at);
+        press(cx, at, 2, false);
+        release(cx, at);
         cx.run_until_parked();
-        let table_to = DOC.find("\n\nend").unwrap();
-        assert_eq!(selection(&editor, cx), vec![(table_to, table_from())]);
+        assert_eq!(selection(&editor, cx), vec![(beta, beta + 4)]);
+        assert!(table_drawn(&editor, cx));
+
+        press(cx, at, 3, false);
+        release(cx, at);
+        cx.run_until_parked();
+        let table = pos("| Link")..pos("\n\nend");
+        assert_eq!(selection(&editor, cx), vec![(table.start, table.end)]);
         let revealed = editor.update_in(cx, |editor, window, cx| {
-            (2..5)
-                .map(|ix| editor.layout_line(ix, window, cx).table_source)
+            (2..6)
+                .map(|ix| editor.layout_line(ix, window, cx).table_source.is_some())
                 .collect::<Vec<_>>()
         });
-        assert_eq!(
-            revealed,
-            vec![
-                Some((true, false)),
-                Some((false, false)),
-                Some((false, true))
-            ]
+        assert_eq!(revealed, vec![true; 4]);
+    }
+
+    /// US-051: dragging in a cell selects its text with the usual rects;
+    /// Shift+click extends in the cell; a drag out of the table crosses its
+    /// edge and shows the source on release.
+    #[gpui::test]
+    fn drags_select_in_the_cell_or_across_the_edge(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, DOC);
+        set_cursor(&editor, cx, DOC.len());
+        let alpha = pos("alpha");
+        let from = point_at(&editor, cx, alpha);
+        let to = point_at(&editor, cx, alpha + 5);
+        press(cx, from, 1, false);
+        drag_to(cx, to, true);
+        release(cx, to);
+        cx.run_until_parked();
+        assert_eq!(selection(&editor, cx), vec![(alpha, alpha + 5)]);
+        assert!(table_drawn(&editor, cx));
+        let rects = editor.read_with(cx, |e, _| e.frames.last().unwrap().selections.clone());
+        let alpha_cell = cell(&editor, cx, 2, 0);
+        assert!(!rects.is_empty() && rects.iter().all(|r| alpha_cell.contains(&r.center())));
+
+        let extend = point_at(&editor, cx, alpha + 8);
+        click(cx, extend, 1, true);
+        assert_eq!(selection(&editor, cx), vec![(alpha, alpha + 8)]);
+
+        // Out of the table, below it: the source is revealed on release.
+        let end = point_at(&editor, cx, DOC.len());
+        press(cx, from, 1, false);
+        drag_to(cx, end, true);
+        assert!(table_drawn(&editor, cx), "frozen while dragging");
+        release(cx, end);
+        cx.run_until_parked();
+        assert_eq!(selection(&editor, cx), vec![(alpha, DOC.len())]);
+        assert!(!table_drawn(&editor, cx));
+    }
+
+    /// US-051 and ADR 0007: typed `|` is escaped, the IME's marked text
+    /// shows in the cell and its window follows the cell's caret.
+    #[gpui::test]
+    fn typing_and_composing_in_a_cell(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, DOC);
+        let alpha = pos("alpha");
+        set_cursor(&editor, cx, alpha + 5);
+        cx.simulate_input("|x");
+        assert!(doc(&editor, cx).contains("| alpha\\|x beta | |"));
+        assert!(table_drawn(&editor, cx));
+        let caret_pos = alpha + 8;
+        assert_eq!(selection(&editor, cx), vec![(caret_pos, caret_pos)]);
+        editor.update_in(cx, |editor, window, cx| {
+            editor.replace_and_mark_text_in_range(None, "にほ", None, window, cx);
+        });
+        cx.run_until_parked();
+        assert!(doc(&editor, cx).contains("alpha\\|xにほ beta"));
+        let alpha_cell = cell(&editor, cx, 2, 0);
+        let bounds = editor.update_in(cx, |editor, window, cx| {
+            let utf16 = super::super::input::to_utf16(editor.state.text(), caret_pos);
+            editor
+                .bounds_for_range(utf16..utf16 + 2, Default::default(), window, cx)
+                .expect("bounds")
+        });
+        assert!(
+            alpha_cell.contains(&bounds.origin),
+            "{bounds:?} in {alpha_cell:?}"
         );
+        // Enter commits the composition and stays in the cell.
+        cx.simulate_keystrokes("enter");
+        let text = doc(&editor, cx);
+        assert!(text.contains("alpha\\|xにほ beta"), "{text}");
+        assert_eq!(selection(&editor, cx), vec![(caret_pos + 6, caret_pos + 6)]);
+        assert!(editor.read_with(cx, |e, _| e.marked_range.is_none()));
+        // Tab likewise: committed in place, no move to the next cell.
+        editor.update_in(cx, |editor, window, cx| {
+            editor.replace_and_mark_text_in_range(None, "ん", None, window, cx);
+        });
+        cx.run_until_parked();
+        cx.simulate_keystrokes("tab");
+        let text = doc(&editor, cx);
+        assert!(text.contains("alpha\\|xにほん beta"), "{text}");
+        assert_eq!(selection(&editor, cx), vec![(caret_pos + 9, caret_pos + 9)]);
+        assert!(editor.read_with(cx, |e, _| e.marked_range.is_none()));
+    }
+
+    /// US-052: Tab, Shift+Tab and Enter go from cell to cell, selecting
+    /// them; Tab in the last cell adds a row; Shift+Enter writes `<br>`.
+    #[gpui::test]
+    fn tab_and_enter_walk_the_cells(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, DOC);
+        set_cursor(&editor, cx, pos("Link") + 1);
+        cx.simulate_keystrokes("tab");
+        assert_eq!(selection(&editor, cx), vec![(pos("N |"), pos("N |") + 1)]);
+        cx.simulate_keystrokes("shift-tab");
+        assert_eq!(selection(&editor, cx), vec![(pos("Link"), pos("Link") + 4)]);
+        cx.simulate_keystrokes("enter");
+        let site = pos("[site]");
+        assert_eq!(selection(&editor, cx), vec![(site, pos(" | 2"))]);
+        let empty = DOC.rfind("| |").unwrap() + 2;
+        set_cursor(&editor, cx, empty);
+        cx.simulate_keystrokes("tab");
+        let text = doc(&editor, cx);
+        assert!(
+            text.contains("| alpha beta | |\n|            |  |\n\nend"),
+            "{text:?}"
+        );
+        cx.simulate_keystrokes(&secondary("z"));
+        assert_eq!(doc(&editor, cx), DOC);
+        set_cursor(&editor, cx, pos("alpha") + 5);
+        cx.simulate_keystrokes("shift-enter");
+        assert!(doc(&editor, cx).contains("| alpha<br> beta |"));
+        assert!(table_drawn(&editor, cx));
+    }
+
+    /// US-052: Up and Down keep the pixel column from cell to cell, leave
+    /// the table by its edges and enter it from the lines around without
+    /// revealing it; Home, End and Ctrl+A stay in the cell.
+    #[gpui::test]
+    fn arrows_home_end_and_select_all_in_cells(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, DOC);
+        set_cursor(&editor, cx, pos("N |") + 1);
+        cx.simulate_keystrokes("down");
+        assert_eq!(
+            selection(&editor, cx),
+            vec![(pos(" 2 |") + 2, pos(" 2 |") + 2)]
+        );
+        cx.simulate_keystrokes("down");
+        let empty = DOC.rfind("| |").unwrap() + 2;
+        assert_eq!(selection(&editor, cx), vec![(empty, empty)]);
+        assert!(table_drawn(&editor, cx));
+        // Down from the last row: the line below the table.
+        cx.simulate_keystrokes("down");
+        let below = pos("\n\nend") + 1;
+        assert_eq!(selection(&editor, cx), vec![(below, below)]);
+        // Up from the blank line below: into the last row, source hidden.
+        cx.simulate_keystrokes("up");
+        let (_, head) = selection(&editor, cx)[0];
+        assert!(
+            cerata_markdown::cells::cell_at(&editor.read_with(cx, |e, _| e.state.clone()), head)
+                .is_some()
+        );
+        assert!(table_drawn(&editor, cx));
+        // Up from the header: out by the top.
+        set_cursor(&editor, cx, pos("Link") + 2);
+        editor.update(cx, |e, _| e.goal_x = None);
+        cx.simulate_keystrokes("up");
+        assert_eq!(selection(&editor, cx), vec![(6, 6)]);
+        cx.simulate_keystrokes("down");
+        let (_, head) = selection(&editor, cx)[0];
+        assert!((pos("Link")..=pos("Link") + 4).contains(&head), "{head}");
+        assert!(table_drawn(&editor, cx));
+
+        let alpha = pos("alpha");
+        set_cursor(&editor, cx, alpha + 3);
+        cx.simulate_keystrokes("end");
+        assert_eq!(selection(&editor, cx), vec![(alpha + 10, alpha + 10)]);
+        cx.simulate_keystrokes("end");
+        assert_eq!(selection(&editor, cx), vec![(alpha + 10, alpha + 10)]);
+        cx.simulate_keystrokes("home");
+        assert_eq!(selection(&editor, cx), vec![(alpha, alpha)]);
+        cx.simulate_keystrokes(&secondary("a"));
+        assert_eq!(selection(&editor, cx), vec![(alpha, alpha + 10)]);
+        cx.simulate_keystrokes(&secondary("a"));
+        assert_eq!(selection(&editor, cx), vec![(0, DOC.len())]);
+        // Left from a content's start: the previous content's end.
+        set_cursor(&editor, cx, pos("2 |"));
+        cx.simulate_keystrokes("left");
+        let site_end = pos(" | 2");
+        assert_eq!(selection(&editor, cx), vec![(site_end, site_end)]);
     }
 }
 

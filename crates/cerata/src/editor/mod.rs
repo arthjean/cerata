@@ -39,6 +39,7 @@ pub mod mermaid;
 mod mouse;
 mod rail;
 pub mod search;
+mod table;
 pub mod text_field;
 pub mod theme;
 
@@ -172,6 +173,8 @@ pub struct Editor {
     pub notice: Option<SharedString>,
     /// Lines laid out by the last frame.
     pub laid_out: Range<usize>,
+    /// Tables laid out for the current state, by line.
+    tables: TableCache,
     /// Every frame drawn, oldest first (tests clear it).
     #[cfg(test)]
     pub frames: Vec<element::FrameRecord>,
@@ -236,6 +239,7 @@ impl Editor {
             menu: None,
             notice: None,
             laid_out: 0..0,
+            tables: TableCache::default(),
             #[cfg(test)]
             frames: Vec::new(),
             epoch: Instant::now(),
@@ -316,6 +320,7 @@ impl Editor {
         self.config = config;
         self.fonts = None;
         self.ch = None;
+        self.tables = TableCache::default();
         self.estimated_for = 0.0;
         cx.notify();
     }
@@ -636,10 +641,13 @@ impl Editor {
             marked: self.marked_range.clone(),
             code_scroll: &scroll_for,
         };
+        self.tables
+            .validate(&self.state, column_width, &self.config, &self.marked_range);
         let mut sizer = Sizer {
             images: &mut self.images,
             rich: &mut self.rich,
             math: &mut self.math,
+            tables: &mut self.tables,
             jobs,
             row_height,
             font_size: self.config.text_size(),
@@ -691,6 +699,32 @@ impl Editor {
         }
     }
 
+    /// The line the caret at `pos` is drawn on: the cell line holding it
+    /// in a drawn table, else its document line.
+    pub(crate) fn text_line(
+        &mut self,
+        pos: usize,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> table::TextLine {
+        if let Some(grid) = cerata_markdown::cells::grid_at(&self.state, pos) {
+            let first = self.state.text().line_at(grid.range.start).number;
+            let line = self.layout_line(first, window, cx);
+            if let Some(block) = &line.block
+                && let layout::BlockKind::Table(t) = &block.kind
+                && let Some((cell, segment)) = t.segment_for(pos)
+            {
+                return table::TextLine::Cell {
+                    table: t.clone(),
+                    cell,
+                    segment,
+                };
+            }
+        }
+        let ix = self.state.text().line_at(pos).number;
+        table::TextLine::Line(Box::new(self.layout_line(ix, window, cx)))
+    }
+
     /// Window bounds of the caret at `offset`.
     pub fn caret_bounds(
         &mut self,
@@ -700,9 +734,8 @@ impl Editor {
     ) -> Option<Bounds<Pixels>> {
         let viewport = self.viewport?;
         let offset = self.state.text().floor_char_boundary(offset);
-        let ix = self.state.text().line_at(offset).number;
-        let line = self.layout_line(ix, window, cx);
-        let top = self.line_screen_top(ix);
+        let line = self.text_line(offset, window, cx);
+        let top = self.line_screen_top(line.ix);
         let x0 = viewport.column_left + px(line.text_left);
         match &line.wrapped {
             None => Some(Bounds::new(
@@ -725,10 +758,15 @@ impl Editor {
         }
     }
 
-    /// The wrapped row of `pos`: its buffer range, its index and its count.
-    fn row_at(&mut self, pos: usize, window: &Window, cx: &mut Context<Self>) -> (LaidLine, usize) {
-        let ix = self.state.text().line_at(pos).number;
-        let line = self.layout_line(ix, window, cx);
+    /// The wrapped row of `pos`: its line (a cell line in a drawn table)
+    /// and the row's index.
+    fn row_at(
+        &mut self,
+        pos: usize,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> (table::TextLine, usize) {
+        let line = self.text_line(pos, window, cx);
         let display = line.display.to_display(pos - line.start);
         let row = line
             .row_starts
@@ -915,6 +953,7 @@ struct Sizer<'a> {
     images: &'a mut ImageHost,
     rich: &'a mut blocks::RichBlocks,
     math: &'a mut math::MathHost,
+    tables: &'a mut TableCache,
     jobs: &'a mut Vec<LoadJob>,
     row_height: f32,
     font_size: f32,
@@ -944,5 +983,67 @@ impl layout::BlockSizer for Sizer<'_> {
             return math::block_height(&state, tex, self.font_size, self.row_height);
         }
         self.rich.height(widget, width, self.font_size)
+    }
+
+    fn table(&mut self, ix: usize) -> Option<Rc<table::TableLayout>> {
+        self.tables
+            .layouts
+            .iter()
+            .find(|(i, _)| *i == ix)
+            .map(|(_, t)| t.clone())
+    }
+
+    fn keep_table(&mut self, ix: usize, table: Rc<table::TableLayout>) {
+        if self.tables.layouts.len() >= 8 {
+            self.tables.layouts.remove(0);
+        }
+        self.tables.layouts.push((ix, table));
+    }
+}
+
+/// What a table's layout depends on besides its line and the settings
+/// (a change of settings empties the cache): the text, the selection (what
+/// is revealed), a drag's frozen selection, the IME's marked range, the
+/// column width, the text size and the palette (a theme change that keeps
+/// the mode still recolors the cells' text).
+type TableKey = (
+    u64,
+    Selection,
+    Option<Selection>,
+    Option<Range<usize>>,
+    u32,
+    u32,
+    theme::Palette,
+);
+
+/// Table layouts valid for one state of the editor, so a table is laid out
+/// once per state whatever asks for it (US-048).
+#[derive(Default)]
+struct TableCache {
+    key: Option<TableKey>,
+    layouts: Vec<(usize, Rc<table::TableLayout>)>,
+}
+
+impl TableCache {
+    fn validate(
+        &mut self,
+        state: &EditorState,
+        width: f32,
+        config: &EditorConfig,
+        marked: &Option<Range<usize>>,
+    ) {
+        let key = (
+            state.revision(),
+            state.selection().clone(),
+            state.drag_selection().cloned(),
+            marked.clone(),
+            width.to_bits(),
+            config.text_size().to_bits(),
+            theme::palette(),
+        );
+        if self.key.as_ref() != Some(&key) {
+            self.key = Some(key);
+            self.layouts.clear();
+        }
     }
 }

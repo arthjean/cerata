@@ -24,9 +24,14 @@ pub fn reveal_block_on_arrow(state: &EditorState, direction: Vertical) -> Option
     let text = state.text();
     let line = text.line_at(state.selection().main().head).number;
     let decorations = state.decorations_in(run_start(text, line)..run_end(text, line));
+    // A drawn table is entered by the editor's geometry, cell first
+    // (ADR 0007, decision 8): no source to reveal.
     let widgets: Vec<_> = decorations
         .iter()
-        .filter(|d| d.widget().is_some_and(Widget::is_fold))
+        .filter(|d| {
+            d.widget()
+                .is_some_and(|w| w.is_fold() && !matches!(w, Widget::Table { .. }))
+        })
         .map(Decoration::range)
         .collect();
     let head = state.selection().main().head;

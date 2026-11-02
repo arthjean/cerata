@@ -315,72 +315,213 @@ fn ranged_decorations_match_the_whole_document_line_by_line() {
     }
 }
 
-/// `table-decorations.test.ts:134-190`.
+/// ADR 0007, decision 2: the grid stays drawn while the selection is in
+/// one cell's content; inside the cell, only the marks the selection
+/// touches are revealed. Replaces Writer's reveal on contact
+/// (`table-decorations.test.ts:134-190`).
 #[test]
-fn tables_fold_to_a_widget_and_unfold_as_source_lines() {
+fn a_table_stays_drawn_while_the_selection_is_in_one_cell() {
+    let before = "before\n";
+    let table = "| Name | **Count** |\n| --- | ---: |\n| Tea | 2 |";
+    let doc = format!("{before}{table}\n\nafter");
+    let (from, to) = (before.len(), before.len() + table.len());
+    let is_table = |d: &Decoration| matches!(d.widget(), Some(Widget::Table { .. }));
+    let widget_range = |d: &[Decoration]| d.iter().find(|d| is_table(d)).map(|d| d.range());
+
+    let folded = at(&doc, 0);
+    assert_eq!(widget_range(&folded), Some(from..to));
+    assert!(folded.iter().any(|d| matches!(
+        d,
+        Decoration::Replace {
+            block: true,
+            widget: Widget::Table { range, .. },
+            ..
+        } if *range == (from..to)
+    )));
+
+    // A caret in "Name" and in "Tea": still the grid, `**` hidden.
+    let name = doc.find("Name").unwrap();
+    let tea = doc.find("Tea").unwrap();
+    let count = doc.find("Count").unwrap();
+    for caret in [name, name + 4, tea + 1] {
+        let d = at(&doc, caret);
+        assert_eq!(widget_range(&d), Some(from..to), "{caret}");
+        assert!(hidden(&d).contains(&(count - 2..count)), "{caret}");
+    }
+    // In the bold cell: the grid, the marks it touches revealed.
+    let d = at(&doc, count + 1);
+    assert_eq!(widget_range(&d), Some(from..to));
+    assert!(!hidden(&d).contains(&(count - 2..count)));
+    assert!(source_lines(&d).is_empty());
+
+    // A range inside one cell keeps the grid.
+    let state = EditorState::with_filters(&doc, Vec::new());
+    let in_cell = Selection::single(name, name + 4);
+    assert!(
+        decorate(state.tree(), state.text(), &in_cell, None)
+            .iter()
+            .any(is_table)
+    );
+}
+
+/// The source comes back when a range crosses a cell's edge or the table's,
+/// covers the whole table, or a caret sits on its structure.
+#[test]
+fn a_selection_leaving_the_cell_reveals_the_table_source() {
     let before = "before\n";
     let table = "| Name | Count |\n| --- | ---: |\n| Tea | 2 |";
     let doc = format!("{before}{table}\n\nafter");
     let (from, to) = (before.len(), before.len() + table.len());
-    let is_table = |d: &Decoration| matches!(d.widget(), Some(Widget::Table { .. }));
-    let source_lines = |d: &[Decoration]| -> Vec<LineStyle> {
-        d.iter()
-            .filter_map(|d| match d {
-                Decoration::Line {
-                    style: s @ LineStyle::TableSource { .. },
-                    ..
-                } => Some(*s),
-                _ => None,
-            })
-            .collect()
-    };
-
-    let folded = at(&doc, 0);
-    let widget = folded.iter().find(|d| is_table(d)).unwrap();
-    assert_eq!(widget.range(), from..to);
-    assert!(matches!(widget, Decoration::Replace { block: true, .. }));
-    assert!(source_lines(&folded).is_empty());
-
-    let touched = at(&doc, from + 2);
-    assert!(!touched.iter().any(is_table));
-    assert_eq!(
-        source_lines(&touched),
-        [
-            LineStyle::TableSource {
-                first: true,
-                last: false
-            },
-            LineStyle::TableSource {
-                first: false,
-                last: false
-            },
-            LineStyle::TableSource {
-                first: false,
-                last: true
-            },
-        ]
-    );
-
-    // Selecting the whole table keeps its source.
     let state = EditorState::with_filters(&doc, Vec::new());
-    let all = decorate(
-        state.tree(),
-        state.text(),
-        &Selection::single(to, from),
-        None,
+    let deco = |selection: Selection| decorate(state.tree(), state.text(), &selection, None);
+    let name = doc.find("Name").unwrap();
+    let tea = doc.find("Tea").unwrap();
+    let expected = [
+        LineStyle::TableSource {
+            first: true,
+            last: false,
+        },
+        LineStyle::TableSource {
+            first: false,
+            last: false,
+        },
+        LineStyle::TableSource {
+            first: false,
+            last: true,
+        },
+    ];
+    for selection in [
+        // Across a pipe, into the next cell.
+        Selection::single(name, doc.find("Count").unwrap() + 1),
+        // From above the table into a cell.
+        Selection::single(2, tea + 1),
+        // Out of the table below.
+        Selection::single(tea, doc.len()),
+        // The whole table.
+        Selection::single(to, from),
+        // A caret on a pipe, or on the delimiter row.
+        Selection::cursor(from),
+        Selection::cursor(doc.find("---").unwrap()),
+    ] {
+        let d = deco(selection.clone());
+        assert!(
+            !d.iter()
+                .any(|d| matches!(d.widget(), Some(Widget::Table { .. }))),
+            "{selection:?}"
+        );
+        assert_eq!(source_lines(&d), expected, "{selection:?}");
+    }
+    // A caret elsewhere, with another range in a cell: the grid.
+    let two = Selection::new(
+        vec![SelectionRange::cursor(0), SelectionRange::cursor(tea)],
+        0,
     );
-    assert!(!all.iter().any(is_table));
-    assert_eq!(source_lines(&all).len(), 3);
+    assert!(source_lines(&deco(two)).is_empty());
+}
+
+fn source_lines(d: &[Decoration]) -> Vec<LineStyle> {
+    d.iter()
+        .filter_map(|d| match d {
+            Decoration::Line {
+                style: s @ LineStyle::TableSource { .. },
+                ..
+            } => Some(*s),
+            _ => None,
+        })
+        .collect()
 }
 
 #[test]
-fn a_table_in_a_quote_keeps_its_rows_without_the_marks() {
+fn a_table_in_a_quote_gets_its_grid_without_the_marks() {
     let doc = "> | a | b |\n> | - | - |\n> | 1 | 2 |\n\nx";
     let d = at(doc, doc.len());
-    let Some(Widget::Table { source }) = d.iter().find_map(|d| d.widget()).cloned() else {
+    let Some(Widget::Table { range, grid }) = d.iter().find_map(|d| d.widget()).cloned() else {
         panic!("no table widget");
     };
-    assert_eq!(source, "| a | b |\n| - | - |\n| 1 | 2 |");
+    assert_eq!(range, grid.range);
+    let cells: Vec<&str> = grid
+        .drawn_cells()
+        .map(|(_, _, c)| &doc[c.content.clone()])
+        .collect();
+    assert_eq!(cells, ["a", "b", "1", "2"]);
+}
+
+/// US-049: an unclosed `**` in a cell is text: nothing is hidden and the
+/// grid keeps its cells.
+#[test]
+fn an_unclosed_mark_in_a_cell_shows_as_typed() {
+    let doc = "| **open | b |\n| - | - |\n| c | d |\n\nx";
+    let d = at(doc, doc.len());
+    let Some(Widget::Table { grid, .. }) = d.iter().find_map(|d| d.widget()).cloned() else {
+        panic!("no table widget");
+    };
+    let cells: Vec<&str> = grid
+        .drawn_cells()
+        .map(|(_, _, c)| &doc[c.content.clone()])
+        .collect();
+    assert_eq!(cells, ["**open", "b", "c", "d"]);
+    let marks = doc.find("**").unwrap();
+    assert!(
+        hidden(&d)
+            .iter()
+            .all(|r| r.end <= marks || r.start >= marks + 2)
+    );
+}
+
+/// A cell's `\|` reads as `|` whatever the caret in its row, and shows as
+/// typed once the table's source is revealed.
+#[test]
+fn an_escaped_pipe_in_a_drawn_table_stays_hidden() {
+    let doc = "| a\\|b | c |\n| - | - |\n\nx";
+    let escape = doc.find('\\').unwrap();
+    for caret in [escape, escape + 2, doc.find('c').unwrap()] {
+        assert!(
+            hidden(&at(doc, caret)).contains(&(escape..escape + 1)),
+            "{caret}"
+        );
+    }
+    let state = EditorState::with_filters(doc, Vec::new());
+    let all = Selection::single(0, doc.find("\n\n").unwrap());
+    let revealed = decorate(state.tree(), state.text(), &all, None);
+    assert!(!hidden(&revealed).contains(&(escape..escape + 1)));
+}
+
+/// Cells past the header's width are not drawn (GFM): their table shows its
+/// grid while untouched and its source on contact, as in Writer, so they
+/// never hide while the table is edited.
+#[test]
+fn a_table_with_cells_past_its_header_reveals_its_source_on_contact() {
+    let doc = "intro\n\n| a | b |\n|---|---|\n| 1 | 2 | extra |\n\nend";
+    let is_table = |d: &[Decoration]| {
+        d.iter()
+            .any(|d| matches!(d.widget(), Some(Widget::Table { .. })))
+    };
+    assert!(is_table(&at(doc, 0)), "untouched: the grid");
+    let one = doc.find("1 |").unwrap();
+    let d = at(doc, one);
+    assert!(!is_table(&d), "a caret in a cell: the source");
+    assert_eq!(source_lines(&d).len(), 3);
+}
+
+/// A table is decided drawn once, not once per `\|`: a 200 × 8 table with
+/// one in every cell took 247 ms to decorate, every keystroke.
+/// `cargo test -p cerata_markdown --release -- --ignored`.
+#[test]
+#[ignore = "release measurement"]
+fn escaped_pipes_in_a_large_table_decorate_within_a_frame() {
+    let mut doc = String::from("| a | b | c | d | e | f | g | h |\n");
+    doc.push_str("|---|---|---|---|---|---|---|---|\n");
+    for _ in 0..200 {
+        doc.push_str(&"| a\\|b ".repeat(8));
+        doc.push_str("|\n");
+    }
+    let state = EditorState::with_filters(&doc, Vec::new());
+    let caret = Selection::cursor(doc.find("a\\|b").unwrap());
+    let start = std::time::Instant::now();
+    let d = decorate(state.tree(), state.text(), &caret, None);
+    let elapsed = start.elapsed();
+    assert_eq!(hidden(&d).len(), 1600);
+    assert!(elapsed.as_secs_f64() < 0.004, "{elapsed:?}");
 }
 
 /// `wiki-link-extension.ts:195-238`: the alias (else the target) while the

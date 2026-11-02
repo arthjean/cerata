@@ -76,8 +76,10 @@ fn decorations_match_writer_snapshots() {
             .find(|p| p.exists())
             .unwrap_or_else(|| panic!("no fixture for {name}"));
         let doc = std::fs::read_to_string(source).unwrap();
-        // No selection filters: the snapshots were taken without them.
+        // No selection filters, and no caret passes (atomic blocks, table
+        // cells): the snapshots were taken on Writer's selections as given.
         let mut state = EditorState::with_filters(doc, Vec::new());
+        state.set_atomic_blocks(false);
         fixtures += 1;
         for case in snapshot["cases"].as_array().unwrap() {
             let ranges: Vec<SelectionRange> = case["selection"]

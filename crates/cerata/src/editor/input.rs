@@ -4,7 +4,7 @@
 
 use std::ops::Range;
 
-use cerata_markdown::{Change, Selection, SelectionRange, Text, Transaction, UserEvent};
+use cerata_markdown::{Change, Selection, Text, Transaction, UserEvent};
 use gpui::{Bounds, Context, EntityInputHandler, Pixels, Point, UTF16Selection, Window, point};
 
 use super::{Composition, Editor};
@@ -69,20 +69,23 @@ impl Editor {
         match committed {
             Some(text) if !text.is_empty() => {
                 let range = saved.replaced;
-                let text = text.to_owned();
                 self.update_state(cx, |state| {
-                    let caret = range.start + text.len();
-                    let _ = state.apply(
-                        Transaction::new()
-                            .change(Change::new(range, text))
-                            .select(Selection::cursor(caret))
-                            .event(UserEvent::Type)
-                            .scroll(),
-                    );
+                    state.type_text(Some(range), text, UserEvent::Type)
                 });
             }
             _ => self.on_changed(cx),
         }
+    }
+
+    /// Commits the IME composition in progress, as it stands; `true` when
+    /// there was one (Tab and Enter commit it and do nothing else).
+    pub(crate) fn commit_composition(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(range) = self.marked_range.clone() else {
+            return false;
+        };
+        let text = self.state.text().slice(range).to_owned();
+        self.end_composition(Some(&text), cx);
+        true
     }
 
     /// Typed text at every selection range (or `range`, from the OS).
@@ -90,37 +93,9 @@ impl Editor {
         if range.is_none() && text == "-" && self.open_frontmatter(cx) {
             return;
         }
-        let text = text.to_owned();
         self.typed = true;
-        self.update_state(cx, |state| {
-            let ranges: Vec<SelectionRange> = match range {
-                Some(range) => vec![SelectionRange::new(range.start, range.end)],
-                None => state.selection().ranges().to_vec(),
-            };
-            let mut changes = Vec::new();
-            let mut carets = Vec::new();
-            let mut shift: isize = 0;
-            for r in &ranges {
-                // At a diagram's boundary: on a line of its own.
-                let (insert, caret) = match r.is_empty() {
-                    true => cerata_markdown::atomic::typed_at(state, r.head, &text),
-                    false => None,
-                }
-                .unwrap_or_else(|| (text.clone(), text.len()));
-                let end = r.from() as isize + shift + caret as isize;
-                carets.push(SelectionRange::cursor(end.max(0) as usize));
-                shift += insert.len() as isize - r.range().len() as isize;
-                changes.push(Change::new(r.range(), insert));
-            }
-            let main = state.selection().main_index().min(carets.len() - 1);
-            let _ = state.apply(
-                Transaction::new()
-                    .changes(changes)
-                    .select(Selection::new(carets, main))
-                    .event(UserEvent::Type)
-                    .scroll(),
-            );
-        });
+        // Escaped in a table cell, on its own line at a diagram's boundary.
+        self.update_state(cx, |state| state.type_text(range, text, UserEvent::Type));
     }
 }
 

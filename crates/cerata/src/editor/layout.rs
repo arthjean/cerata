@@ -133,6 +133,9 @@ pub enum BlockKind {
     /// A rich block (`blocks::is_rich`): drawn by `RichBlocks`. A block
     /// spanning several lines sits on its first line; the others are hidden.
     Rich(Widget),
+    /// A drawn table, laid out with its cells (`table.rs`); like a rich
+    /// block, it sits on its first line.
+    Table(std::rc::Rc<super::table::TableLayout>),
 }
 
 /// What sizes the block widgets of a line.
@@ -144,6 +147,9 @@ pub trait BlockSizer {
     fn math(&mut self, tex: &str, display: bool) -> super::math::MathState;
     /// Height of a rich block in a column `width` wide.
     fn rich_height(&mut self, widget: &Widget, width: f32) -> f32;
+    /// The table already laid out on line `ix` for this state, if any.
+    fn table(&mut self, ix: usize) -> Option<std::rc::Rc<super::table::TableLayout>>;
+    fn keep_table(&mut self, ix: usize, table: std::rc::Rc<super::table::TableLayout>);
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -411,6 +417,42 @@ pub fn layout_line(
                     atomic_end: None,
                 });
             }
+            Widget::Table { grid, .. } => {
+                // Laid out once per state of the editor: hit-testing, the
+                // caret's row and the paint all ask for it (US-048).
+                let laid = match sizer.table(ix) {
+                    Some(laid) => laid,
+                    None => {
+                        let own;
+                        let table_inputs = if inputs.covers(&grid.range) {
+                            inputs
+                        } else {
+                            own = FrameInputs::collect(state, grid.range.clone(), &mut |_, _| {
+                                std::rc::Rc::new(Vec::new())
+                            });
+                            &own
+                        };
+                        let laid = std::rc::Rc::new(super::table::layout(
+                            state,
+                            ix,
+                            grid.clone(),
+                            table_inputs,
+                            cx,
+                            window,
+                        ));
+                        sizer.keep_table(ix, laid.clone());
+                        laid
+                    }
+                };
+                block = Some(LineBlock {
+                    top: 0.0,
+                    width: laid.width,
+                    height: laid.height,
+                    kind: BlockKind::Table(laid),
+                    replaces,
+                    atomic_end: None,
+                });
+            }
             w if super::blocks::is_rich(w) => {
                 block = Some(LineBlock {
                     kind: BlockKind::Rich(w.clone()),
@@ -604,11 +646,13 @@ pub fn layout_line(
         let runs = runs(
             &display,
             line.from,
-            inputs,
+            &inputs.spans,
+            &inputs.highlights,
             &invisible,
             &errors,
             marked,
             style,
+            false,
             muted_source,
             table_source.is_some(),
             cx,
@@ -705,24 +749,26 @@ fn text_run(len: usize, family: &SharedString, bold: bool, color: Hsla) -> TextR
     }
 }
 
-/// Text runs of the display line: one per stretch of uniform style.
+/// Text runs of the display line: one per stretch of uniform style. A
+/// table's header cell (`header`) is set in the heading weight.
 #[allow(clippy::too_many_arguments)]
-fn runs(
+pub(super) fn runs(
     display: &DisplayLine,
     line_from: usize,
-    inputs: &FrameInputs,
+    spans: &[(Range<usize>, Span)],
+    highlights: &[HighlightSpan],
     invisible: &[Range<usize>],
     errors: &[Range<usize>],
     marked: Option<Range<usize>>,
     style: Option<LineStyle>,
+    header: bool,
     muted_source: bool,
     table_source: bool,
     cx: &LayoutCx<'_>,
 ) -> Vec<TextRun> {
     let line_end = line_from + display.buffer_len;
     let line_range = line_from..line_end;
-    let spans: Vec<(Range<usize>, Span)> = inputs
-        .spans
+    let spans: Vec<(Range<usize>, Span)> = spans
         .iter()
         .filter(|(r, _)| overlaps(r, &line_range))
         .map(|(r, s)| {
@@ -730,8 +776,7 @@ fn runs(
             (start..r.end.clamp(line_from, line_end) - line_from, *s)
         })
         .collect();
-    let highlights: Vec<(Range<usize>, Hsla)> = inputs
-        .highlights
+    let highlights: Vec<(Range<usize>, Hsla)> = highlights
         .iter()
         .filter(|h| overlaps(&h.range, &line_range))
         .map(|h| {
@@ -759,7 +804,7 @@ fn runs(
     boundaries.dedup();
 
     let code_line = matches!(style, Some(LineStyle::Code { .. }));
-    let heading = matches!(style, Some(LineStyle::Heading(_)));
+    let heading = matches!(style, Some(LineStyle::Heading(_))) || header;
     let style_at = |offset: usize| {
         let mut s = Style {
             bold: heading,

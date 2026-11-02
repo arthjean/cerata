@@ -1,8 +1,9 @@
-//! Rich block widgets drawn in place of their source: GFM tables (US-032).
-//! Each block is a GPUI element tree laid out in the editor's prepaint. A
-//! block reserves its estimated height until the first frame measures it;
-//! the measured height is kept per content and column width, so the line
-//! is laid out at its real height from then on.
+//! Rich block widgets drawn in place of their source (frontmatter, HTML,
+//! formulas, diagrams). Each block is a GPUI element tree laid out in the
+//! editor's prepaint. A block reserves its estimated height until the
+//! first frame measures it; the measured height is kept per content and
+//! column width, so the line is laid out at its real height from then on.
+//! Tables are laid out by the editor itself (`table.rs`, ADR 0007).
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -11,10 +12,9 @@ use std::rc::Rc;
 
 use cerata_markdown::Widget;
 use cerata_markdown::preview::Inline;
-use cerata_markdown::table::{self, Align, Table};
 use gpui::{
     AnyElement, App, Context, FontStyle, FontWeight, Hsla, MouseButton, SharedString,
-    StrikethroughStyle, StyledText, TextRun, Window, div, font, prelude::*, px, relative,
+    StrikethroughStyle, StyledText, TextRun, div, font, prelude::*, px,
 };
 
 use super::layout::Fonts;
@@ -40,7 +40,6 @@ pub struct BlockStyle {
 pub struct RichBlocks {
     /// Measured heights, by content and column width.
     measured: HashMap<(u64, u32), f32>,
-    tables: HashMap<u64, Rc<Option<Table>>>,
     html: super::html::HtmlBlocks,
 }
 
@@ -79,16 +78,6 @@ impl RichBlocks {
         self.html.toggle(key, index, default);
     }
 
-    fn table(&mut self, source: &str, key: u64) -> Rc<Option<Table>> {
-        if self.tables.len() > 256 {
-            self.tables.clear();
-        }
-        self.tables
-            .entry(key)
-            .or_insert_with(|| Rc::new(table::parse(source, |l| l)))
-            .clone()
-    }
-
     /// The height `widget` takes in a column `width` wide: measured when a
     /// frame drew it at that width, else estimated.
     pub fn height(&mut self, widget: &Widget, width: f32, font_size: f32) -> f32 {
@@ -97,10 +86,6 @@ impl RichBlocks {
             return *height;
         }
         match widget {
-            Widget::Table { source } => match self.table(source, key).as_ref() {
-                Some(t) => table::estimate_height(t, font_size),
-                None => font_size,
-            },
             // One row and the Add button, until a frame measures it.
             Widget::Frontmatter => 96.0,
             Widget::Html { source } => source.lines().count().max(1) as f32 * font_size * 1.6,
@@ -123,27 +108,6 @@ impl RichBlocks {
         let changed = (*slot - height).abs() > 0.5;
         *slot = height;
         changed
-    }
-
-    /// The element drawn for `widget` in a column `width` wide.
-    pub fn element(
-        &mut self,
-        widget: &Widget,
-        width: f32,
-        style: &BlockStyle,
-        window: &Window,
-        cx: &mut Context<Editor>,
-    ) -> AnyElement {
-        match widget {
-            Widget::Table { source } => {
-                let parsed = self.table(source, key(widget));
-                match parsed.as_ref() {
-                    Some(t) => table_element(t, width, style, window, cx),
-                    None => div().into_any_element(),
-                }
-            }
-            _ => div().into_any_element(),
-        }
     }
 }
 
@@ -333,147 +297,5 @@ pub fn rich_text_element(rich: RichText, cx: &mut Context<Editor>) -> AnyElement
                 .update(cx, |editor, cx| editor.follow_link(target, window, cx))
                 .ok();
         })
-        .into_any_element()
-}
-
-// --- Tables ------------------------------------------------------------------
-
-fn shape_width(window: &Window, text: &str, family: &SharedString, bold: bool, size: f32) -> f32 {
-    if text.is_empty() {
-        return 0.0;
-    }
-    let mut f = font(family.clone());
-    if bold {
-        f.weight = FontWeight(600.0);
-    }
-    let run = TextRun {
-        len: text.len(),
-        font: f,
-        color: theme::text(),
-        background_color: None,
-        underline: None,
-        strikethrough: None,
-    };
-    window
-        .text_system()
-        .shape_line(SharedString::from(text.to_owned()), px(size), &[run], None)
-        .width()
-        .as_f32()
-}
-
-/// Longest word and whole content of a cell, in pixels.
-fn cell_extent(cell: &[Inline], style: &BlockStyle, bold: bool, window: &Window) -> (f32, f32) {
-    let plain = cerata_markdown::preview::plain_text(cell);
-    let family = &style.fonts.body;
-    let longest = plain
-        .split_whitespace()
-        .map(|w| shape_width(window, w, family, bold, style.font_size))
-        .fold(0.0, f32::max);
-    let content = plain
-        .lines()
-        .map(|l| shape_width(window, l, family, bold, style.font_size))
-        .fold(0.0, f32::max);
-    (longest.ceil(), content.ceil())
-}
-
-/// Column widths, padding included, for a table in a column `available`
-/// pixels wide.
-fn column_widths(t: &Table, available: f32, style: &BlockStyle, window: &Window) -> Vec<f32> {
-    let em = style.font_size;
-    let padding = 2.0 * table::CELL_HORIZONTAL_PADDING_EM * em + table::BORDER_WIDTH;
-    let ch = shape_width(window, "0", &style.fonts.body, false, em).max(em * 0.5);
-    let columns = t.columns();
-    let mut min = vec![padding; columns];
-    let mut max = vec![padding; columns];
-    let rows = std::iter::once((&t.header, true)).chain(t.rows.iter().map(|r| (r, false)));
-    for (row, bold) in rows {
-        for (c, cell) in row.iter().enumerate().take(columns) {
-            let (word, content) = cell_extent(cell, style, bold, window);
-            min[c] = min[c].max(word + padding);
-            max[c] = max[c].max(content + padding);
-        }
-    }
-    let cap = table::CELL_MAX_WIDTH_CH * ch + padding;
-    table::size_columns(&min, &max, available - table::BORDER_WIDTH, cap)
-        .into_iter()
-        .map(f32::ceil)
-        .collect()
-}
-
-fn table_element(
-    t: &Table,
-    available: f32,
-    style: &BlockStyle,
-    window: &Window,
-    cx: &mut Context<Editor>,
-) -> AnyElement {
-    let em = style.font_size;
-    let widths = column_widths(t, available, style, window);
-    let columns = widths.len();
-    let border = theme::border();
-    let cell =
-        |content: &[Inline], c: usize, header: bool, last_row: bool, cx: &mut Context<Editor>| {
-            let rich = rich_text(content, &style.fonts, header);
-            let d = div();
-            #[cfg(test)]
-            let d = {
-                let name = if header {
-                    "table-header".to_owned()
-                } else {
-                    "table-cell".to_owned()
-                };
-                d.debug_selector(move || format!("{name}-{c}"))
-            };
-            let mut d = d
-                .w(px(widths[c]))
-                .flex_none()
-                .px(px(table::CELL_HORIZONTAL_PADDING_EM * em))
-                .py(px(table::CELL_VERTICAL_PADDING_EM * em / 2.0))
-                .line_height(relative(table::CELL_LINE_HEIGHT))
-                .border_color(border)
-                .child(rich_text_element(rich, cx));
-            if c + 1 < columns {
-                d = d.border_r_1();
-            }
-            if !last_row {
-                d = d.border_b_1();
-            }
-            match t.alignments.get(c).copied().flatten() {
-                Some(Align::Center) => d = d.text_center(),
-                Some(Align::Right) => d = d.text_right(),
-                _ => {}
-            }
-            if header {
-                d = d.bg(theme::code_background());
-            }
-            d
-        };
-    let body_rows = t.rows.len();
-    let mut grid = div()
-        .flex()
-        .flex_col()
-        .border_1()
-        .border_color(border)
-        .rounded(px(8.0))
-        .overflow_hidden()
-        .text_size(px(em))
-        .text_color(theme::text())
-        .font_family(style.fonts.body.clone());
-    let mut header = div().flex();
-    for (c, content) in t.header.iter().enumerate() {
-        header = header.child(cell(content, c, true, body_rows == 0, cx));
-    }
-    grid = grid.child(header);
-    for (r, row) in t.rows.iter().enumerate() {
-        let mut line = div().flex();
-        for (c, content) in row.iter().enumerate() {
-            line = line.child(cell(content, c, false, r + 1 == body_rows, cx));
-        }
-        grid = grid.child(line);
-    }
-    div()
-        .w(px(available))
-        .py(px(table::WIDGET_VERTICAL_PADDING_EM * em / 2.0))
-        .child(div().flex().child(grid))
         .into_any_element()
 }

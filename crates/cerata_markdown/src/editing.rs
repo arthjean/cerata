@@ -204,6 +204,60 @@ impl EditorState {
         changes
     }
 
+    /// Typed, pasted or committed text at every selection range (or at
+    /// `range`, from the OS): escaped in a table cell (`cells.rs`), on a
+    /// line of its own at a diagram's boundary (`atomic.rs`). Every caret
+    /// lands after its insert; a range a cell refuses is left as it is.
+    pub fn type_text(&mut self, range: Option<Range<usize>>, text: &str, event: UserEvent) -> bool {
+        if self.is_loading() {
+            return false;
+        }
+        let ranges: Vec<SelectionRange> = match range {
+            Some(range) => vec![SelectionRange::new(range.start, range.end)],
+            None => self.selection().ranges().to_vec(),
+        };
+        let mut changes = Vec::new();
+        let mut carets = Vec::new();
+        let mut shift: isize = 0;
+        for r in &ranges {
+            let (change, caret) = match crate::cells::cell_edit(self, r.range(), text) {
+                crate::cells::CellEdit::Edit(change) => {
+                    let caret = change.insert.len();
+                    (change, caret)
+                }
+                crate::cells::CellEdit::Refused => {
+                    let moved = |pos: usize| (pos as isize + shift).max(0) as usize;
+                    carets.push(SelectionRange::new(moved(r.anchor), moved(r.head)));
+                    continue;
+                }
+                crate::cells::CellEdit::Outside => {
+                    let typed = match r.is_empty() {
+                        true => crate::atomic::typed_at(self, r.head, text),
+                        false => None,
+                    };
+                    let (insert, caret) = typed.unwrap_or_else(|| (text.to_owned(), text.len()));
+                    (Change::new(r.range(), insert), caret)
+                }
+            };
+            let end = change.from as isize + shift + caret as isize;
+            carets.push(SelectionRange::cursor(end.max(0) as usize));
+            shift += change.insert.len() as isize - (change.to - change.from) as isize;
+            changes.push(change);
+        }
+        if changes.is_empty() {
+            return true;
+        }
+        let main = self.selection().main_index().min(carets.len() - 1);
+        self.apply(
+            Transaction::new()
+                .changes(changes)
+                .select(Selection::new(carets, main))
+                .event(event)
+                .scroll(),
+        )
+        .is_ok()
+    }
+
     /// Enter: the first handler that takes the key, else a newline that
     /// keeps the line's indentation, at every selection range.
     pub fn insert_newline(&mut self) -> bool {
@@ -243,38 +297,27 @@ impl EditorState {
             .selection()
             .ranges()
             .iter()
-            .map(|r| match r.is_empty() {
-                true => s[..r.head]
-                    .chars()
-                    .next_back()
-                    .map_or(r.head..r.head, |c| r.head - c.len_utf8()..r.head),
-                false => r.range(),
-            })
-            .collect();
-        if self.guard_atomic_deletes(&cut) {
-            return true;
-        }
-        if self.list_backspace() {
-            return true;
-        }
-        let s = self.doc();
-        let changes: Vec<Change> = self
-            .selection()
-            .ranges()
-            .iter()
-            .filter_map(|r| {
+            .map(|r| {
                 if !r.is_empty() {
-                    return Some(Change::delete(r.range()));
+                    return r.range();
                 }
                 let pos = r.head;
                 let width = if s.get(pos.saturating_sub(2)..pos) == Some("\r\n") {
                     2
                 } else {
-                    s.get(..pos)?.chars().next_back()?.len_utf8()
+                    s[..pos].chars().next_back().map_or(0, char::len_utf8)
                 };
-                Some(Change::delete(pos - width..pos))
+                pos - width..pos
             })
             .collect();
+        if self.guard_atomic_deletes(&cut) || self.guard_table_joins(&cut) {
+            return true;
+        }
+        if self.list_backspace() {
+            return true;
+        }
+        // A caret in a table cell deletes inside it only (`cells.rs`).
+        let changes: Vec<Change> = self.cell_cuts(&cut).into_iter().flatten().collect();
         if changes.is_empty() {
             return true;
         }
@@ -362,6 +405,18 @@ impl EditorState {
             .map(|r| {
                 let line = text.line_at(r.head);
                 let row = visual_line.map_or_else(|| line.range(), |f| f(r.head));
+                // In a table cell: the visual line of the cell, nothing past it.
+                if let Some((grid, ro, co)) = crate::cells::cell_at(self, r.head)
+                    && let Some(cell) = grid.cell(ro, co)
+                {
+                    let to = if forward { row.end } else { row.start };
+                    let moved = to.clamp(cell.content.start, cell.content.end);
+                    return if extend {
+                        SelectionRange::new(r.anchor, moved)
+                    } else {
+                        SelectionRange::cursor(moved)
+                    };
+                }
                 let mut moved = if forward { row.end } else { row.start };
                 let wrong_way = if forward {
                     moved < r.head
