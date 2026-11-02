@@ -3,7 +3,9 @@
 //! 32 px rows padded 7 (plus 12 per depth), radius 9, a 20 px icon slot
 //! 8 from a 14 px label on a 20 px line (Paneflow's workspace folder
 //! glyphs on folder rows, crossfading as they open and close); 20 px
-//! section headers with a chevron, flush with the wordmark.
+//! section headers with a chevron, flush with the wordmark. In the tree,
+//! each project (a root folder) and Unfiled (the root's own files) has
+//! such a header on a row's height, so the list stays uniform.
 
 use cerata_core::fs::DirEntry;
 use gpui::{
@@ -16,7 +18,7 @@ use gpui::{
 use std::time::Instant;
 
 use super::reveal::{FOLDER_MOTION, Reveal};
-use super::tree::{Listing, label};
+use super::tree::{Listing, Row, RowKind, label};
 use super::{ClearSelection, ROW_HEIGHT, Section, Sidebar, SidebarEvent};
 use crate::editor::theme;
 use crate::icons::{Icon, icon};
@@ -85,19 +87,7 @@ pub fn row(
         .as_ref()
         .filter(|renaming| renaming.path == entry.path);
     let label_el: AnyElement = match renaming {
-        Some(renaming) => div()
-            .flex_1()
-            .min_w_0()
-            .flex()
-            .flex_col()
-            .child(renaming.field.clone())
-            .children(renaming.error.clone().map(|error| {
-                div()
-                    .text_size(px(11.0))
-                    .text_color(theme::danger())
-                    .child(error)
-            }))
-            .into_any_element(),
+        Some(renaming) => rename_field(renaming),
         None => div()
             .flex_1()
             .min_w_0()
@@ -118,10 +108,7 @@ pub fn row(
     let clicked = entry.clone();
     let hovered = entry.clone();
     let menu_entry = entry.clone();
-    let key_entry = entry.clone();
     let draggable = state.draggable;
-    let bounds = sidebar.row_bounds.clone();
-    let measured = entry.path.clone();
     let name = if entry.is_dir {
         format!("{label_name}, folder")
     } else {
@@ -131,46 +118,8 @@ pub fn row(
         .aria_selected(state.selected || state.active)
         .when(entry.is_dir, |d| d.aria_expanded(state.expanded))
         .relative()
-        .child(
-            canvas(
-                move |b, _, _| {
-                    bounds.borrow_mut().insert(measured.clone(), b);
-                },
-                |_, _, _, _| {},
-            )
-            .absolute()
-            .size_full(),
-        )
-        .on_key_down(cx.listener(move |this, event: &KeyDownEvent, window, cx| {
-            if this.renaming.is_some() {
-                return;
-            }
-            let keystroke = &event.keystroke;
-            let menu_key =
-                keystroke.key == "menu" || (keystroke.key == "f10" && keystroke.modifiers.shift);
-            if menu_key {
-                cx.stop_propagation();
-                let at = this
-                    .row_bounds
-                    .borrow()
-                    .get(&key_entry.path)
-                    .map(|b| b.bottom_left() + gpui::point(px(16.0), px(0.0)))
-                    .unwrap_or_default();
-                this.open_row_menu(&key_entry, at, cx);
-            } else if keystroke.key == "f2" && keystroke.modifiers.number_of_modifiers() == 0 {
-                cx.stop_propagation();
-                this.start_rename(&key_entry.path, window, cx);
-            } else if keystroke.key == "delete" && keystroke.modifiers.number_of_modifiers() == 0 {
-                cx.stop_propagation();
-                let paths = if this.selection.len() >= 2 && this.selection.contains(&key_entry.path)
-                {
-                    this.selection.paths.clone()
-                } else {
-                    vec![key_entry.path.clone()]
-                };
-                cx.emit(SidebarEvent::Delete(paths));
-            }
-        }))
+        .child(bounds_probe(sidebar, &entry.path))
+        .on_key_down(row_keys(entry.clone(), cx))
         .flex()
         .items_center()
         .gap(px(GAP))
@@ -193,19 +142,7 @@ pub fn row(
         .when(state.dragged, |d| d.opacity(0.4))
         .child(row_icon.relative().flex_none().size(px(ICON_SLOT)))
         .child(label_el)
-        .when_some(state.error, |d, error| {
-            d.child(
-                div()
-                    .flex_none()
-                    .max_w(px(120.0))
-                    .overflow_hidden()
-                    .whitespace_nowrap()
-                    .text_ellipsis()
-                    .text_size(px(11.0))
-                    .text_color(theme::danger())
-                    .child(format!("Error: {error}")),
-            )
-        })
+        .when_some(state.error, |d, error| d.child(read_error(error)))
         .on_mouse_down(
             MouseButton::Left,
             cx.listener(move |this, event: &MouseDownEvent, _, cx| {
@@ -239,6 +176,87 @@ pub fn row(
                 this.click_row(&clicked, cx);
             }
         }))
+}
+
+/// The rename field in place of a label, with its error under it.
+fn rename_field(renaming: &super::ops::Renaming) -> AnyElement {
+    div()
+        .flex_1()
+        .min_w_0()
+        .flex()
+        .flex_col()
+        .child(renaming.field.clone())
+        .children(renaming.error.clone().map(|error| {
+            div()
+                .text_size(px(11.0))
+                .text_color(theme::danger())
+                .child(error)
+        }))
+        .into_any_element()
+}
+
+/// A folder's read error, after its label.
+fn read_error(error: String) -> gpui::Div {
+    div()
+        .flex_none()
+        .max_w(px(120.0))
+        .overflow_hidden()
+        .whitespace_nowrap()
+        .text_ellipsis()
+        .text_size(px(11.0))
+        .text_color(theme::danger())
+        .child(format!("Error: {error}"))
+}
+
+/// Records where the row of `path` is drawn, for the keyboard's menu.
+fn bounds_probe(sidebar: &Sidebar, path: &std::path::Path) -> impl IntoElement {
+    let bounds = sidebar.row_bounds.clone();
+    let measured = path.to_path_buf();
+    canvas(
+        move |b, _, _| {
+            bounds.borrow_mut().insert(measured.clone(), b);
+        },
+        |_, _, _, _| {},
+    )
+    .absolute()
+    .size_full()
+}
+
+/// A row's keys: the menu key or Shift+F10 opens its menu under it, F2
+/// renames it, Delete deletes it (or the selection holding it).
+fn row_keys(
+    entry: DirEntry,
+    cx: &mut Context<Sidebar>,
+) -> impl Fn(&KeyDownEvent, &mut Window, &mut gpui::App) + 'static {
+    cx.listener(move |this, event: &KeyDownEvent, window, cx| {
+        if this.renaming.is_some() {
+            return;
+        }
+        let keystroke = &event.keystroke;
+        let menu_key =
+            keystroke.key == "menu" || (keystroke.key == "f10" && keystroke.modifiers.shift);
+        if menu_key {
+            cx.stop_propagation();
+            let at = this
+                .row_bounds
+                .borrow()
+                .get(&entry.path)
+                .map(|b| b.bottom_left() + gpui::point(px(16.0), px(0.0)))
+                .unwrap_or_default();
+            this.open_row_menu(&entry, at, cx);
+        } else if keystroke.key == "f2" && keystroke.modifiers.number_of_modifiers() == 0 {
+            cx.stop_propagation();
+            this.start_rename(&entry.path, window, cx);
+        } else if keystroke.key == "delete" && keystroke.modifiers.number_of_modifiers() == 0 {
+            cx.stop_propagation();
+            let paths = if this.selection.len() >= 2 && this.selection.contains(&entry.path) {
+                this.selection.paths.clone()
+            } else {
+                vec![entry.path.clone()]
+            };
+            cx.emit(SidebarEvent::Delete(paths));
+        }
+    })
 }
 
 fn header(
@@ -451,12 +469,14 @@ impl Render for Sidebar {
         // Refilled by the rows drawn this frame.
         self.row_bounds.borrow_mut().clear();
         if let Some(path) = self.pending_rename.clone()
-            && self.rows.iter().any(|row| row.entry.path == path)
+            && let Some(row) = self.rows.iter().find(|row| row.entry.path == path)
         {
+            // A new folder or project is only named: there is no note to open.
+            let created = !row.entry.is_dir;
             self.pending_rename = None;
             self.start_rename(&path, window, cx);
             if let Some(renaming) = &mut self.renaming {
-                renaming.created = true;
+                renaming.created = created;
             }
         }
 
@@ -559,12 +579,6 @@ impl Render for Sidebar {
             }
         }
 
-        let collapsed = self.collapsed.contains(&Section::Everything);
-        root = root.child(header(Section::Everything, "Everything", collapsed, cx));
-        let moving = self.section_amount(Section::Everything, now);
-        if collapsed && moving.is_none() {
-            return root;
-        }
         match &self.root_listing {
             Listing::Loading => return root,
             Listing::Failed(error) => {
@@ -581,10 +595,9 @@ impl Render for Sidebar {
             Listing::Loaded(_) => {}
         }
 
-        let count = self.rows.len();
         let list = uniform_list(
             "sidebar-tree",
-            count,
+            self.rows.len(),
             cx.processor(|this, range: std::ops::Range<usize>, _window, cx| {
                 let highlight = this.drag_highlight();
                 let dragged: Vec<std::path::PathBuf> = this
@@ -593,22 +606,32 @@ impl Render for Sidebar {
                     .filter(|drag| drag.active)
                     .map(|drag| drag.paths.clone())
                     .unwrap_or_default();
-                let fade = this.folder_fade(std::time::Instant::now());
+                // The rows under the folder or header opening, at its fade.
+                let fade = this
+                    .folder_fade(std::time::Instant::now())
+                    .and_then(|(dir, amount)| {
+                        let shown = super::ops::subtree_range(&this.rows, &dir)?;
+                        Some((shown.start + 1..shown.end, amount))
+                    });
                 range
                     .filter_map(|ix| {
                         let tree_row = this.rows.get(ix)?.clone();
-                        let opacity = fade.as_ref().and_then(|(dir, amount)| {
-                            let path = &tree_row.entry.path;
-                            (path != dir && path.starts_with(dir)).then_some(*amount)
-                        });
+                        let drop_target = highlight.as_ref().is_some_and(|r| r.contains(&ix));
+                        if tree_row.kind != RowKind::Item {
+                            return Some(tree_header(ix, &tree_row, drop_target, this, cx));
+                        }
+                        let opacity = fade
+                            .as_ref()
+                            .and_then(|(rows, amount)| rows.contains(&ix).then_some(*amount));
                         let state = RowState {
-                            depth: tree_row.depth,
+                            // Headers take depth 0: their rows start flush.
+                            depth: tree_row.depth.saturating_sub(1),
                             expanded: tree_row.expanded,
                             selected: this.selection.contains(&tree_row.entry.path),
                             active: this.active_path.as_deref()
                                 == Some(tree_row.entry.path.as_path()),
                             error: tree_row.error.clone(),
-                            drop_target: highlight.as_ref().is_some_and(|r| r.contains(&ix)),
+                            drop_target,
                             dragged: dragged.contains(&tree_row.entry.path),
                             draggable: true,
                         };
@@ -623,39 +646,111 @@ impl Render for Sidebar {
             }),
         )
         .track_scroll(&self.scroll);
-
-        let Some(amount) = moving else {
-            // Settled open: measured for the next opening or closing.
-            let measured = self.everything_height.clone();
-            return root.child(
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .relative()
-                    .child(
-                        canvas(
-                            move |bounds, _, _| measured.set(f32::from(bounds.size.height)),
-                            |_, _, _, _| {},
-                        )
-                        .absolute()
-                        .size_full(),
-                    )
-                    .child(list.size_full()),
-            );
-        };
-        // The list keeps its settled height, so its scroll does not move,
-        // and grows or shrinks behind a clip down to its last row.
-        let full = match self.everything_height.get() {
-            measured if measured > 0. => measured,
-            _ => f32::from(window.viewport_size().height),
-        };
-        let shown = full.min(count as f32 * ROW_HEIGHT);
-        root.child(
-            revealing(shown, amount, reduce)
-                .min_h_0()
-                .child(list.w_full().h(px(full))),
-        )
+        // The 8 px over the first header's title make the 16 every
+        // section header keeps from what is above it.
+        root.child(list.mt(px(8.0)).flex_1().min_h_0())
     }
+}
+
+/// A project or Unfiled header in the tree: a section title on a row's
+/// height, its title at the bottom, never a card. A project opens on a
+/// click, takes drops and has the folder menu; Unfiled takes drops into
+/// the root and leaves its menu to the empty area's.
+fn tree_header(
+    ix: usize,
+    tree_row: &Row,
+    drop_target: bool,
+    sidebar: &Sidebar,
+    cx: &mut Context<Sidebar>,
+) -> gpui::Stateful<gpui::Div> {
+    let entry = &tree_row.entry;
+    let project = tree_row.kind == RowKind::Project;
+    let text = label(entry, sidebar.options.label);
+    let renaming = sidebar
+        .renaming
+        .as_ref()
+        .filter(|renaming| project && renaming.path == entry.path);
+    let title: AnyElement = match renaming {
+        Some(renaming) => rename_field(renaming),
+        None => div()
+            .flex_1()
+            .min_w_0()
+            .overflow_hidden()
+            .whitespace_nowrap()
+            .text_ellipsis()
+            .child(text.clone())
+            .into_any_element(),
+    };
+    let color = if drop_target {
+        theme::text()
+    } else {
+        theme::muted()
+    };
+    let clicked = tree_row.clone();
+    let hovered = entry.clone();
+    let menu_entry = entry.clone();
+    crate::a11y::control(div().id(("sidebar-header", ix)), Role::TreeItem, text)
+        .aria_expanded(tree_row.expanded)
+        .relative()
+        .child(bounds_probe(sidebar, &entry.path))
+        .flex()
+        .items_end()
+        .gap(px(4.0))
+        .w_full()
+        .h(px(ROW_HEIGHT))
+        .pb(px(4.0))
+        .pr(px(PADDING))
+        .text_size(px(12.0))
+        .line_height(px(20.0))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(color)
+        .cursor_pointer()
+        .hover(|s| s.text_color(theme::text()))
+        .group("sidebar-section")
+        .child(
+            div().h(px(20.0)).flex().items_center().child(
+                icon(
+                    if tree_row.expanded {
+                        Icon::ChevronDown
+                    } else {
+                        Icon::ChevronRight
+                    },
+                    12.0,
+                    color,
+                )
+                .group_hover("sidebar-section", |s| s.text_color(theme::text())),
+            ),
+        )
+        .child(title)
+        .when_some(tree_row.error.clone(), |d, error| {
+            d.child(read_error(error))
+        })
+        .when(project, |d| {
+            d.on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                    cx.stop_propagation();
+                    this.open_row_menu(&menu_entry, event.position, cx);
+                }),
+            )
+            .on_key_down(row_keys(entry.clone(), cx))
+        })
+        .on_mouse_move(cx.listener(move |this, event: &MouseMoveEvent, _, cx| {
+            if this.drag.is_some() {
+                cx.stop_propagation();
+                this.drag_moved(event.position, Some(hovered.clone()), cx);
+            }
+        }))
+        .on_click(cx.listener(move |this, _, _, cx| {
+            if this
+                .renaming
+                .as_ref()
+                .is_some_and(|renaming| renaming.path == clicked.entry.path)
+            {
+                return;
+            }
+            this.click_header(&clicked, cx);
+        }))
 }
 
 impl Sidebar {

@@ -65,16 +65,10 @@ pub fn move_path(dest: &Path, source: &Path) -> Option<PathBuf> {
     Some(dest.join(source.file_name()?))
 }
 
-/// Rows highlighted while hovering `dest`: the folder's row and its
-/// visible descendants, every row for the root, `None` if `dest` is not
-/// shown.
-pub fn drop_range(rows: &[Row], dest: &Path, root: &Path) -> Option<Range<usize>> {
-    if rows.is_empty() {
-        return None;
-    }
-    if dest == root {
-        return Some(0..rows.len());
-    }
+/// The rows of `dest`'s subtree: the folder's row and its visible
+/// descendants (the Unfiled header and its files for the root), `None` if
+/// `dest` is not shown. Highlighted under a drag, faded in as it opens.
+pub fn subtree_range(rows: &[Row], dest: &Path) -> Option<Range<usize>> {
     let start = rows.iter().position(|row| row.entry.path == dest)?;
     let depth = rows[start].depth;
     let end = rows[start + 1..]
@@ -265,6 +259,9 @@ impl Sidebar {
         let parent = parent.unwrap_or_else(|| runtime.root.clone());
         if parent != runtime.root {
             self.expand(&parent, cx);
+        } else if kind == EntryKind::File {
+            // Its row, renamed in place, is under Unfiled.
+            self.open_unfiled();
         }
         let generation = self.generation;
         let window_handle = window.window_handle();
@@ -565,9 +562,8 @@ impl Sidebar {
 
     pub fn drag_highlight(&self) -> Option<Range<usize>> {
         let drag = self.drag.as_ref().filter(|drag| drag.active)?;
-        let root = self.root()?;
-        let dest = drop_dest(drag.over.as_ref(), root);
-        drop_range(&self.rows, &dest, root)
+        let dest = drop_dest(drag.over.as_ref(), self.root()?);
+        subtree_range(&self.rows, &dest)
     }
 
     /// The release: an active drag moves its items; a press that never
@@ -651,7 +647,9 @@ impl Sidebar {
         }
         self.reveal_version += 1;
         self.revealing = Some((path.to_path_buf(), self.reveal_version));
-        self.collapsed.remove(&super::Section::Everything);
+        if path.parent() == Some(root.as_path()) {
+            self.open_unfiled();
+        }
         let mut dir = path.parent();
         let mut parents = Vec::new();
         while let Some(d) = dir {
@@ -835,7 +833,7 @@ pub fn surface_menu(
             Item::action("New File", |s: &mut Sidebar, window, cx| {
                 s.create_entry(None, EntryKind::File, window, cx)
             }),
-            Item::action("New Folder", |s: &mut Sidebar, window, cx| {
+            Item::action("New Project", |s: &mut Sidebar, window, cx| {
                 s.create_entry(None, EntryKind::Folder, window, cx)
             }),
             sep(),
@@ -877,6 +875,7 @@ pub fn surface_menu(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sidebar::tree::RowKind;
 
     fn entry(path: &str, is_dir: bool) -> DirEntry {
         DirEntry {
@@ -900,6 +899,11 @@ mod tests {
             depth,
             expanded: true,
             error: None,
+            kind: if depth == 0 {
+                RowKind::Project
+            } else {
+                RowKind::Item
+            },
         }
     }
 
@@ -964,21 +968,31 @@ mod tests {
     }
 
     #[test]
-    fn the_drop_range_spans_the_folder_and_its_visible_descendants() {
+    fn the_subtree_range_spans_the_folder_and_its_visible_descendants() {
         let rows = [
             row("/v/a", 0),
             row("/v/a/b", 1),
             row("/v/a/b/c", 2),
             row("/v/a/d", 1),
             row("/v/e", 0),
+            Row {
+                kind: RowKind::Unfiled,
+                ..row("/v", 0)
+            },
+            row("/v/f.md", 1),
         ];
         let root = Path::new("/v");
-        assert_eq!(drop_range(&rows, Path::new("/v/a"), root), Some(0..4));
-        assert_eq!(drop_range(&rows, Path::new("/v/a/b"), root), Some(1..3));
-        assert_eq!(drop_range(&rows, Path::new("/v/e"), root), Some(4..5));
-        assert_eq!(drop_range(&rows, root, root), Some(0..5));
-        assert_eq!(drop_range(&rows, Path::new("/v/hidden"), root), None);
-        assert_eq!(drop_range(&[], root, root), None);
+        assert_eq!(subtree_range(&rows, Path::new("/v/a")), Some(0..4));
+        assert_eq!(subtree_range(&rows, Path::new("/v/a/b")), Some(1..3));
+        assert_eq!(subtree_range(&rows, Path::new("/v/e")), Some(4..5));
+        assert_eq!(
+            subtree_range(&rows, root),
+            Some(5..7),
+            "the root is Unfiled"
+        );
+        assert_eq!(subtree_range(&rows[..5], root), None, "no Unfiled shown");
+        assert_eq!(subtree_range(&rows, Path::new("/v/hidden")), None);
+        assert_eq!(subtree_range(&[], root), None);
     }
 
     #[test]
@@ -1043,7 +1057,7 @@ mod tests {
             labels(&items),
             [
                 "New File",
-                "New Folder",
+                "New Project",
                 "-",
                 "Open in Terminal",
                 open_folder_label(),

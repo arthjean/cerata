@@ -1,5 +1,6 @@
-//! The sidebar of a workspace window: Pinned, Recents and the whole tree
-//! (Everything), virtualized.
+//! The sidebar of a workspace window: Pinned, Recents, then the tree,
+//! virtualized: one section per root folder (a project), then the root's
+//! own files (Unfiled).
 //!
 //! Ported from Writer `sidebar-navigator.tsx`, `file-tree.tsx`,
 //! `use-sidebar-files.ts` and `workspace-store.ts:249-421`. Folder reads run
@@ -77,7 +78,6 @@ pub enum SidebarEvent {
 pub enum Section {
     Pinned,
     Recents,
-    Everything,
 }
 
 pub struct Sidebar {
@@ -99,6 +99,8 @@ pub struct Sidebar {
     pub recents_visible: usize,
     pub recents_more: bool,
     pub show_recents: bool,
+    /// Unfiled shows the root's own files; open in every new workspace.
+    pub unfiled_open: bool,
     pub collapsed: HashSet<Section>,
     /// The last opening or closing of each section toggled.
     pub section_reveals: HashMap<Section, reveal::Reveal>,
@@ -106,9 +108,6 @@ pub struct Sidebar {
     pub opening: Option<(PathBuf, Option<reveal::Reveal>)>,
     /// Folders whose closed and open glyphs are crossfading.
     pub folder_glyphs: HashMap<PathBuf, reveal::Reveal>,
-    /// Everything's list height last frame it was settled open: the height
-    /// it opens to and closes from.
-    pub everything_height: std::rc::Rc<std::cell::Cell<f32>>,
     /// Bumped by every section refresh: only the latest one is applied.
     sections_version: u64,
     /// Latest read of each folder: an older read finishing last is dropped.
@@ -165,11 +164,11 @@ impl Sidebar {
             recents_visible: RECENTS_PAGE,
             recents_more: false,
             show_recents: true,
+            unfiled_open: true,
             collapsed: HashSet::new(),
             section_reveals: HashMap::new(),
             opening: None,
             folder_glyphs: HashMap::new(),
-            everything_height: Default::default(),
             sections_version: 0,
             read_versions: HashMap::new(),
             menu: None,
@@ -242,6 +241,7 @@ impl Sidebar {
         self.listings.clear();
         self.read_versions.clear();
         self.expanded.clear();
+        self.unfiled_open = true;
         self.selection.clear();
         self.rows.clear();
         self.menu = None;
@@ -397,7 +397,15 @@ impl Sidebar {
             Listing::Loaded(entries) => entries,
             Listing::Loading | Listing::Failed(_) => &[],
         };
-        self.rows = tree::flatten(root, &self.expanded, &self.listings, self.options);
+        let root_dir = self.root().map(Path::to_path_buf).unwrap_or_default();
+        self.rows = tree::flatten(
+            &root_dir,
+            root,
+            &self.expanded,
+            &self.listings,
+            self.options,
+            self.unfiled_open,
+        );
         self.selection.retain_visible(&self.rows);
     }
 
@@ -543,7 +551,6 @@ impl Sidebar {
         match section {
             Section::Pinned => self.pinned_visible += PINNED_PAGE,
             Section::Recents => self.recents_visible += RECENTS_PAGE,
-            Section::Everything => return,
         }
         self.refresh_sections(cx);
     }
@@ -596,9 +603,7 @@ impl Sidebar {
     /// A plain click (no drag): the selection clears, a folder toggles, a
     /// file opens.
     pub fn click_row(&mut self, entry: &DirEntry, cx: &mut Context<Self>) {
-        if std::mem::take(&mut self.suppress_click)
-            || self.drag.as_ref().is_some_and(|drag| drag.active)
-        {
+        if !self.take_click() {
             return;
         }
         self.selection.press(&entry.path);
@@ -608,6 +613,43 @@ impl Sidebar {
             cx.emit(SidebarEvent::Open(entry.path.clone()));
         }
         cx.notify();
+    }
+
+    /// A click on a project or Unfiled header: it opens or closes, nothing
+    /// is selected.
+    pub fn click_header(&mut self, row: &tree::Row, cx: &mut Context<Self>) {
+        if !self.take_click() {
+            return;
+        }
+        match row.kind {
+            tree::RowKind::Project => self.toggle_dir(&row.entry.path, cx),
+            tree::RowKind::Unfiled => self.toggle_unfiled(cx),
+            tree::RowKind::Item => {}
+        }
+    }
+
+    /// `false` for the click that ends a drag or a drop.
+    fn take_click(&mut self) -> bool {
+        !std::mem::take(&mut self.suppress_click)
+            && !self.drag.as_ref().is_some_and(|drag| drag.active)
+    }
+
+    /// Unfiled's rows are in the tree: they fade in like a folder's.
+    fn toggle_unfiled(&mut self, cx: &mut Context<Self>) {
+        self.unfiled_open = !self.unfiled_open;
+        if self.unfiled_open {
+            self.opening = self.root().map(|root| (root.to_path_buf(), None));
+        }
+        self.rebuild_rows();
+        cx.notify();
+    }
+
+    /// Shows the root's own files, for a new one or a reveal.
+    pub fn open_unfiled(&mut self) {
+        if !self.unfiled_open {
+            self.unfiled_open = true;
+            self.rebuild_rows();
+        }
     }
 
     pub fn clear_selection(&mut self, cx: &mut Context<Self>) {

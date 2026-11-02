@@ -254,6 +254,20 @@ pub enum Listing {
     Failed(String),
 }
 
+/// The title of the section holding the workspace root's own files.
+pub const UNFILED: &str = "Unfiled";
+
+/// What a row of the tree stands for. Headers sit at depth 0, every file
+/// and subfolder below them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RowKind {
+    /// A folder of the workspace root, shown as a section header.
+    Project,
+    /// The header of the root's own files; its entry is the root.
+    Unfiled,
+    Item,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Row {
     pub entry: DirEntry,
@@ -261,18 +275,50 @@ pub struct Row {
     pub expanded: bool,
     /// The folder's read failed (shown on its row).
     pub error: Option<String>,
+    pub kind: RowKind,
 }
 
-/// Depth-first rows of the root listing, each expanded folder's children
-/// right after it, every level sorted (`flatten-tree.ts`).
+/// The rows of the root listing: each root folder as a project header with
+/// its expanded content right after it, then the Unfiled header and the
+/// root's own files, every level sorted (`flatten-tree.ts`).
 pub fn flatten(
+    root_dir: &Path,
     root: &[DirEntry],
     expanded: &HashSet<PathBuf>,
     listings: &HashMap<PathBuf, Listing>,
     options: SortOptions,
+    unfiled_open: bool,
 ) -> Vec<Row> {
+    let (projects, files): (Vec<DirEntry>, Vec<DirEntry>) =
+        root.iter().cloned().partition(|entry| entry.is_dir);
     let mut rows = Vec::new();
-    push_level(root, 0, expanded, listings, options, &mut rows);
+    push_level(&projects, 0, expanded, listings, options, &mut rows);
+    for row in &mut rows {
+        if row.depth == 0 {
+            row.kind = RowKind::Project;
+        }
+    }
+    // Shown even empty: dropping on it is the way back to the root.
+    if !root.is_empty() {
+        rows.push(Row {
+            entry: DirEntry {
+                name: UNFILED.into(),
+                path: root_dir.to_path_buf(),
+                is_dir: true,
+                is_markdown: false,
+                modified_at: 0,
+                created_at: 0,
+                title: None,
+            },
+            depth: 0,
+            expanded: unfiled_open,
+            error: None,
+            kind: RowKind::Unfiled,
+        });
+        if unfiled_open {
+            push_level(&files, 1, expanded, listings, options, &mut rows);
+        }
+    }
     rows
 }
 
@@ -300,6 +346,7 @@ fn push_level(
             depth,
             expanded: is_expanded && error.is_none(),
             error,
+            kind: RowKind::Item,
         });
         if let Some(children) = children {
             push_level(&children, depth + 1, expanded, listings, options, rows);
@@ -350,8 +397,12 @@ impl Selection {
     }
 
     /// Shift: the rows from the anchor (or the first row) to `path`
-    /// replace the selection; the anchor stays.
+    /// replace the selection, headers left out; the anchor stays.
     pub fn extend(&mut self, path: &Path, rows: &[Row]) {
+        let rows: Vec<&Row> = rows
+            .iter()
+            .filter(|row| row.kind == RowKind::Item)
+            .collect();
         let Some(target) = rows.iter().position(|row| row.entry.path == path) else {
             return;
         };
@@ -648,6 +699,101 @@ mod tests {
         assert_eq!(entries, before);
     }
 
+    fn shape(rows: &[Row]) -> Vec<(&str, usize, RowKind)> {
+        rows.iter()
+            .map(|r| (r.entry.name.as_str(), r.depth, r.kind))
+            .collect()
+    }
+
+    #[test]
+    fn projects_lead_and_root_files_close_under_unfiled() {
+        let root = [
+            file("z.md", None, 0, 0),
+            folder("work", 0),
+            file("a.md", None, 0, 0),
+            folder("home", 0),
+        ];
+        let rows = flatten(
+            Path::new("/v"),
+            &root,
+            &HashSet::new(),
+            &HashMap::new(),
+            SortOptions {
+                folders_first: false,
+                ..SortOptions::default()
+            },
+            true,
+        );
+        assert_eq!(
+            shape(&rows),
+            [
+                ("home", 0, RowKind::Project),
+                ("work", 0, RowKind::Project),
+                (UNFILED, 0, RowKind::Unfiled),
+                ("a.md", 1, RowKind::Item),
+                ("z.md", 1, RowKind::Item),
+            ],
+            "folders first or not, root files sit under Unfiled"
+        );
+        assert_eq!(rows[2].entry.path, PathBuf::from("/v"));
+        assert!(rows[2].expanded);
+        assert!(!rows[0].expanded, "projects start collapsed");
+
+        let closed = flatten(
+            Path::new("/v"),
+            &root,
+            &HashSet::new(),
+            &HashMap::new(),
+            SortOptions::default(),
+            false,
+        );
+        assert_eq!(closed.len(), 3, "a closed Unfiled hides its files");
+        assert!(!closed[2].expanded);
+
+        let only_projects = flatten(
+            Path::new("/v"),
+            &[folder("work", 0)],
+            &HashSet::new(),
+            &HashMap::new(),
+            SortOptions::default(),
+            true,
+        );
+        assert_eq!(
+            shape(&only_projects),
+            [
+                ("work", 0, RowKind::Project),
+                (UNFILED, 0, RowKind::Unfiled)
+            ],
+            "Unfiled stays, empty, as the way back to the root"
+        );
+    }
+
+    #[test]
+    fn shift_selection_skips_project_and_unfiled_headers() {
+        let rows = flatten(
+            Path::new("/v"),
+            &[folder("work", 0), file("a.md", None, 0, 0)],
+            &[PathBuf::from("/v/work")].into(),
+            &[(
+                PathBuf::from("/v/work"),
+                Listing::Loaded(vec![DirEntry {
+                    path: PathBuf::from("/v/work/b.md"),
+                    ..file("b.md", None, 0, 0)
+                }]),
+            )]
+            .into(),
+            SortOptions::default(),
+            true,
+        );
+        let mut selection = Selection::default();
+        selection.press(Path::new("/v/work/b.md"));
+        selection.extend(Path::new("/v/a.md"), &rows);
+        assert_eq!(
+            selection.paths,
+            [PathBuf::from("/v/work/b.md"), PathBuf::from("/v/a.md")]
+        );
+    }
+
     #[test]
     fn flatten_sorts_every_expanded_level_with_depths() {
         let root = [file("z.md", None, 0, 0), folder("dir", 0)];
@@ -673,19 +819,23 @@ mod tests {
             (PathBuf::from("/v/dir/inner"), Listing::Loaded(vec![leaf])),
         ]
         .into();
-        let rows = flatten(&root, &expanded, &listings, SortOptions::default());
-        let shape: Vec<(&str, usize)> = rows
-            .iter()
-            .map(|r| (r.entry.name.as_str(), r.depth))
-            .collect();
+        let rows = flatten(
+            Path::new("/v"),
+            &root,
+            &expanded,
+            &listings,
+            SortOptions::default(),
+            true,
+        );
         assert_eq!(
-            shape,
+            shape(&rows),
             [
-                ("dir", 0),
-                ("inner", 1),
-                ("leaf.md", 2),
-                ("a.md", 1),
-                ("z.md", 0)
+                ("dir", 0, RowKind::Project),
+                ("inner", 1, RowKind::Item),
+                ("leaf.md", 2, RowKind::Item),
+                ("a.md", 1, RowKind::Item),
+                (UNFILED, 0, RowKind::Unfiled),
+                ("z.md", 1, RowKind::Item),
             ]
         );
     }
@@ -696,8 +846,15 @@ mod tests {
         let expanded: HashSet<PathBuf> = [PathBuf::from("/v/dir")].into();
         let listings: HashMap<PathBuf, Listing> =
             [(PathBuf::from("/v/dir"), Listing::Failed("denied".into()))].into();
-        let rows = flatten(&root, &expanded, &listings, SortOptions::default());
-        assert_eq!(rows.len(), 1);
+        let rows = flatten(
+            Path::new("/v"),
+            &root,
+            &expanded,
+            &listings,
+            SortOptions::default(),
+            true,
+        );
+        assert_eq!(rows.len(), 2, "the project, then an empty Unfiled");
         assert_eq!(rows[0].error.as_deref(), Some("denied"));
         assert!(!rows[0].expanded);
     }
@@ -710,6 +867,7 @@ mod tests {
                 depth: 0,
                 expanded: false,
                 error: None,
+                kind: RowKind::Item,
             })
             .collect()
     }
@@ -751,15 +909,18 @@ mod tests {
             .collect();
         let started = std::time::Instant::now();
         let rows = flatten(
+            Path::new("/v"),
             &entries,
             &HashSet::new(),
             &HashMap::new(),
             SortOptions::default(),
+            true,
         );
         let elapsed = started.elapsed();
-        assert_eq!(rows.len(), 50_000);
-        assert_eq!(rows[1].entry.name, "Note 1 \u{e9}t\u{e9}.md");
-        assert_eq!(rows[2].entry.name, "Note 2 \u{e9}t\u{e9}.md");
+        // The Unfiled header, then the files.
+        assert_eq!(rows.len(), 50_001);
+        assert_eq!(rows[2].entry.name, "Note 1 \u{e9}t\u{e9}.md");
+        assert_eq!(rows[3].entry.name, "Note 2 \u{e9}t\u{e9}.md");
         // Debug-build budget. Rows are rebuilt only when the tree changes,
         // never per frame: scrolling lays out the visible rows only.
         assert!(elapsed.as_millis() < 1500, "{elapsed:?}");

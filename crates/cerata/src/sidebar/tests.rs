@@ -93,24 +93,63 @@ fn row_names(cx: &mut TestAppContext, sidebar: &Entity<Sidebar>) -> Vec<(String,
     })
 }
 
+fn shown(cx: &mut TestAppContext, sidebar: &Entity<Sidebar>, path: &Path) -> bool {
+    sidebar.read_with(cx, |s, _| s.rows.iter().any(|r| r.entry.path == path))
+}
+
+fn row_at(cx: &mut TestAppContext, sidebar: &Entity<Sidebar>, name: &str) -> tree::Row {
+    sidebar.read_with(cx, |s, _| {
+        s.rows
+            .iter()
+            .find(|r| r.entry.name == name)
+            .cloned()
+            .expect("a visible row")
+    })
+}
+
 #[gpui::test]
-fn the_tree_lists_folders_first_and_expands_on_click(cx: &mut TestAppContext) {
+fn root_folders_lead_as_projects_and_root_files_close_under_unfiled(cx: &mut TestAppContext) {
     let env = setup(cx);
     env.file("b.md", "# Beta");
     env.file("a.md", "no title");
     env.file("notes/inner.md", "# Inner");
+    env.file("notes/sub/deep.md", "x");
     let (handle, sidebar) = open(cx, &env);
     assert_eq!(
         row_names(cx, &sidebar),
-        [("notes".into(), 0), ("a.md".into(), 0), ("b.md".into(), 0)]
+        [
+            ("notes".into(), 0),
+            (tree::UNFILED.into(), 0),
+            ("a.md".into(), 1),
+            ("b.md".into(), 1)
+        ],
+        "projects start collapsed, Unfiled open"
     );
-    let notes = sidebar.read_with(cx, |s, _| s.rows[0].entry.clone());
-    sidebar.update(cx, |s, cx| s.click_row(&notes, cx));
+
+    // A click on a project opens it and selects nothing.
+    let notes = row_at(cx, &sidebar, "notes");
+    sidebar.update(cx, |s, cx| s.click_header(&notes, cx));
     cx.run_until_parked();
-    assert_eq!(row_names(cx, &sidebar)[1], ("inner.md".into(), 1));
+    assert_eq!(
+        row_names(cx, &sidebar)[..3],
+        [
+            ("notes".into(), 0),
+            ("sub".into(), 1),
+            ("inner.md".into(), 1)
+        ]
+    );
+    assert!(sidebar.read_with(cx, |s, _| s.selection.anchor.is_none()));
+
+    // Unfiled closes and opens on a click.
+    let unfiled = row_at(cx, &sidebar, tree::UNFILED);
+    assert_eq!(unfiled.entry.path, env.root());
+    sidebar.update(cx, |s, cx| s.click_header(&unfiled, cx));
+    assert!(!shown(cx, &sidebar, &env.root().join("a.md")));
+    sidebar.update(cx, |s, cx| s.click_header(&unfiled, cx));
+    assert!(shown(cx, &sidebar, &env.root().join("a.md")));
 
     // A click on a file opens it in the window.
-    let file = sidebar.read_with(cx, |s, _| s.rows[1].entry.clone());
+    let file = row_at(cx, &sidebar, "inner.md").entry;
     sidebar.update(cx, |s, cx| s.click_row(&file, cx));
     cx.run_until_parked();
     let active = cx
@@ -119,6 +158,81 @@ fn the_tree_lists_folders_first_and_expands_on_click(cx: &mut TestAppContext) {
     assert_eq!(active, Some(file.path.clone()));
     let highlighted = sidebar.read_with(cx, |s, _| s.active_path.clone());
     assert_eq!(highlighted, Some(file.path));
+}
+
+#[gpui::test]
+fn a_file_dropped_on_unfiled_leaves_its_project_for_the_root(cx: &mut TestAppContext) {
+    let env = setup(cx);
+    env.file("a.md", "a");
+    let x = env.file("work/x.md", "x");
+    let (_handle, sidebar) = open(cx, &env);
+    let work = env.root().join("work");
+    sidebar.update(cx, |s, cx| s.toggle_dir(&work, cx));
+    cx.run_until_parked();
+    let unfiled = row_at(cx, &sidebar, tree::UNFILED).entry;
+    let start = gpui::point(px(10.0), px(10.0));
+    let highlight = sidebar.update(cx, |s, cx| {
+        s.begin_drag(&x, start);
+        s.drag_moved(start + gpui::point(px(0.0), px(8.0)), Some(unfiled), cx);
+        s.drag_highlight()
+    });
+    // Unfiled and its file, not the project above.
+    assert_eq!(highlight, Some(2..4));
+    sidebar.update(cx, |s, cx| {
+        s.end_drag(cx);
+    });
+    cx.run_until_parked();
+    let back = env.root().join("x.md");
+    assert!(back.exists() && !x.exists());
+
+    // Dropped on a project's header, it moves into the project.
+    let project = row_at(cx, &sidebar, "work").entry;
+    sidebar.update(cx, |s, cx| {
+        s.begin_drag(&back, start);
+        s.drag_moved(start + gpui::point(px(0.0), px(8.0)), Some(project), cx);
+        s.end_drag(cx);
+    });
+    cx.run_until_parked();
+    assert!(x.exists() && !back.exists());
+}
+
+#[gpui::test]
+fn revealing_or_making_a_root_file_reopens_unfiled(cx: &mut TestAppContext) {
+    use cerata_core::fs::EntryKind;
+    let env = setup(cx);
+    let a = env.file("a.md", "a");
+    let (handle, sidebar) = open(cx, &env);
+    let unfiled = row_at(cx, &sidebar, tree::UNFILED);
+    sidebar.update(cx, |s, cx| s.click_header(&unfiled, cx));
+    sidebar.update(cx, |s, cx| s.reveal_in_sidebar(&a, cx));
+    cx.run_until_parked();
+    assert!(shown(cx, &sidebar, &a), "a reveal opens Unfiled");
+
+    sidebar.update(cx, |s, cx| s.click_header(&unfiled, cx));
+    with_window(cx, handle, &sidebar, |s, window, cx| {
+        s.create_entry(None, EntryKind::File, window, cx)
+    });
+    let renaming = sidebar.read_with(cx, |s, _| s.renaming.as_ref().map(|r| r.path.clone()));
+    assert!(renaming.is_some(), "a new root file is named under Unfiled");
+}
+
+#[gpui::test]
+fn a_new_project_is_named_in_its_header_and_never_opened_as_a_note(cx: &mut TestAppContext) {
+    use cerata_core::fs::EntryKind;
+    let env = setup(cx);
+    env.file("a.md", "a");
+    let (handle, sidebar) = open(cx, &env);
+    with_window(cx, handle, &sidebar, |s, window, cx| {
+        s.create_entry(None, EntryKind::Folder, window, cx)
+    });
+    let (path, created) = sidebar
+        .read_with(cx, |s, _| {
+            s.renaming.as_ref().map(|r| (r.path.clone(), r.created))
+        })
+        .expect("the new project is renamed in place");
+    assert!(path.is_dir());
+    assert!(!created, "Enter must not open a folder as a note");
+    assert_eq!(entry(cx, &sidebar, &path).kind, tree::RowKind::Project);
 }
 
 #[gpui::test]
@@ -132,7 +246,7 @@ fn labels_follow_the_title_setting(cx: &mut TestAppContext) {
             .into_iter()
             .map(|r| r.0)
             .collect::<Vec<_>>(),
-        ["z.md", "a.md"],
+        [tree::UNFILED, "z.md", "a.md"],
         "sorted by title"
     );
 }
@@ -153,7 +267,11 @@ fn a_failed_folder_shows_an_error_and_retries_on_the_next_expand(cx: &mut TestAp
     cx.run_until_parked();
     assert_eq!(
         row_names(cx, &sidebar),
-        [("dir".into(), 0), ("x.md".into(), 1)]
+        [
+            ("dir".into(), 0),
+            ("x.md".into(), 1),
+            (tree::UNFILED.into(), 0)
+        ]
     );
     assert!(matches!(
         sidebar.read_with(cx, |s, _| s.listings.get(&dir).cloned()),
@@ -706,7 +824,10 @@ fn a_folder_read_from_the_previous_workspace_is_dropped(cx: &mut TestAppContext)
         sidebar.read_with(cx, |s, _| s.root().map(Path::to_path_buf)),
         Some(two)
     );
-    assert_eq!(row_names(cx, &sidebar), [("b.md".into(), 0)]);
+    assert_eq!(
+        row_names(cx, &sidebar),
+        [(tree::UNFILED.into(), 0), ("b.md".into(), 1)]
+    );
 }
 
 /// Ports Writer `stores.test.ts:130`: a read started before the same root
@@ -731,7 +852,10 @@ fn a_read_from_an_earlier_open_of_the_same_root_is_dropped(cx: &mut TestAppConte
         !listed_under(cx, &sidebar, &dir),
         "the read of the first open does not land in the second"
     );
-    assert_eq!(row_names(cx, &sidebar), [("dir".into(), 0)]);
+    assert_eq!(
+        row_names(cx, &sidebar),
+        [("dir".into(), 0), (tree::UNFILED.into(), 0)]
+    );
     let expanded = sidebar.read_with(cx, |s, _| s.rows[0].expanded);
     assert!(!expanded);
 }
@@ -770,6 +894,7 @@ fn renaming_an_expanded_folder_keeps_it_and_its_subfolders_open(cx: &mut TestApp
         ("sub".into(), 1),
         ("deep.md".into(), 2),
         ("top.md".into(), 1),
+        (tree::UNFILED.into(), 0),
     ];
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     while row_names(cx, &sidebar) != shown {
