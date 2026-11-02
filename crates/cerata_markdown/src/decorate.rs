@@ -90,14 +90,17 @@ impl LineStyle {
 /// What a fold shows in place of its source.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Widget {
-    /// An image, by its normalized destination.
+    /// An image, by its normalized destination, with the width its alt
+    /// text asks for (`![alt|300](x.png)`, ADR 0008).
     Image {
         url: String,
+        width: Option<u32>,
     },
-    /// An Obsidian image embed (`![[pic.png]]`), by its target
-    /// (`wiki::image_embed_target`); the host finds the file.
+    /// An Obsidian image embed (`![[pic.png|300]]`), by its target
+    /// (`wiki::image_embed_target`) and width; the host finds the file.
     WikiImage {
         target: String,
+        width: Option<u32>,
     },
     HorizontalRule,
     /// `--` (2) or `---` (3).
@@ -377,6 +380,20 @@ impl Cx<'_> {
         self.selection.touches(range)
     }
 
+    /// ADR 0008: a selection range exactly equal to `range` (a block
+    /// image), and no other range touching it, selects it as an object:
+    /// it stays drawn.
+    fn object_selected(&self, range: Range<usize>) -> bool {
+        let ranges = self.selection.ranges();
+        let equal = |r: &crate::selection::SelectionRange| {
+            !r.is_empty() && r.from() == range.start && r.to() == range.end
+        };
+        ranges.iter().any(equal)
+            && !ranges
+                .iter()
+                .any(|r| !equal(r) && r.from() <= range.end && r.to() >= range.start)
+    }
+
     /// Hides every descendant of `node` (itself included) named in `kinds`.
     fn hide_descendants(&mut self, node: Node<'_>, kinds: &[NodeKind], mode: HideMode) {
         for child in std::iter::once(node).chain(node.descendants()) {
@@ -560,7 +577,7 @@ impl Cx<'_> {
     /// source.
     fn fold_wiki_link(&mut self, node: Node<'_>) {
         let bang = self.text.slice(node.range()).starts_with('!');
-        let image = bang
+        let image: Option<crate::wiki::ImageEmbed> = bang
             .then(|| {
                 let range = node.range();
                 (range.end >= range.start + 5)
@@ -577,20 +594,25 @@ impl Cx<'_> {
         if end < start + 4 {
             return;
         }
+        let line = self.text.line_at(start);
+        let block = start == line.from && end == line.to;
+        let object = image.is_some() && block && self.object_selected(start..end);
         let inside = self
             .selection
             .ranges()
             .iter()
             .any(|r| r.from() >= start && r.to() <= end);
-        if inside {
+        if inside && !object {
             return;
         }
-        if let Some(target) = image {
-            let line = self.text.line_at(start);
+        if let Some(embed) = image {
             self.out.push(Decoration::Replace {
                 range: start..end,
-                widget: Widget::WikiImage { target },
-                block: start == line.from && end == line.to,
+                widget: Widget::WikiImage {
+                    target: embed.path,
+                    width: embed.size.map(|s| s.width),
+                },
+                block,
             });
             return;
         }
@@ -704,22 +726,28 @@ impl Cx<'_> {
     }
 
     /// `fold/image.ts:94-121`: replaced when untouched, a widget after the
-    /// source when touched, nothing while a caret is in the destination.
+    /// source when touched, nothing while a caret is in the destination. A
+    /// block image selected as an object stays replaced (ADR 0008).
     fn fold_image(&mut self, node: Node<'_>) {
         let Some(url) = node.children().find(|c| c.kind() == NodeKind::Url) else {
             return;
         };
-        if self.touches(url.range()) {
+        let line = self.text.line_at(node.from());
+        let block = node.from() == line.from && node.to() == line.to;
+        let object = block && self.object_selected(node.range());
+        if self.touches(url.range()) && !object {
             return;
         }
         let destination = normalize_destination(self.text.slice(url.range()));
         if destination.is_empty() {
             return;
         }
-        let line = self.text.line_at(node.from());
-        let block = node.from() == line.from && node.to() == line.to;
-        let widget = Widget::Image { url: destination };
-        if self.touches(node.range()) {
+        let width = crate::image_size::image_node(self.text, node).and_then(|i| i.width());
+        let widget = Widget::Image {
+            url: destination,
+            width,
+        };
+        if self.touches(node.range()) && !object {
             self.out.push(Decoration::Widget {
                 pos: node.to(),
                 widget,

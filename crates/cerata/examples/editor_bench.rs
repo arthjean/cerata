@@ -25,6 +25,10 @@
 //! same table, 60 column insertions ("Insert column right", each undone
 //! off the clock), then 200 characters typed in the last cell of a table of
 //! 1 000 rows.
+//!
+//! US-066 resizes an image in the middle of the 1 MB note: 3 x 60 widths
+//! of the preview of a handle's gesture, the buffer untouched, each
+//! drawn by the frame after it (the lines below reflow in it).
 
 #![allow(clippy::single_range_in_vec_init)]
 
@@ -60,6 +64,8 @@ const TABLE_ROWS: usize = 200;
 const TABLE_COLUMNS: usize = 8;
 const COLUMN_INSERTS: usize = 60;
 const BIG_TABLE_ROWS: usize = 1_000;
+const RESIZE_RUNS: usize = 3;
+const RESIZE_STEPS: usize = 60;
 
 #[derive(Default)]
 struct Timings {
@@ -73,6 +79,8 @@ struct Timings {
     column: Vec<Duration>,
     /// Keystrokes in the last cell of the 1 000 x 8 table.
     big: Vec<Duration>,
+    /// Width changes of an image's resize preview.
+    resize: Vec<Duration>,
     /// Events whose first frame after them did not render.
     missed: usize,
 }
@@ -129,6 +137,8 @@ enum Event {
     /// A registry command, from the caret.
     Command(&'static str),
     Undo,
+    /// The resize gesture in flight moves to this window x.
+    ResizeTo(f32),
 }
 
 struct Bench {
@@ -205,6 +215,11 @@ async fn measure(bench: &Rc<RefCell<Bench>>, event: Event, cx: &mut AsyncApp) ->
                         editor.update(cx, |editor, cx| {
                             editor.update_state(cx, |state| state.undo());
                         });
+                    }
+                }
+                Event::ResizeTo(x) => {
+                    if let Some(editor) = root.read(cx).editor.clone() {
+                        editor.update(cx, |editor, cx| editor.resize_to(px(x), cx));
                     }
                 }
                 Event::Scroll => {
@@ -340,6 +355,74 @@ async fn run(bench: Rc<RefCell<Bench>>, cx: &mut AsyncApp) -> anyhow::Result<Str
             .context("no frame after a scroll jump")?;
         bench.borrow_mut().timings.scrolling.push(work);
     }
+
+    // US-066: a gesture on the figure nearest the middle of the note.
+    let missed_before_resize = bench.borrow().timings.missed;
+    let started = window.update(cx, |_, window, cx| {
+        let editor = root.read(cx).editor.clone()?;
+        editor.update(cx, |editor, cx| {
+            let text = editor.state.text();
+            let middle = text.line_count() / 2;
+            let ix = (middle..text.line_count())
+                .find(|n| text.slice(text.line(*n).range()).starts_with("![Figure"))?;
+            let range = text.line(ix).range();
+            let top = editor.heights.prefix(ix);
+            editor.set_scroll_top(top - 100.0);
+            let line = editor.layout_line(ix, window, cx);
+            let block = line.block?;
+            let grip = editor::resize::Grip {
+                range,
+                url: String::new(),
+                ix,
+                width: block.width,
+                height: block.height,
+            };
+            let press = gpui::MouseDownEvent {
+                button: gpui::MouseButton::Left,
+                position: gpui::point(px(0.0), px(0.0)),
+                modifiers: gpui::Modifiers::default(),
+                click_count: 1,
+                first_mouse: false,
+            };
+            editor.start_resize(&grip, editor::resize::Side::Right, &press, window, cx);
+            Some((editor.state.revision(), block.width))
+        })
+    })?;
+    let (revision, start_width) = started.context("no figure to resize")?;
+    cx.background_executor()
+        .timer(Duration::from_millis(300))
+        .await;
+    for run in 0..RESIZE_RUNS {
+        for step in 0..RESIZE_STEPS {
+            // Narrower then back (a move is half the width change, the
+            // image staying centered); every step changes the width.
+            let half = RESIZE_STEPS as f32 / 2.0;
+            let s = (step + 1) as f32;
+            let triangle = if s <= half {
+                s / half
+            } else {
+                (RESIZE_STEPS as f32 - s) / half
+            };
+            let x = -(3.0 * run as f32 + (start_width / 2.0 - 40.0) * triangle);
+            let delay = bench.borrow_mut().next_delay();
+            cx.background_executor().timer(delay).await;
+            let work = measure(&bench, Event::ResizeTo(x), cx)
+                .await
+                .context("no frame after a width change")?;
+            bench.borrow_mut().timings.resize.push(work);
+        }
+    }
+    let untouched = window.update(cx, |_, _, cx| {
+        root.read(cx).editor.clone().is_some_and(|editor| {
+            editor.update(cx, |editor, cx| {
+                let same = editor.state.revision() == revision;
+                editor.cancel_resize(cx);
+                editor.release_resize(cx);
+                same && editor.state.revision() == revision
+            })
+        })
+    })?;
+    let missed_resize = bench.borrow().timings.missed - missed_before_resize;
 
     let typed: String = typed.into_iter().collect();
     let found = window.update(cx, |_, _, cx| {
@@ -478,13 +561,16 @@ async fn run(bench: Rc<RefCell<Bench>>, cx: &mut AsyncApp) -> anyhow::Result<Str
          columns after the insertions were undone: {columns_after}\n\
          table {BIG_TABLE_ROWS} x {TABLE_COLUMNS}:\n{}\n{}\n\
          caret after the typed text in a drawn cell: {big_in_cell}\n\
+         image resize, {RESIZE_RUNS} x {RESIZE_STEPS} widths:\n{}\n\
+         buffer untouched by the gesture: {untouched}, frames that missed their width: {missed_resize}\n\
+         verdict: image resize p99 {:.3} ms {} 16 ms\n\
          verdict: column insertion p99 {:.3} ms {} 16 ms; big table typing p99 {:.3} ms {} 16 ms\n\
          verdict: typing p99 {:.3} ms {} 16 ms; scroll p99 {:.3} ms {} 16.7 ms; open {open:.1} ms {} 100 ms; table typing p99 {:.3} ms {} 16 ms",
         b.note.len(),
         summary("keystroke: input handler", &t.handler[..handled]),
         summary("keystroke: frame work", &t.typing),
         summary("scroll jump: frame work (cold)", &t.scrolling),
-        missed_before_table,
+        missed_before_table - missed_resize,
         summary(
             "cell keystroke: input handler",
             &t.handler[handled..cell_handled]
@@ -499,6 +585,9 @@ async fn run(bench: Rc<RefCell<Bench>>, cx: &mut AsyncApp) -> anyhow::Result<Str
             &t.handler[cell_handled..]
         ),
         summary("big table keystroke: frame work", &t.big),
+        summary("image resize: frame work", &t.resize),
+        p99(&t.resize),
+        verdict(p99(&t.resize)),
         p99(&t.column),
         verdict(p99(&t.column)),
         p99(&t.big),

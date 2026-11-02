@@ -231,9 +231,11 @@ pub enum BlockKind {
 
 /// What sizes the block widgets of a line.
 pub trait BlockSizer {
-    fn image_box(&mut self, url: &str, width: f32) -> ImageBox;
+    /// The box of the image at `url` in a column `width` wide, at the
+    /// width its source asks for, if any (US-064).
+    fn image_box(&mut self, url: &str, requested: Option<f32>, width: f32) -> ImageBox;
     /// The box of an image embed (`![[target]]`), found by the host.
-    fn embed_box(&mut self, target: &str, width: f32) -> ImageBox;
+    fn embed_box(&mut self, target: &str, requested: Option<f32>, width: f32) -> ImageBox;
     /// The render of a formula (US-036).
     fn math(&mut self, tex: &str, display: bool) -> super::math::MathState;
     /// Height of a rich block in a column `width` wide.
@@ -256,6 +258,9 @@ pub trait BlockSizer {
 #[derive(Clone, Debug, PartialEq)]
 pub struct LineBlock {
     pub kind: BlockKind,
+    /// Left of the widget, relative to the column: a block image narrower
+    /// than the column is centered (US-064).
+    pub left: f32,
     /// Top of the widget, relative to the line top.
     pub top: f32,
     pub width: f32,
@@ -373,6 +378,9 @@ pub struct LayoutCx<'a> {
     pub marked: Option<Range<usize>>,
     /// Horizontal scroll offset of the code block starting at an offset.
     pub code_scroll: &'a dyn Fn(usize) -> f32,
+    /// The width a resize gesture shows for the block image starting at
+    /// an offset (US-067): the view's, the text still says the old one.
+    pub image_preview: Option<(usize, f32)>,
 }
 
 pub const QUOTE_INDENT_EM: f32 = 1.0;
@@ -476,38 +484,46 @@ pub fn layout_line(
             } if *pos == line.to => (widget, false, *pos),
             _ => continue,
         };
+        let preview = match decoration {
+            Decoration::Replace { range: r, .. } => cx
+                .image_preview
+                .filter(|(start, _)| *start == r.start)
+                .map(|(_, w)| w),
+            _ => None,
+        };
+        let image = match widget {
+            Widget::Image { url, width } => Some((
+                sizer.image_box(url, preview.or(width.map(|w| w as f32)), cx.column_width),
+                url.clone(),
+            )),
+            Widget::WikiImage { target, width } => Some((
+                sizer.embed_box(target, preview.or(width.map(|w| w as f32)), cx.column_width),
+                super::images::embed_key(target),
+            )),
+            _ => None,
+        };
+        if let Some((image_box, url)) = image {
+            match image_box {
+                ImageBox::Sized { width, height } => {
+                    block = Some(LineBlock {
+                        kind: BlockKind::Image { url },
+                        left: ((cx.column_width - width) / 2.0).max(0.0),
+                        top: 0.0,
+                        width,
+                        height,
+                        replaces,
+                        atomic_end: None,
+                    });
+                }
+                ImageBox::Unavailable => muted_source = true,
+            }
+            continue;
+        }
         match widget {
-            Widget::Image { url } => match sizer.image_box(url, cx.column_width) {
-                ImageBox::Sized { width, height } => {
-                    block = Some(LineBlock {
-                        kind: BlockKind::Image { url: url.clone() },
-                        top: 0.0,
-                        width,
-                        height,
-                        replaces,
-                        atomic_end: None,
-                    });
-                }
-                ImageBox::Unavailable => muted_source = true,
-            },
-            Widget::WikiImage { target } => match sizer.embed_box(target, cx.column_width) {
-                ImageBox::Sized { width, height } => {
-                    block = Some(LineBlock {
-                        kind: BlockKind::Image {
-                            url: super::images::embed_key(target),
-                        },
-                        top: 0.0,
-                        width,
-                        height,
-                        replaces,
-                        atomic_end: None,
-                    });
-                }
-                ImageBox::Unavailable => muted_source = true,
-            },
             Widget::HorizontalRule => {
                 block = Some(LineBlock {
                     kind: BlockKind::Rule,
+                    left: 0.0,
                     top: 0.0,
                     width: cx.column_width,
                     height: cx.config.row_height(),
@@ -582,6 +598,7 @@ pub fn layout_line(
                     }
                 };
                 block = Some(LineBlock {
+                    left: 0.0,
                     top: 0.0,
                     width: laid.width,
                     height: laid.height,
@@ -593,6 +610,7 @@ pub fn layout_line(
             w if super::blocks::is_rich(w) => {
                 block = Some(LineBlock {
                     kind: BlockKind::Rich(w.clone()),
+                    left: 0.0,
                     top: 0.0,
                     width: cx.column_width,
                     height: sizer.rich_height(w, cx.column_width),

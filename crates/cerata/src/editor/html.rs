@@ -382,7 +382,7 @@ impl Editor {
             .attr("width")
             .and_then(|w| w.trim_end_matches("px").parse::<f32>().ok())
             .map_or(width, |w| w.min(width));
-        let (image_box, job) = self.images.image_box(src, max, hcx.row_height);
+        let (image_box, job) = self.images.image_box(src, None, max, hcx.row_height);
         hcx.jobs.extend(job);
         match image_box {
             ImageBox::Sized { width, height } => {

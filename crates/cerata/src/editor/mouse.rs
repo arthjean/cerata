@@ -43,6 +43,8 @@ pub enum Drag {
         start_offset: f32,
         per_pixel: f32,
     },
+    /// Resizing a block image by a handle (US-067).
+    Resize(super::resize::Resize),
 }
 
 /// A hit on a code block's drawn scrollbar.
@@ -208,6 +210,31 @@ impl Editor {
             })
     }
 
+    /// The block image drawn (not as source) under the pointer: its node
+    /// (ADR 0008).
+    fn drawn_image_at(
+        &mut self,
+        position: Point<Pixels>,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Option<cerata_markdown::image_size::ImageNode> {
+        let range = self.widget_at(position, window, cx)?;
+        cerata_markdown::image_size::image_at(self.state.tree(), self.state.text(), range.start)
+            .filter(|image| image.block && image.range == range)
+    }
+
+    /// Selects `image` as an object, anchored at its end. The view stays:
+    /// the image is under the pointer, and keeping its whole height in the
+    /// safe margins would scroll the note under it.
+    fn select_image(
+        &mut self,
+        image: &cerata_markdown::image_size::ImageNode,
+        cx: &mut Context<Self>,
+    ) {
+        self.select(Selection::single(image.range.end, image.range.start), cx);
+        self.autoscroll = None;
+    }
+
     fn unit_range(&self, pos: usize, unit: Unit) -> std::ops::Range<usize> {
         let text = self.state.text();
         // In a drawn table: a word stays in its cell, a line is the table
@@ -291,6 +318,25 @@ impl Editor {
         {
             self.follow_link(target, window, cx);
             return;
+        }
+        // A click on a block image selects it as an object, whatever was
+        // selected (ADR 0008); a double click shows its source, the caret
+        // at the end of its alt text.
+        if !event.modifiers.shift
+            && let Some(image) = self.drawn_image_at(event.position, window, cx)
+        {
+            match unit {
+                Unit::Char => {
+                    self.select_image(&image, cx);
+                    return;
+                }
+                Unit::Word => {
+                    let caret = image.alt_end(self.state.text());
+                    self.select(Selection::cursor(caret), cx);
+                    return;
+                }
+                Unit::Line => {}
+            }
         }
         // A click on a widget with no selection selects its whole
         // decoration, anchored at its end.
@@ -385,10 +431,14 @@ impl Editor {
         if event.pressed_button != Some(MouseButton::Left) {
             // The release happened outside the window and never reached us:
             // the drag ends where it last was.
+            if self.release_resize(cx) {
+                return;
+            }
             self.end_drag(cx);
             return;
         }
         match drag {
+            Drag::Resize(_) => self.resize_to(event.position.x, cx),
             Drag::Thumb {
                 first_line,
                 start_x,
@@ -463,6 +513,9 @@ impl Editor {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.release_resize(cx) {
+            return;
+        }
         if let Some(Drag::Select {
             moved: false,
             checkbox: Some(pos),
@@ -594,6 +647,12 @@ impl Editor {
         cx: &mut Context<Self>,
     ) {
         window.focus(&self.focus_handle, cx);
+        // On a block image: selected as an object first (ADR 0008).
+        if let Some(image) = self.drawn_image_at(event.position, window, cx) {
+            self.select_image(&image, cx);
+            self.open_context_menu(event.position, image.range.start, cx);
+            return;
+        }
         let pos = self.offset_for_point(event.position, window, cx);
         if !self
             .state

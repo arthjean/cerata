@@ -57,6 +57,9 @@ pub enum Command {
     Settings,
     /// "Insert image…" in the active note (US-062), offered with a note.
     InsertImage,
+    /// "Image width: 50%" and the other presets, offered with the caret on
+    /// a block image or in its source (US-068).
+    ImageWidth(crate::editor::resize::Preset),
     /// An editor command of the registry, offered where it applies (the
     /// table commands, with the caret in a drawn table: US-053).
     Editor(&'static str),
@@ -93,6 +96,7 @@ impl Command {
             Self::ResetZoom => "Reset Zoom",
             Self::Settings => "Settings",
             Self::InsertImage => "Insert image\u{2026}",
+            Self::ImageWidth(preset) => preset.command_label(),
             Self::Editor(id) => cerata_markdown::commands::command(id).map_or(id, |c| c.label),
         }
     }
@@ -117,7 +121,7 @@ impl Command {
             Self::CloseTab | Self::CloseAllTabs => a.has_tabs && !a.compact,
             Self::CloseWorkspace => a.has_workspace,
             Self::Settings => !a.compact,
-            Self::Editor(_) | Self::InsertImage => true,
+            Self::Editor(_) | Self::InsertImage | Self::ImageWidth(_) => true,
             Self::OpenWorkspace
             | Self::ToggleTheme
             | Self::ZoomIn

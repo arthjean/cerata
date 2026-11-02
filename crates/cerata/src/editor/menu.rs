@@ -26,6 +26,9 @@ pub enum MenuAction {
     Command(&'static str),
     /// "Image…": the file picker, which a pure state command cannot open.
     InsertImage,
+    /// A preset width of the image at the caret (US-068), computed on the
+    /// view's column.
+    ImageWidth(super::resize::Preset),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -148,11 +151,13 @@ fn table_submenu(state: &cerata_markdown::EditorState) -> Option<MenuItem> {
 }
 
 /// The body menu's items. `link` is the destination under the pointer;
-/// `state` gives the Table submenu.
+/// `state` gives the Table submenu, `presets` the Image width submenu of the
+/// block image at the caret (US-068), each preset with whether it applies.
 pub fn body_items(
     has_clipboard_text: bool,
     link: Option<String>,
     state: &cerata_markdown::EditorState,
+    presets: &[(super::resize::Preset, bool)],
 ) -> Vec<MenuItem> {
     let os = current_os();
     let item = |label: &str, enabled: bool, action: MenuAction| MenuItem::Action {
@@ -161,12 +166,25 @@ pub fn body_items(
         enabled,
         action,
     };
-    let mut items = vec![
+    let mut items = Vec::new();
+    if !presets.is_empty() {
+        items.push(MenuItem::Submenu {
+            label: SharedString::new_static("Image width"),
+            items: presets
+                .iter()
+                .map(|(preset, enabled)| {
+                    item(preset.label(), *enabled, MenuAction::ImageWidth(*preset))
+                })
+                .collect(),
+        });
+        items.push(MenuItem::Separator);
+    }
+    items.extend([
         item("Cut", true, MenuAction::Cut),
         item("Copy", true, MenuAction::Copy),
         item("Paste", has_clipboard_text, MenuAction::Paste),
         MenuItem::Separator,
-    ];
+    ]);
     for (label, layout) in SUBMENUS {
         let mut sub = layout
             .iter()
@@ -256,7 +274,12 @@ impl Editor {
             .is_some_and(|text| !text.is_empty());
         self.menu = Some(ContextMenu {
             position,
-            items: body_items(has_text, link_at(&self.state, pos), &self.state),
+            items: body_items(
+                has_text,
+                link_at(&self.state, pos),
+                &self.state,
+                &self.image_presets(),
+            ),
             open_submenu: None,
             in_submenu: false,
         });
@@ -291,6 +314,9 @@ impl Editor {
                 self.update_state(cx, |state| state.run_command(id, &clock));
             }
             MenuAction::InsertImage => self.pick_images(cx),
+            MenuAction::ImageWidth(preset) => {
+                self.set_image_width_preset(preset, cx);
+            }
         }
         cx.notify();
     }
@@ -483,7 +509,7 @@ mod tests {
     #[test]
     fn body_menu_follows_writers_layout() {
         let empty = cerata_markdown::EditorState::new("");
-        let items = body_items(false, None, &empty);
+        let items = body_items(false, None, &empty, &[]);
         let labels: Vec<String> = items
             .iter()
             .map(|i| match i {
@@ -531,7 +557,7 @@ mod tests {
             "Ctrl+B"
         };
         assert_eq!(bold.as_deref(), Some(expected));
-        let with_link = body_items(true, Some("https://a.b".into()), &empty);
+        let with_link = body_items(true, Some("https://a.b".into()), &empty, &[]);
         assert!(with_link.iter().any(|i| matches!(
             i,
             MenuItem::Action {
@@ -607,7 +633,7 @@ mod tests {
         state
             .select(cerata_markdown::Selection::cursor(pos))
             .unwrap();
-        let items = body_items(false, None, &state);
+        let items = body_items(false, None, &state, &[]);
         let Some(MenuItem::Submenu { items: table, .. }) = items
             .iter()
             .find(|i| matches!(i, MenuItem::Submenu { label, .. } if label.as_ref() == "Table"))

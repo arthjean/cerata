@@ -39,7 +39,7 @@ fn describe(decoration: &Decoration) -> Option<String> {
                 "widget"
             };
             let name = match widget {
-                Widget::Image { url } => format!("ImageWidget {url}"),
+                Widget::Image { url, .. } => format!("ImageWidget {url}"),
                 Widget::HorizontalRule => "HorizontalRuleWidget".to_owned(),
                 Widget::Dash(count) => format!("DashWidget {count}"),
                 Widget::Emoji(emoji) => format!("EmojiWidget {emoji}"),
@@ -109,6 +109,28 @@ fn decorations_match_writer_snapshots() {
                 .collect();
             assert_eq!(actual, pure);
             cases += 1;
+            // ADR 0008 amends Writer: a range equal to a block image
+            // selects it as an object, which stays drawn.
+            let main = selection.main();
+            let object = (selection.ranges().len() == 1 && !main.is_empty())
+                .then(|| {
+                    cerata_markdown::image_size::image_at(state.tree(), state.text(), main.from())
+                })
+                .flatten()
+                .filter(|i| i.block && i.range == (main.from()..main.to()));
+            if let Some(image) = object {
+                // An embed's widget is outside the oracle's fold set.
+                if image.embed {
+                    continue;
+                }
+                let replace = "replace block ImageWidget";
+                assert!(
+                    actual.iter().any(|d| d.starts_with(replace)),
+                    "{name} {:?}: the image stays drawn",
+                    case["selection"]
+                );
+                continue;
+            }
             if actual != expected {
                 let missing: Vec<_> = expected.iter().filter(|d| !actual.contains(d)).collect();
                 let extra: Vec<_> = actual.iter().filter(|d| !expected.contains(d)).collect();

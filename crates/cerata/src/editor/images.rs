@@ -364,9 +364,15 @@ impl ImageHost {
     /// to start when the image was never seen. Before it is measured (and
     /// when it cannot be read) an image keeps its estimated height: the last
     /// height cached for this source and width, else one text row.
+    ///
+    /// Without `requested`, an image shows at its natural width, bounded by
+    /// the column; with it (`![a|300](x.png)`, US-064), at that width, which
+    /// may enlarge it up to the column. A `<img width>` passes its bounded
+    /// width as `width` and nothing as `requested`.
     pub fn image_box(
         &mut self,
         url: &str,
+        requested: Option<f32>,
         width: f32,
         row_height: f32,
     ) -> (ImageBox, Option<LoadJob>) {
@@ -374,7 +380,7 @@ impl ImageHost {
             Some(Source::Local(path)) if !host.loadable(&path) => None,
             source => source,
         };
-        self.sized(url, source, width, row_height)
+        self.sized(url, source, requested, width, row_height)
     }
 
     /// [`ImageHost::image_box`] for an image embed (`![[target]]`), found
@@ -383,6 +389,7 @@ impl ImageHost {
     pub fn embed_box(
         &mut self,
         target: &str,
+        requested: Option<f32>,
         width: f32,
         row_height: f32,
     ) -> (ImageBox, Option<LoadJob>) {
@@ -394,13 +401,28 @@ impl ImageHost {
                 confine: host.root.clone(),
             })
         };
-        self.sized(&embed_key(target), source, width, row_height)
+        self.sized(&embed_key(target), source, requested, width, row_height)
+    }
+
+    /// The natural size of the image at `url` (an embed by its key), once
+    /// measured.
+    pub fn natural(&self, url: &str) -> Option<(f32, f32)> {
+        match self.entries.get(url) {
+            Some(Entry::Ready { natural, .. }) => Some(*natural),
+            _ => None,
+        }
+    }
+
+    /// The image at `url` was measured: it can be resized (US-067).
+    pub fn is_ready(&self, url: &str) -> bool {
+        self.natural(url).is_some()
     }
 
     fn sized(
         &mut self,
         url: &str,
         source: impl FnOnce(&Self) -> Option<Source>,
+        requested: Option<f32>,
         width: f32,
         row_height: f32,
     ) -> (ImageBox, Option<LoadJob>) {
@@ -419,11 +441,14 @@ impl ImageHost {
             self.entries.insert(url.to_owned(), entry);
         }
         let column = width.max(1.0).floor();
-        let key = (url.to_owned(), column as u32);
+        let requested = requested.map(|w| w.min(column).floor().max(1.0));
+        // A requested width is the displayed one, known before the image
+        // is measured: it keys the cached height, which is then exact.
+        let key = (url.to_owned(), requested.unwrap_or(column) as u32);
         let image_box = match self.entries.get(url) {
             Some(Entry::Unavailable) | None => ImageBox::Unavailable,
             Some(Entry::Ready { natural, .. }) => {
-                let display = natural.0.min(column).floor().max(1.0);
+                let display = requested.unwrap_or_else(|| natural.0.min(column).floor().max(1.0));
                 let height = (natural.1 * display / natural.0).round().max(1.0);
                 self.heights.insert(key, height);
                 ImageBox::Sized {
@@ -432,7 +457,7 @@ impl ImageHost {
                 }
             }
             Some(Entry::Pending | Entry::Failed) => ImageBox::Sized {
-                width: column,
+                width: requested.unwrap_or(column),
                 height: self.heights.get(&key).copied().unwrap_or(row_height),
             },
         };
@@ -650,21 +675,24 @@ mod tests {
         )
         .unwrap();
         let mut host = ImageHost::new(Some(notes.clone()));
-        assert!(host.image_box("in.png", 700.0, 30.0).1.is_some());
+        assert!(host.image_box("in.png", None, 700.0, 30.0).1.is_some());
         let out = outside
             .path()
             .join("out.png")
             .to_string_lossy()
             .into_owned();
-        assert_eq!(host.image_box(&out, 700.0, 30.0).0, ImageBox::Unavailable);
         assert_eq!(
-            host.image_box("../up.png", 700.0, 30.0).0,
+            host.image_box(&out, None, 700.0, 30.0).0,
+            ImageBox::Unavailable
+        );
+        assert_eq!(
+            host.image_box("../up.png", None, 700.0, 30.0).0,
             ImageBox::Unavailable,
             "outside the note's folder when no workspace is set"
         );
         host.set_root(workspace.path());
-        assert!(host.image_box("../up.png", 700.0, 30.0).1.is_some());
-        let (_, job) = host.image_box("leak.svg", 700.0, 30.0);
+        assert!(host.image_box("../up.png", None, 700.0, 30.0).1.is_some());
+        let (_, job) = host.image_box("leak.svg", None, 700.0, 30.0);
         let (_, result) = job.expect("inside the root").run();
         assert!(result.is_none(), "its external reference is refused");
     }
@@ -684,10 +712,10 @@ mod tests {
         std::fs::write(dir.path().join("bad.png"), b"garbage").unwrap();
         let mut host = ImageHost::new(Some(dir.path().to_path_buf()));
         assert_eq!(
-            host.image_box("missing.png", 700.0, 30.0).0,
+            host.image_box("missing.png", None, 700.0, 30.0).0,
             ImageBox::Unavailable
         );
-        let (estimate, job) = host.image_box("bad.png", 700.0, 30.0);
+        let (estimate, job) = host.image_box("bad.png", None, 700.0, 30.0);
         assert_eq!(
             estimate,
             ImageBox::Sized {
@@ -698,7 +726,7 @@ mod tests {
         let (url, result) = job.expect("a load starts").run();
         assert!(!host.finish(url, result), "unreadable");
         // Asking again keeps the estimate: no jump.
-        let (again, job) = host.image_box("bad.png", 700.0, 30.0);
+        let (again, job) = host.image_box("bad.png", None, 700.0, 30.0);
         assert_eq!(again, estimate);
         assert!(job.is_none());
     }

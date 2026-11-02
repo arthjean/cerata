@@ -40,6 +40,7 @@ mod menu;
 pub mod mermaid;
 mod mouse;
 mod rail;
+pub mod resize;
 pub mod search;
 mod table;
 pub mod text_field;
@@ -671,6 +672,7 @@ impl Editor {
             column_width,
             marked: self.marked_range.clone(),
             code_scroll: &scroll_for,
+            image_preview: self.image_preview(),
         };
         self.tables
             .validate(&self.state, column_width, &self.config, &self.marked_range);
@@ -1034,14 +1036,18 @@ struct Sizer<'a> {
 }
 
 impl layout::BlockSizer for Sizer<'_> {
-    fn image_box(&mut self, url: &str, width: f32) -> layout::ImageBox {
-        let (image_box, job) = self.images.image_box(url, width, self.row_height);
+    fn image_box(&mut self, url: &str, requested: Option<f32>, width: f32) -> layout::ImageBox {
+        let (image_box, job) = self
+            .images
+            .image_box(url, requested, width, self.row_height);
         self.jobs.extend(job);
         image_box
     }
 
-    fn embed_box(&mut self, target: &str, width: f32) -> layout::ImageBox {
-        let (image_box, job) = self.images.embed_box(target, width, self.row_height);
+    fn embed_box(&mut self, target: &str, requested: Option<f32>, width: f32) -> layout::ImageBox {
+        let (image_box, job) = self
+            .images
+            .embed_box(target, requested, width, self.row_height);
         self.jobs.extend(job);
         image_box
     }

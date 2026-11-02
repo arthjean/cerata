@@ -185,13 +185,17 @@ fn image_previews_wait_for_the_caret_to_leave_the_destination() {
     assert!(at(doc, 0).contains(&Decoration::Replace {
         range: image.clone(),
         widget: Widget::Image {
-            url: url_string.clone()
+            url: url_string.clone(),
+            width: None,
         },
         block: true
     }));
     assert!(at(doc, end).contains(&Decoration::Widget {
         pos: end,
-        widget: Widget::Image { url: url_string },
+        widget: Widget::Image {
+            url: url_string,
+            width: None,
+        },
         block: true
     }));
     // Inline when it shares its line.
@@ -559,14 +563,14 @@ fn wiki_links_fold_to_their_text_unless_the_selection_is_inside() {
 fn image_embeds_fold_to_their_image() {
     let doc = "![[assets/pic.png|400]]\n\nsee ![[pic.png]] and ![[Note]]\n\nx";
     let folded = at(doc, doc.len());
-    let images: Vec<(Range<usize>, &str, bool)> = folded
+    let images: Vec<(Range<usize>, &str, Option<u32>, bool)> = folded
         .iter()
         .filter_map(|d| match d {
             Decoration::Replace {
                 range,
-                widget: Widget::WikiImage { target },
+                widget: Widget::WikiImage { target, width },
                 block,
-            } => Some((range.clone(), target.as_str(), *block)),
+            } => Some((range.clone(), target.as_str(), *width, *block)),
             _ => None,
         })
         .collect();
@@ -574,8 +578,8 @@ fn image_embeds_fold_to_their_image() {
     assert_eq!(
         images,
         [
-            (0..23, "assets/pic.png", true),
-            (inline..inline + 12, "pic.png", false)
+            (0..23, "assets/pic.png", Some(400), true),
+            (inline..inline + 12, "pic.png", None, false)
         ]
     );
     let note = doc.find("![[Note").unwrap();
@@ -803,4 +807,134 @@ fn closed_mermaid_fences_fold_to_a_canvas() {
     assert!(canvas(&at(empty, empty.len())).is_empty());
     let other = "```rust\nfn main() {}\n```\n\nx";
     assert!(canvas(&at(other, other.len())).is_empty());
+}
+
+// EP-013 ---------------------------------------------------------------
+
+fn with(doc: &str, ranges: &[(usize, usize)]) -> Vec<Decoration> {
+    let state = EditorState::with_filters(doc, Vec::new());
+    let ranges = ranges
+        .iter()
+        .map(|(a, h)| SelectionRange::new(*a, *h))
+        .collect();
+    decorate(state.tree(), state.text(), &Selection::new(ranges, 0), None)
+}
+
+fn image_widths(decorations: &[Decoration]) -> Vec<Option<u32>> {
+    decorations
+        .iter()
+        .filter_map(|d| match d.widget() {
+            Some(Widget::Image { width, .. } | Widget::WikiImage { width, .. }) => Some(*width),
+            _ => None,
+        })
+        .collect()
+}
+
+/// US-063: the width an image's alt text or embed asks for rides on its
+/// widget; the height of `|WxH` is dropped, a refused suffix is no size.
+#[test]
+fn image_widgets_carry_the_width_of_their_source() {
+    let doc = "![a|300](x.png)\n\n![120](x.png)\n\n![a|100x50](x.png)\n\n![a|50%](x.png)\n\n![a\\|30](x.png)\n\n![[x.png|250]]\n\n![[x.png]]\n\nend";
+    assert_eq!(
+        image_widths(&at(doc, doc.len())),
+        [Some(300), Some(120), Some(100), None, None, Some(250), None]
+    );
+}
+
+/// US-065: a range equal to a block image keeps it drawn; a range that
+/// only touches it, an inline image and an image in a table cell keep the
+/// reveal rule.
+#[test]
+fn a_range_equal_to_a_block_image_selects_it_as_an_object() {
+    let doc = "intro\n\n![a|300](x.png)\n\nend";
+    let image = 7..22;
+    let replaced = |d: &[Decoration]| {
+        d.iter().any(|d| {
+            matches!(d, Decoration::Replace { range, widget: Widget::Image { width: Some(300), .. }, block: true } if *range == image)
+        })
+    };
+    assert!(replaced(&with(doc, &[(22, 7)])), "anchored at the end");
+    assert!(replaced(&with(doc, &[(7, 22)])), "anchored at the start");
+    // Touching without being equal: the source with the widget below it.
+    for ranges in [
+        [(7, 7)],
+        [(22, 22)],
+        [(8, 22)],
+        [(0, 22)],
+        [(7, 23)],
+        [(0, 9)],
+    ] {
+        let d = with(doc, &ranges);
+        assert!(!replaced(&d), "{ranges:?}");
+    }
+    let below = with(doc, &[(0, 9)]);
+    assert!(below.iter().any(|d| matches!(
+        d,
+        Decoration::Widget {
+            pos: 22,
+            widget: Widget::Image { .. },
+            block: true
+        }
+    )));
+    // Inline: the current rule.
+    let inline = "see ![a](x.png) here";
+    let d = with(inline, &[(4, 15)]);
+    assert!(
+        d.iter().all(|d| !matches!(
+            d,
+            Decoration::Replace {
+                widget: Widget::Image { .. },
+                ..
+            }
+        )),
+        "an inline image equal to the range shows its source"
+    );
+    // In a table cell: the table reveals its source, as today.
+    let table = "| a |\n| --- |\n| ![x](y.png) |\n";
+    let cell = table.find("![x").unwrap();
+    let d = with(table, &[(cell, cell + 11)]);
+    assert!(d.iter().all(|d| !matches!(
+        d,
+        Decoration::Replace {
+            widget: Widget::Image { .. },
+            ..
+        }
+    )));
+}
+
+/// US-065: an embed selected whole stays drawn too.
+#[test]
+fn an_embed_selected_whole_stays_drawn() {
+    let doc = "![[x.png|300]]\n\nend";
+    let drawn = |d: &[Decoration]| {
+        d.iter().any(|d| {
+            matches!(d, Decoration::Replace { range, widget: Widget::WikiImage { width: Some(300), .. }, block: true } if *range == (0..14))
+        })
+    };
+    assert!(drawn(&with(doc, &[(14, 0)])));
+    assert!(
+        !drawn(&with(doc, &[(3, 3)])),
+        "a caret inside shows the source"
+    );
+    assert!(
+        !drawn(&with(doc, &[(2, 14)])),
+        "a range inside shows the source"
+    );
+}
+
+/// US-065: with several ranges, the rule applies to the image a range
+/// equals; another image touched by another range shows its source.
+#[test]
+fn the_object_rule_applies_to_the_image_a_range_equals_only() {
+    let doc = "![a](x.png)\n\n![b](y.png)\n";
+    let replaced = |d: &[Decoration], start: usize| {
+        d.iter().any(|d| {
+            matches!(d, Decoration::Replace { range, widget: Widget::Image { .. }, .. } if range.start == start)
+        })
+    };
+    let d = with(doc, &[(11, 0), (15, 15)]);
+    assert!(replaced(&d, 0), "the first is an object");
+    assert!(!replaced(&d, 13), "the second shows its source");
+    let d = with(doc, &[(11, 0), (13, 24)]);
+    assert!(replaced(&d, 0) && replaced(&d, 13), "each equal to a range");
 }

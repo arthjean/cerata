@@ -2400,6 +2400,59 @@ mod images {
         assert_eq!(editor_doc, "text\n", "nothing inserted");
     }
 
+    /// US-068: with the caret in a block image's source the palette offers
+    /// its preset widths, Original size only once it has a size; the
+    /// command writes the width in the active note.
+    #[gpui::test]
+    fn the_palette_offers_the_preset_widths_of_the_image_at_the_caret(cx: &mut TestAppContext) {
+        use crate::editor::resize::Preset;
+        let env = setup(cx);
+        let (handle, _) = open_note(cx, &env, "Intro\n\n![a](a.png)\n");
+        let editor = editor(cx, handle);
+        update(cx, handle, |_, _, cx| {
+            editor.update(cx, |e, cx| e.caret_to_end(cx))
+        });
+        let commands = read(cx, handle, |view, cx| view.editor_commands(cx));
+        assert!(
+            !commands.iter().any(|c| matches!(c, Command::ImageWidth(_))),
+            "the caret is past the image"
+        );
+        update(cx, handle, |_, _, cx| {
+            editor.update(cx, |e, cx| {
+                e.select(cerata_markdown::Selection::cursor(9), cx)
+            })
+        });
+        let commands = read(cx, handle, |view, cx| view.editor_commands(cx));
+        let widths: Vec<&str> = commands
+            .iter()
+            .filter(|c| matches!(c, Command::ImageWidth(_)))
+            .map(|c| c.label())
+            .collect();
+        assert_eq!(
+            widths,
+            [
+                "Image width: 25%",
+                "Image width: 50%",
+                "Image width: 75%",
+                "Image width: Full width"
+            ]
+        );
+        update(cx, handle, |view, window, cx| {
+            view.run_command(Command::ImageWidth(Preset::Half), window, cx)
+        });
+        let text = doc(cx, handle);
+        assert!(
+            text.starts_with("Intro\n\n![a|") && text.ends_with("](a.png)\n"),
+            "{text}"
+        );
+        let commands = read(cx, handle, |view, cx| view.editor_commands(cx));
+        assert!(commands.contains(&Command::ImageWidth(Preset::Original)));
+        update(cx, handle, |view, window, cx| {
+            view.run_command(Command::ImageWidth(Preset::Original), window, cx)
+        });
+        assert_eq!(doc(cx, handle), "Intro\n\n![a](a.png)\n");
+    }
+
     /// "Insert image…" in the palette reaches the active note and inserts
     /// what the picker returns at the caret.
     #[gpui::test]

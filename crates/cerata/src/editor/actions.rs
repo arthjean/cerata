@@ -672,6 +672,9 @@ impl Editor {
     /// Escape: closes the find bar or the menu, else collapses a multiple
     /// selection to its main range.
     fn cancel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.cancel_resize(cx) {
+            return;
+        }
         if self.completion_close(cx) {
             return;
         }

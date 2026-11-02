@@ -738,9 +738,24 @@ fn a_drag_from_a_list_prefix_and_its_rectangles_stay_on_the_text(cx: &mut TestAp
     });
 }
 
+/// Rewritten for ADR 0008: a rule still needs an empty selection; a block
+/// image is selected as an object whatever is selected
+/// (`a_click_on_an_image_selects_it_as_an_object_without_moving_it`).
 #[gpui::test]
 fn a_click_on_a_widget_selects_its_decoration_anchored_at_its_end(cx: &mut TestAppContext) {
     let (editor, cx) = open(cx, "intro\n\n---\n\nafter\n");
+    // A selection: the click on the rule places the caret instead.
+    editor.update(cx, |e, cx| e.select(Selection::single(0, 3), cx));
+    cx.run_until_parked();
+    let rule = editor.read_with(cx, |editor, _| {
+        point(
+            editor.viewport.expect("painted").column_left + px(40.0),
+            editor.line_screen_top(2) + px(15.0),
+        )
+    });
+    press(cx, rule, 1, false);
+    release(cx, rule);
+    assert_ne!(selection(&editor, cx), [(10, 7)], "not the rule");
     set_cursor(&editor, cx, 0);
     let position = editor.read_with(cx, |editor, _| {
         point(
@@ -3876,7 +3891,7 @@ fn the_menu_entry_opens_the_picker(cx: &mut TestAppContext) {
     use super::menu::{MenuAction, MenuItem, body_items};
     let (editor, cx, _dir, _outside) = note_with_files(cx, "Intro", &[]);
     let insert = editor.read_with(cx, |editor, _| {
-        body_items(false, None, &editor.state)
+        body_items(false, None, &editor.state, &[])
             .into_iter()
             .find_map(|item| match item {
                 MenuItem::Submenu { label, items } if label.as_ref() == "Insert" => Some(items),
@@ -4025,4 +4040,598 @@ fn a_drop_before_a_list_or_a_table_inserts_blocks(cx: &mut TestAppContext) {
         doc(&editor, cx),
         "Intro\n\n![a](note-assets/a.png)\n\n- item\n\n![a](<note-assets/a 1.png>)\n\n| A | B |\n| --- | --- |\n| x | y |\n"
     );
+}
+
+// EP-013: image widths, object selection and resizing ------------------
+
+/// A note next to `wide.png` (1600 x 900), `small.png` (200 x 120) and an
+/// unreadable `bad.png`, the caret at its end and its images measured.
+fn image_editor<'a>(
+    cx: &'a mut TestAppContext,
+    note: &str,
+) -> (Entity<Editor>, &'a mut VisualTestContext, tempfile::TempDir) {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("wide.png"), png(1600, 900)).unwrap();
+    std::fs::write(dir.path().join("small.png"), png(200, 120)).unwrap();
+    std::fs::write(dir.path().join("bad.png"), b"not a png").unwrap();
+    let path = dir.path().join("note.md");
+    let (editor, cx) = open_at(cx, note, Some(path), EditorConfig::default());
+    set_cursor(&editor, cx, note.len());
+    cx.run_until_parked();
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    (editor, cx, dir)
+}
+
+fn selector(name: String) -> &'static str {
+    Box::leak(name.into_boxed_str())
+}
+
+/// The painted bounds of the block image on line `ix`.
+fn image_bounds(cx: &mut VisualTestContext, ix: usize) -> gpui::Bounds<Pixels> {
+    cx.debug_bounds(selector(format!("editor-image-{ix}")))
+        .expect("image painted")
+}
+
+fn handle_bounds(
+    cx: &mut VisualTestContext,
+    side: &str,
+    ix: usize,
+) -> Option<gpui::Bounds<Pixels>> {
+    cx.debug_bounds(selector(format!("image-handle-{side}-{ix}")))
+}
+
+fn viewport(editor: &Entity<Editor>, cx: &mut VisualTestContext) -> super::Viewport {
+    editor.read_with(cx, |e, _| e.viewport.expect("painted"))
+}
+
+fn hover(cx: &mut VisualTestContext, position: Point<Pixels>) {
+    cx.simulate_mouse_move(position, None, Modifiers::default());
+    cx.run_until_parked();
+}
+
+fn click(cx: &mut VisualTestContext, position: Point<Pixels>, clicks: usize) {
+    press(cx, position, clicks, false);
+    release(cx, position);
+    cx.run_until_parked();
+}
+
+fn last_frame(editor: &Entity<Editor>, cx: &mut VisualTestContext) -> super::element::FrameRecord {
+    editor.read_with(cx, |e, _| e.frames.last().cloned().expect("a frame"))
+}
+
+/// US-064: the width a block image's source asks for, bounded by the
+/// column (and enlarging a small image), centered when narrower than the
+/// column; no size shows the natural width.
+#[gpui::test]
+fn block_images_show_at_their_width_and_narrow_ones_are_centered(cx: &mut TestAppContext) {
+    let note = "![a|300](wide.png)\n\n![b|2000](wide.png)\n\n![c](small.png)\n\n![d|400](small.png)\n\nend";
+    let (editor, cx, _dir) = image_editor(cx, note);
+    let v = viewport(&editor, cx);
+    let column = v.column_width;
+    let centered = |width: f32| v.column_left + px((column - width) / 2.0);
+    let a = image_bounds(cx, 0);
+    assert_eq!((a.size.width, a.size.height), (px(300.0), px(169.0)));
+    assert_eq!(a.origin.x, centered(300.0));
+    let b = image_bounds(cx, 2);
+    assert_eq!(b.size.width, px(column), "bounded by the column");
+    assert_eq!(b.origin.x, v.column_left);
+    let c = image_bounds(cx, 4);
+    assert_eq!((c.size.width, c.size.height), (px(200.0), px(120.0)));
+    assert_eq!(c.origin.x, centered(200.0));
+    let d = image_bounds(cx, 6);
+    assert_eq!(
+        (d.size.width, d.size.height),
+        (px(400.0), px(240.0)),
+        "enlarged past its natural width"
+    );
+    assert_eq!(d.origin.x, centered(400.0));
+}
+
+/// US-064: the frame after a width change already has the lines below the
+/// image at their new place.
+#[gpui::test]
+fn a_new_width_moves_the_lines_below_in_the_next_frame(cx: &mut TestAppContext) {
+    let note = "![a|300](wide.png)\nafter\n\nend";
+    let (editor, cx, _dir) = image_editor(cx, note);
+    assert_eq!(image_bounds(cx, 0).size.height, px(169.0));
+    editor.update(cx, |e, cx| {
+        e.frames.clear();
+        e.update_state(cx, |s| s.set_image_width(0..18, Some(150)));
+    });
+    cx.run_until_parked();
+    let frames = editor.read_with(cx, |e, _| e.frames.len());
+    assert_eq!(frames, 1, "one frame drew the change");
+    let image = image_bounds(cx, 0);
+    assert_eq!(image.size.height, px(84.0));
+    let below = editor.read_with(cx, |e, _| e.line_screen_top(1));
+    assert_eq!(
+        below,
+        image.bottom(),
+        "the next line follows the new height"
+    );
+}
+
+/// US-064: an unreadable image with a width reserves a box that wide at
+/// its estimated height; a missing one shows its source, muted.
+#[gpui::test]
+fn an_image_that_cannot_be_drawn_keeps_its_width_or_its_source(cx: &mut TestAppContext) {
+    let note = "![x|300](bad.png)\n\n![m|300](missing.png)\n\nend";
+    let (editor, cx, _dir) = image_editor(cx, note);
+    editor.update_in(cx, |e, window, cx| {
+        let bad = e.layout_line(0, window, cx);
+        let block = bad.block.expect("a placeholder");
+        assert_eq!((block.width, block.height), (300.0, 30.0));
+        assert_eq!(bad.height, 30.0, "its estimated height");
+        let column = e.column_width();
+        assert_eq!(block.left, (column - 300.0) / 2.0, "centered");
+        let missing = e.layout_line(2, window, cx);
+        assert!(missing.block.is_none(), "no box: its source shows");
+        assert!(missing.display.text.contains("missing.png"));
+    });
+}
+
+/// US-064: an embed and a `data:` image honor their width.
+#[gpui::test]
+fn embeds_and_data_images_honor_their_width(cx: &mut TestAppContext) {
+    let data = format!("data:image/png;base64,{}", base64_encode(&png(20, 10)));
+    let note = format!("![[small.png|120]]\n\n![d|10]({data})\n\nend");
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("small.png"), png(200, 120)).unwrap();
+    let path = dir.path().join("note.md");
+    let (editor, cx) = open_at(cx, &note, Some(path), EditorConfig::default());
+    editor.update(cx, |e, _| e.images.set_root(dir.path()));
+    set_cursor(&editor, cx, note.len());
+    for _ in 0..50 {
+        cx.run_until_parked();
+        let done = editor.update_in(cx, |e, window, cx| {
+            e.layout_line(0, window, cx)
+                .block
+                .is_some_and(|b| b.height == 72.0)
+        });
+        if done {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    editor.update_in(cx, |e, window, cx| {
+        let embed = e.layout_line(0, window, cx).block.expect("embed drawn");
+        assert_eq!((embed.width, embed.height), (120.0, 72.0));
+        let inline = e
+            .layout_line(2, window, cx)
+            .block
+            .expect("data image drawn");
+        assert_eq!((inline.width, inline.height), (10.0, 5.0));
+    });
+}
+
+/// US-065 (rewrites the click test of US-018 for ADR 0008): a click on a
+/// block image selects it as an object, anchored at its end, whatever was
+/// selected; it stays drawn where it was, with a ring and no caret.
+#[gpui::test]
+fn a_click_on_an_image_selects_it_as_an_object_without_moving_it(cx: &mut TestAppContext) {
+    let note = "intro\n\n![a|300](wide.png)\n\nend";
+    let (editor, cx, _dir) = image_editor(cx, note);
+    editor.update(cx, |e, cx| e.select(Selection::single(0, 3), cx));
+    cx.run_until_parked();
+    let before = image_bounds(cx, 2);
+    click(cx, before.center(), 1);
+    assert_eq!(selection(&editor, cx), [(25, 7)], "anchor at the end");
+    let after = image_bounds(cx, 2);
+    assert_eq!(after, before, "the image did not move");
+    let frame = last_frame(&editor, cx);
+    assert_eq!(frame.rings.len(), 1, "a ring");
+    let ring = frame.rings[0];
+    assert_eq!(ring.origin.x, before.origin.x - px(4.0));
+    assert_eq!(ring.size.width, before.size.width + px(8.0));
+    assert!(frame.carets.is_empty(), "no caret");
+    assert!(frame.selections.is_empty(), "no highlight");
+}
+
+/// US-065: an image taller than the room left above the bottom margin
+/// does not scroll the note when clicked (found in the app on Windows).
+#[gpui::test]
+fn a_click_on_an_image_near_the_bottom_does_not_scroll(cx: &mut TestAppContext) {
+    let mut note = String::new();
+    for i in 0..10 {
+        note.push_str(&format!("line {i}\n"));
+    }
+    note.push_str("\n![a](wide.png)\n\nend");
+    let (editor, cx, _dir) = image_editor(cx, &note);
+    set_cursor(&editor, cx, 0);
+    let before = image_bounds(cx, 11);
+    let viewport = viewport(&editor, cx);
+    assert!(
+        before.bottom() > viewport.bounds.bottom() - px(SAFE_MARGIN as f32),
+        "the image reaches into the bottom margin"
+    );
+    click(cx, before.center(), 1);
+    let start = note.find("![a").unwrap_or(0);
+    assert_eq!(selection(&editor, cx), [(start + 14, start)]);
+    assert_eq!(image_bounds(cx, 11), before, "the note did not scroll");
+}
+
+/// US-065: a right click selects the image before the menu opens, whose
+/// Image width submenu comes first.
+#[gpui::test]
+fn a_right_click_on_an_image_selects_it_before_the_menu(cx: &mut TestAppContext) {
+    let note = "intro\n\n![a|300](wide.png)\n\nend";
+    let (editor, cx, _dir) = image_editor(cx, note);
+    let center = image_bounds(cx, 2).center();
+    cx.simulate_event(MouseDownEvent {
+        button: MouseButton::Right,
+        position: center,
+        modifiers: Modifiers::default(),
+        click_count: 1,
+        first_mouse: false,
+    });
+    cx.run_until_parked();
+    assert_eq!(selection(&editor, cx), [(25, 7)]);
+    let first = editor.read_with(cx, |e, _| e.menu.as_ref().map(|m| m.items[0].clone()));
+    let Some(super::menu::MenuItem::Submenu { label, items }) = first else {
+        panic!("the Image width submenu first: {first:?}");
+    };
+    assert_eq!(label.as_ref(), "Image width");
+    let labels: Vec<String> = items
+        .iter()
+        .map(|i| match i {
+            super::menu::MenuItem::Action { label, enabled, .. } => format!("{label} {enabled}"),
+            _ => String::new(),
+        })
+        .collect();
+    assert_eq!(
+        labels,
+        [
+            "25% true",
+            "50% true",
+            "75% true",
+            "Full width true",
+            "Original size true"
+        ]
+    );
+}
+
+/// US-065: a double click shows the source, the caret at the end of the
+/// alt text, before its size.
+#[gpui::test]
+fn a_double_click_on_an_image_edits_its_alt_text(cx: &mut TestAppContext) {
+    let note = "intro\n\n![a|300](wide.png)\n\nend";
+    let (editor, cx, _dir) = image_editor(cx, note);
+    let center = image_bounds(cx, 2).center();
+    click(cx, center, 1);
+    click(cx, center, 2);
+    assert_eq!(
+        selection(&editor, cx),
+        [(10, 10)],
+        "after `a`, before `|300`"
+    );
+    editor.update_in(cx, |e, window, cx| {
+        let line = e.layout_line(2, window, cx);
+        assert!(line.display.text.contains("![a|300]"), "source shown");
+        assert!(!line.block.expect("the image below").replaces);
+    });
+}
+
+/// US-065: on an image selected as an object, Backspace, Delete and Ctrl+X
+/// remove its Markdown, Ctrl+C copies it and a typed character replaces
+/// it, each in one undo step that restores the text byte for byte.
+#[gpui::test]
+fn keys_act_on_an_image_selected_as_an_object(cx: &mut TestAppContext) {
+    let note = "intro\n\n![a|300](wide.png)\n\nend";
+    let (editor, cx, _dir) = image_editor(cx, note);
+    let center = image_bounds(cx, 2).center();
+    for key in ["backspace", "delete"] {
+        click(cx, center, 1);
+        cx.simulate_keystrokes(key);
+        assert_eq!(doc(&editor, cx), "intro\n\n\n\nend", "{key}");
+        cx.simulate_keystrokes(&secondary("z"));
+        assert_eq!(doc(&editor, cx), note, "{key} undone");
+    }
+    click(cx, center, 1);
+    cx.simulate_keystrokes(&secondary("x"));
+    assert_eq!(doc(&editor, cx), "intro\n\n\n\nend");
+    assert_eq!(
+        cx.read_from_clipboard().and_then(|c| c.text()).as_deref(),
+        Some("![a|300](wide.png)")
+    );
+    cx.simulate_keystrokes(&secondary("z"));
+    assert_eq!(doc(&editor, cx), note);
+    cx.write_to_clipboard(ClipboardItem::new_string(String::new()));
+    click(cx, center, 1);
+    cx.simulate_keystrokes(&secondary("c"));
+    assert_eq!(doc(&editor, cx), note, "copy changes nothing");
+    assert_eq!(
+        cx.read_from_clipboard().and_then(|c| c.text()).as_deref(),
+        Some("![a|300](wide.png)")
+    );
+    click(cx, center, 1);
+    cx.simulate_input("x");
+    assert_eq!(doc(&editor, cx), "intro\n\nx\n\nend");
+    cx.simulate_keystrokes(&secondary("z"));
+    assert_eq!(doc(&editor, cx), note);
+}
+
+/// US-065: arrows onto an image's line show its source as before; Shift+End
+/// from its start, or Shift+Home from its end, select it as an object.
+#[gpui::test]
+fn arrows_reveal_an_image_and_shift_home_end_select_it(cx: &mut TestAppContext) {
+    let note = "intro\n\n![a|300](wide.png)\n\nend";
+    let (editor, cx, _dir) = image_editor(cx, note);
+    set_cursor(&editor, cx, 0);
+    // Past the blank line, onto the image (`revealBlockOnArrow`).
+    cx.simulate_keystrokes("down");
+    let head = selection(&editor, cx)[0].1;
+    assert!((7..=25).contains(&head), "on the image's line: {head}");
+    let replaced = |editor: &Entity<Editor>, cx: &mut VisualTestContext| {
+        editor.update_in(cx, |e, window, cx| {
+            e.layout_line(2, window, cx)
+                .block
+                .is_some_and(|b| b.replaces)
+        })
+    };
+    assert!(!replaced(&editor, cx), "the source shows");
+    set_cursor(&editor, cx, 7);
+    cx.simulate_keystrokes("shift-end");
+    assert_eq!(selection(&editor, cx), [(7, 25)]);
+    assert!(replaced(&editor, cx), "selected as an object");
+    set_cursor(&editor, cx, 25);
+    cx.simulate_keystrokes("shift-home");
+    assert_eq!(selection(&editor, cx), [(25, 7)]);
+    assert!(replaced(&editor, cx));
+}
+
+/// US-067 (and the US-066 assumption): a handle shows on hover, a press on
+/// it neither selects the image nor moves the caret, the gesture changes
+/// the view only, and the release writes the width in one undo step.
+#[gpui::test]
+fn dragging_a_handle_resizes_the_image_in_one_undo_step(cx: &mut TestAppContext) {
+    let note = "intro\n\n![a](wide.png)\n\nend";
+    let (editor, cx, _dir) = image_editor(cx, note);
+    let v = viewport(&editor, cx);
+    let column = v.column_width;
+    let image = image_bounds(cx, 2);
+    assert_eq!(image.size.width, px(column));
+    hover(cx, image.center());
+    let handle = handle_bounds(cx, "right", 2).expect("a right handle");
+    assert!(handle.size.width >= px(24.0) && handle.size.height >= px(24.0));
+    assert!(handle.right() <= image.right() && handle.left() >= image.left());
+    let left = handle_bounds(cx, "left", 2).expect("a left handle");
+    assert_eq!(left.left(), image.left());
+    let (before, revision) =
+        editor.read_with(cx, |e, _| (e.state.selection().clone(), e.state.revision()));
+    let start = handle.center();
+    press(cx, start, 1, false);
+    cx.run_until_parked();
+    editor.read_with(cx, |e, _| {
+        assert_eq!(*e.state.selection(), before, "the press selects nothing");
+        assert!(matches!(e.drag, Some(super::mouse::Drag::Resize(_))));
+    });
+    let shrink = (column - 300.0) / 2.0;
+    drag_to(cx, point(start.x - px(shrink / 2.0), start.y), true);
+    drag_to(cx, point(start.x - px(shrink), start.y + px(40.0)), true);
+    cx.run_until_parked();
+    let preview = image_bounds(cx, 2);
+    assert_eq!(preview.size.width, px(300.0), "twice the move");
+    assert_eq!(preview.origin.x, v.column_left + px((column - 300.0) / 2.0));
+    editor.read_with(cx, |e, _| {
+        assert_eq!(e.state.doc(), note, "the buffer is untouched");
+        assert_eq!(e.state.revision(), revision);
+        assert!(!e.state.is_dirty());
+    });
+    release(cx, point(start.x - px(shrink), start.y));
+    cx.run_until_parked();
+    assert_eq!(doc(&editor, cx), "intro\n\n![a|300](wide.png)\n\nend");
+    assert_eq!(image_bounds(cx, 2).size.width, px(300.0));
+    cx.simulate_keystrokes(&secondary("z"));
+    assert_eq!(doc(&editor, cx), note, "one undo step");
+}
+
+/// US-067: Escape during the gesture puts the width back, and the release
+/// writes nothing.
+#[gpui::test]
+fn escape_cancels_a_resize(cx: &mut TestAppContext) {
+    let note = "intro\n\n![a|300](wide.png)\n\nend";
+    let (editor, cx, _dir) = image_editor(cx, note);
+    let image = image_bounds(cx, 2);
+    hover(cx, image.center());
+    let start = handle_bounds(cx, "right", 2).expect("handle").center();
+    press(cx, start, 1, false);
+    drag_to(cx, point(start.x + px(60.0), start.y), true);
+    cx.run_until_parked();
+    assert_eq!(image_bounds(cx, 2).size.width, px(420.0));
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert_eq!(image_bounds(cx, 2).size.width, px(300.0), "back");
+    drag_to(cx, point(start.x + px(90.0), start.y), true);
+    release(cx, point(start.x + px(90.0), start.y));
+    cx.run_until_parked();
+    assert_eq!(doc(&editor, cx), note);
+    assert_eq!(image_bounds(cx, 2).size.width, px(300.0));
+}
+
+/// US-067: a release within 8 px of the default width removes the size;
+/// the width stops at 64 px.
+#[gpui::test]
+fn a_resize_snaps_to_the_default_width_and_stops_at_64_px(cx: &mut TestAppContext) {
+    let note = "intro\n\n![a|300](wide.png)\n\nend";
+    let (editor, cx, _dir) = image_editor(cx, note);
+    let column = viewport(&editor, cx).column_width;
+    let image = image_bounds(cx, 2);
+    hover(cx, image.center());
+    let start = handle_bounds(cx, "right", 2).expect("handle").center();
+    // To 4 px short of the column, the default width of a wide image.
+    let to = point(start.x + px((column - 4.0 - 300.0) / 2.0), start.y);
+    press(cx, start, 1, false);
+    drag_to(cx, to, true);
+    release(cx, to);
+    cx.run_until_parked();
+    assert_eq!(doc(&editor, cx), "intro\n\n![a](wide.png)\n\nend");
+    cx.simulate_keystrokes(&secondary("z"));
+    assert_eq!(doc(&editor, cx), note);
+    // The left handle, dragged right past the center: 64 px.
+    let image = image_bounds(cx, 2);
+    hover(cx, image.center());
+    let start = handle_bounds(cx, "left", 2).expect("handle").center();
+    let to = point(start.x + px(500.0), start.y);
+    press(cx, start, 1, false);
+    drag_to(cx, to, true);
+    cx.run_until_parked();
+    assert_eq!(image_bounds(cx, 2).size.width, px(64.0));
+    release(cx, to);
+    cx.run_until_parked();
+    assert_eq!(doc(&editor, cx), "intro\n\n![a|64](wide.png)\n\nend");
+}
+
+/// US-067: a source changed during the gesture (a reload from disk) is
+/// left alone by the release.
+#[gpui::test]
+fn a_resize_over_a_changed_source_writes_nothing(cx: &mut TestAppContext) {
+    let note = "intro\n\n![a|300](wide.png)\n\nend";
+    let (editor, cx, _dir) = image_editor(cx, note);
+    let image = image_bounds(cx, 2);
+    hover(cx, image.center());
+    let start = handle_bounds(cx, "right", 2).expect("handle").center();
+    press(cx, start, 1, false);
+    drag_to(cx, point(start.x + px(40.0), start.y), true);
+    let reloaded = "intro, reloaded\n\n![a|300](wide.png)\n\nend";
+    editor.update(cx, |e, cx| e.set_text(reloaded, cx));
+    release(cx, point(start.x + px(40.0), start.y));
+    cx.run_until_parked();
+    assert_eq!(doc(&editor, cx), reloaded);
+}
+
+/// US-067: an image selected as an object shows its handles without the
+/// pointer on it; a hidden handle takes no press (US-066: the handle is
+/// a child of the image that the pointer's arrival shows).
+#[gpui::test]
+fn handles_show_on_hover_or_while_the_image_is_selected(cx: &mut TestAppContext) {
+    let note = "intro\n\n![a|300](wide.png)\n\nend";
+    let (editor, cx, _dir) = image_editor(cx, note);
+    let image = image_bounds(cx, 2);
+    let start = handle_bounds(cx, "right", 2).expect("laid out").center();
+    // Not hovered yet: the press reaches the image, which it selects.
+    hover(cx, point(px(5.0), px(5.0)));
+    press(cx, start, 1, false);
+    release(cx, start);
+    cx.run_until_parked();
+    assert_eq!(selection(&editor, cx), [(25, 7)]);
+    assert!(editor.read_with(cx, |e, _| e.drag.is_none()));
+    // Selected, the pointer away: the handle takes the press.
+    hover(cx, point(px(5.0), px(5.0)));
+    press(cx, start, 1, false);
+    assert!(editor.read_with(cx, |e, _| matches!(
+        e.drag,
+        Some(super::mouse::Drag::Resize(_))
+    )));
+    release(cx, start);
+    cx.run_until_parked();
+    assert_eq!(
+        doc(&editor, cx),
+        note,
+        "a press without a move writes nothing"
+    );
+    let _ = image;
+}
+
+/// US-067: no handles on an inline image, a missing image, an image whose
+/// source shows, during a text drag or a file drag.
+#[gpui::test]
+fn handles_are_absent_where_they_do_not_apply(cx: &mut TestAppContext) {
+    let note = "see ![c](small.png) here\n\n![m](missing.png)\n\n![a|300](wide.png)\n\nend";
+    let (editor, cx, _dir) = image_editor(cx, note);
+    assert!(handle_bounds(cx, "right", 0).is_none(), "inline");
+    assert!(handle_bounds(cx, "right", 2).is_none(), "missing");
+    assert!(handle_bounds(cx, "right", 4).is_some(), "a drawn image");
+    let image = note.find("![a").unwrap_or(0);
+    set_cursor(&editor, cx, image + 2);
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    assert!(handle_bounds(cx, "right", 4).is_none(), "its source shows");
+    set_cursor(&editor, cx, note.len());
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    let from = point_at(&editor, cx, note.len() - 3);
+    press(cx, from, 1, false);
+    let to = point_at(&editor, cx, note.len());
+    drag_to(cx, to, true);
+    cx.run_until_parked();
+    assert!(handle_bounds(cx, "right", 4).is_none(), "a text drag");
+    release(cx, to);
+    cx.run_until_parked();
+    editor.update(cx, |e, cx| {
+        e.drop_bar = Some(super::import::DropBar { pos: 0, y: 0.0 });
+        cx.notify();
+    });
+    cx.run_until_parked();
+    assert!(handle_bounds(cx, "right", 4).is_none(), "a file drag");
+}
+
+/// US-068: each preset width writes `|W` on the column (Full width the
+/// column, Original size removes the size and is disabled without one), in
+/// one undo step; a width near the default one removes the size.
+#[gpui::test]
+fn preset_widths_write_a_share_of_the_column(cx: &mut TestAppContext) {
+    use super::resize::Preset;
+    let note = "intro\n\n![s](small.png)\n\nend";
+    let (editor, cx, _dir) = image_editor(cx, note);
+    let column = viewport(&editor, cx).column_width;
+    set_cursor(&editor, cx, 9);
+    let presets = editor.read_with(cx, |e, _| e.image_presets());
+    assert!(presets.contains(&(Preset::Original, false)), "no size yet");
+    for (preset, share) in [
+        (Preset::Quarter, 0.25),
+        (Preset::Half, 0.5),
+        (Preset::ThreeQuarters, 0.75),
+        (Preset::Full, 1.0),
+    ] {
+        editor.update(cx, |e, cx| assert!(e.set_image_width_preset(preset, cx)));
+        let width = (column.floor() * share).round() as u32;
+        assert_eq!(
+            doc(&editor, cx),
+            format!("intro\n\n![s|{width}](small.png)\n\nend"),
+            "{preset:?}"
+        );
+        cx.simulate_keystrokes(&secondary("z"));
+        assert_eq!(doc(&editor, cx), note, "{preset:?} undone");
+    }
+    // Original size, from the menu, on an image that has one.
+    let sized = "intro\n\n![s|120](small.png)\n\nend";
+    editor.update(cx, |e, cx| e.set_text(sized, cx));
+    set_cursor(&editor, cx, 9);
+    let presets = editor.read_with(cx, |e, _| e.image_presets());
+    assert!(presets.contains(&(Preset::Original, true)));
+    editor.update_in(cx, |e, window, cx| {
+        e.run_menu_action(
+            super::menu::MenuAction::ImageWidth(Preset::Original),
+            window,
+            cx,
+        )
+    });
+    assert_eq!(doc(&editor, cx), note);
+    cx.simulate_keystrokes(&secondary("z"));
+    assert_eq!(doc(&editor, cx), sized);
+    // 200 px is the default width of `small.png`: within 8 px, no size.
+    editor.update(cx, |e, cx| e.set_text("![s|120](small.png)\n\nend", cx));
+    set_cursor(&editor, cx, 2);
+    let narrow = column.floor() * 0.25;
+    if ((narrow).round() - 200.0).abs() < 8.0 {
+        editor.update(cx, |e, cx| e.set_image_width_preset(Preset::Quarter, cx));
+        assert_eq!(doc(&editor, cx), "![s](small.png)\n\nend");
+    }
+}
+
+/// US-068: an image whose natural size is unknown (unreadable) takes its
+/// share of the column all the same.
+#[gpui::test]
+fn a_preset_width_applies_to_an_image_of_unknown_size(cx: &mut TestAppContext) {
+    use super::resize::Preset;
+    let note = "![x](bad.png)\n\nend";
+    let (editor, cx, _dir) = image_editor(cx, note);
+    let column = viewport(&editor, cx).column_width;
+    set_cursor(&editor, cx, 2);
+    editor.update(cx, |e, cx| {
+        assert!(e.set_image_width_preset(Preset::Half, cx))
+    });
+    let half = (column.floor() * 0.5).round() as u32;
+    assert_eq!(doc(&editor, cx), format!("![x|{half}](bad.png)\n\nend"));
 }

@@ -71,11 +71,20 @@ pub fn normalize_target(raw: &str) -> String {
 /// (`SPECs/obsidian-image-embed-spec.md`).
 const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "svg"];
 
-/// The image path an embed's inner text names, slashes normalized and
-/// leading `/` dropped; `None` for a note, a PDF or anything else. What
-/// follows an unescaped `|` (alias, size) is ignored
-/// (`parseWikiImageEmbedTarget`).
-pub fn image_embed_target(raw: &str) -> Option<String> {
+/// An image embed's inner text, read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ImageEmbed {
+    /// The image path, slashes normalized and leading `/` dropped.
+    pub path: String,
+    /// The size on its last `|` segment (`image_size::embed_size`).
+    pub size: Option<crate::image_size::ImageSize>,
+}
+
+/// The image an embed's inner text names, with its size; `None` for a
+/// note, a PDF or anything else. An alias after an unescaped `|` is
+/// ignored (`parseWikiImageEmbedTarget`).
+pub fn image_embed_target(raw: &str) -> Option<ImageEmbed> {
+    let size = crate::image_size::embed_size(raw).map(|s| s.size);
     let raw = raw.trim();
     let target = match raw.find('|') {
         Some(i) if i > 0 && raw.as_bytes()[i - 1] == b'\\' => &raw[..i - 1],
@@ -91,7 +100,10 @@ pub fn image_embed_target(raw: &str) -> Option<String> {
     let ext = path[dot + 1..].to_ascii_lowercase();
     IMAGE_EXTENSIONS
         .contains(&ext.as_str())
-        .then(|| path.to_owned())
+        .then(|| ImageEmbed {
+            path: path.to_owned(),
+            size,
+        })
 }
 
 #[cfg(test)]
@@ -150,22 +162,42 @@ mod tests {
         assert_eq!(parse("a|").display, "a");
     }
 
-    /// `wiki-links.test.ts:396-425`.
+    /// `wiki-links.test.ts:396-425`; the size is kept (US-063).
     #[test]
     fn image_embeds_name_an_image_file() {
-        for (raw, target) in [
-            ("diagram.png", "diagram.png"),
-            ("Photo.JPEG", "Photo.JPEG"),
-            ("anim.gif", "anim.gif"),
-            ("icon.svg", "icon.svg"),
-            ("assets\\pic.png", "assets/pic.png"),
-            ("/assets/pic.png", "assets/pic.png"),
-            ("pic.png|400", "pic.png"),
-            ("pic.png|alt text", "pic.png"),
-            ("pic.png\\|400", "pic.png"),
+        for (raw, target, width) in [
+            ("diagram.png", "diagram.png", None),
+            ("Photo.JPEG", "Photo.JPEG", None),
+            ("anim.gif", "anim.gif", None),
+            ("icon.svg", "icon.svg", None),
+            ("assets\\pic.png", "assets/pic.png", None),
+            ("/assets/pic.png", "assets/pic.png", None),
+            ("pic.png|400", "pic.png", Some(400)),
+            ("pic.png|alt text", "pic.png", None),
+            ("pic.png\\|400", "pic.png", Some(400)),
+            ("pic.png|alt|300x200", "pic.png", Some(300)),
+            ("pic.png|400px", "pic.png", None),
         ] {
-            assert_eq!(image_embed_target(raw).as_deref(), Some(target), "{raw:?}");
+            let embed = image_embed_target(raw);
+            assert_eq!(
+                embed.as_ref().map(|e| e.path.as_str()),
+                Some(target),
+                "{raw:?}"
+            );
+            assert_eq!(
+                embed.and_then(|e| e.size).map(|s| s.width),
+                width,
+                "{raw:?}"
+            );
         }
+        assert_eq!(
+            image_embed_target("pic.png|300x200").and_then(|e| e.size),
+            Some(crate::image_size::ImageSize {
+                width: 300,
+                height: Some(200)
+            }),
+            "the height is read"
+        );
         for raw in [
             "Some Note",
             "Some Note.md",

@@ -46,6 +46,8 @@ pub struct FrameRecord {
     /// Search result rects, and whether each is the current one.
     pub matches: Vec<(Bounds<Pixels>, bool)>,
     pub carets: Vec<Bounds<Pixels>>,
+    /// The rings of the images selected as objects.
+    pub rings: Vec<Bounds<Pixels>>,
     /// Window bounds of each drawn table cell, named `table-cell-{row}-{column}`
     /// (row 0 is the header).
     pub cells: Vec<(String, Bounds<Pixels>)>,
@@ -75,8 +77,20 @@ pub struct PrepaintState {
     column_width: f32,
     scrollbar: Option<Bounds<Pixels>>,
     marks: Vec<(Bounds<Pixels>, bool)>,
+    /// The rings of the block images selected as objects (ADR 0008).
+    rings: Vec<Bounds<Pixels>>,
     focused: bool,
     hitbox: Hitbox,
+}
+
+/// The ring of an image selected as an object: this far outside its
+/// edges, this wide (ADR 0008).
+const RING_OFFSET: f32 = 4.0;
+const RING_WIDTH: f32 = 2.0;
+
+/// A selection range is exactly the block image's node `range`.
+fn is_object(ranges: &[Range<usize>], range: &Range<usize>) -> bool {
+    !range.is_empty() && ranges.iter().any(|r| r == range)
 }
 
 /// Column-relative x and row of display offset `display` in `line`.
@@ -247,6 +261,7 @@ impl Element for EditorElement {
             column_width,
             scrollbar,
             marks,
+            rings,
         ) = self.editor.update(cx, |editor, cx| {
             editor.set_viewport(bounds);
             editor.code_scroll.begin_frame();
@@ -342,6 +357,7 @@ impl Element for EditorElement {
                 .collect();
             let mut selections = Vec::new();
             let mut carets = Vec::new();
+            let mut rings = Vec::new();
             for painted in &lines {
                 // A drawn table: selection and carets in its cells' lines.
                 if let Some(block) = &painted.line.block
@@ -404,6 +420,27 @@ impl Element for EditorElement {
                     }
                     continue;
                 }
+                let line_range = painted.line.start..painted.line.end();
+                // A block image selected as an object: a ring, no
+                // highlight, no caret (ADR 0008).
+                let object = painted.line.block.as_ref().filter(|b| {
+                    b.replaces
+                        && matches!(b.kind, BlockKind::Image { .. })
+                        && is_object(&ranges, &line_range)
+                });
+                if let Some(block) = object {
+                    rings.push(Bounds::new(
+                        point(
+                            column_left + px(block.left - RING_OFFSET),
+                            painted.top + px(block.top - RING_OFFSET),
+                        ),
+                        size(
+                            px(block.width + 2.0 * RING_OFFSET),
+                            px(block.height + 2.0 * RING_OFFSET),
+                        ),
+                    ));
+                    continue;
+                }
                 for range in &ranges {
                     selections.extend(code_clip(
                         &painted.line,
@@ -415,7 +452,7 @@ impl Element for EditorElement {
                         && range.end >= painted.line.end()
                     {
                         selections.push(Bounds::new(
-                            point(column_left, painted.top + px(block.top)),
+                            point(column_left + px(block.left), painted.top + px(block.top)),
                             size(px(block.width), px(block.height)),
                         ));
                     }
@@ -602,6 +639,7 @@ impl Element for EditorElement {
                     selections: selections.clone(),
                     matches: matches.clone(),
                     carets: carets.clone(),
+                    rings: rings.clone(),
                     cells: lines
                         .iter()
                         .filter_map(|p| match &p.line.block {
@@ -696,13 +734,54 @@ impl Element for EditorElement {
                 let Some(block) = &painted.line.block else {
                     continue;
                 };
-                let origin = point(column_left, painted.top + px(block.top));
+                let origin = point(column_left + px(block.left), painted.top + px(block.top));
                 let block_size = size(px(block.width), px(block.height));
                 match &block.kind {
                     BlockKind::Image { url } => {
-                        let id = format!("editor-image-{}", painted.line.ix);
+                        let ix = painted.line.ix;
+                        let image = editor.images.element(
+                            url,
+                            block.width,
+                            block.height,
+                            format!("editor-image-{ix}"),
+                        );
+                        let range = painted.line.start..painted.line.end();
+                        let resizing = editor
+                            .image_preview()
+                            .is_some_and(|(start, _)| start == range.start);
+                        // Handles on a drawn, measured image, unless a text
+                        // drag or a file drag is on (US-067).
+                        let handles = block.replaces
+                            && editor.images.is_ready(url)
+                            && !editor.source_only
+                            && editor.drop_bar.is_none()
+                            && !matches!(editor.drag, Some(super::mouse::Drag::Select { .. }));
+                        let element = if handles {
+                            let group =
+                                gpui::SharedString::from(format!("editor-image-group-{ix}"));
+                            let grip = super::resize::Grip {
+                                range: range.clone(),
+                                url: url.clone(),
+                                ix,
+                                width: block.width,
+                                height: block.height,
+                            };
+                            let shown = resizing || is_object(&ranges, &range);
+                            let children = editor.image_handles(&grip, &group, shown, cx);
+                            gpui::div()
+                                .id(gpui::SharedString::from(format!("editor-image-frame-{ix}")))
+                                .group(group)
+                                .relative()
+                                .w(px(block.width))
+                                .h(px(block.height))
+                                .child(image)
+                                .children(children)
+                                .into_any_element()
+                        } else {
+                            image
+                        };
                         blocks.push(PendingBlock {
-                            element: editor.images.element(url, block.width, block.height, id),
+                            element,
                             origin,
                             size: block_size,
                             rich: None,
@@ -743,6 +822,7 @@ impl Element for EditorElement {
                 viewport.column_width,
                 scrollbar,
                 marks,
+                rings,
             )
         });
 
@@ -790,6 +870,7 @@ impl Element for EditorElement {
             column_width,
             scrollbar,
             marks,
+            rings,
             focused,
             hitbox,
         }
@@ -826,6 +907,11 @@ impl Element for EditorElement {
             });
         }
         window.set_cursor_style(CursorStyle::IBeam, &prepaint.hitbox);
+        // A resize keeps its cursor wherever the pointer goes (US-067).
+        let resizing = self.editor.read(cx).image_preview().is_some();
+        if resizing {
+            window.capture_pointer(prepaint.hitbox.id);
+        }
         let left = prepaint.column_left;
         let width = px(prepaint.column_width);
         window.with_content_mask(Some(ContentMask { bounds }), |window| {
@@ -849,6 +935,17 @@ impl Element for EditorElement {
             for block in &mut prepaint.blocks {
                 block.paint(window, cx);
             }
+            for ring in prepaint.rings.drain(..) {
+                window.paint_quad(quad(
+                    ring,
+                    // Concentric with the image's 4 px corners.
+                    px(4.0 + RING_OFFSET),
+                    gpui::transparent_black(),
+                    px(RING_WIDTH),
+                    theme::accent(),
+                    gpui::BorderStyle::Solid,
+                ));
+            }
             if prepaint.focused {
                 for caret in prepaint.carets.drain(..) {
                     window.paint_quad(fill(caret, theme::accent()));
@@ -870,6 +967,10 @@ impl Element for EditorElement {
                 window.paint_quad(fill(mark, color));
             }
         });
+        // Last, over the handles' and the text's own cursors.
+        if resizing {
+            window.set_window_cursor_style(CursorStyle::ResizeLeftRight);
+        }
     }
 }
 

@@ -20,6 +20,7 @@ pub mod headings;
 pub mod history;
 pub mod html;
 pub mod image_insert;
+pub mod image_size;
 pub mod list;
 pub mod motion;
 pub mod preview;
