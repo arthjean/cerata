@@ -21,7 +21,10 @@
 //!
 //! A second scenario (US-048, ADR 0007) types 200 characters in a cell in
 //! the middle of a drawn table of 200 rows and 8 columns: the editor lays
-//! the whole table out in the frame of each keystroke.
+//! the whole table out in the frame of each keystroke. US-057 adds, on the
+//! same table, 60 column insertions ("Insert column right", each undone
+//! off the clock), then 200 characters typed in the last cell of a table of
+//! 1 000 rows.
 
 #![allow(clippy::single_range_in_vec_init)]
 
@@ -55,6 +58,8 @@ const CHARS: usize = 200;
 const SCROLL_JUMPS: usize = 60;
 const TABLE_ROWS: usize = 200;
 const TABLE_COLUMNS: usize = 8;
+const COLUMN_INSERTS: usize = 60;
+const BIG_TABLE_ROWS: usize = 1_000;
 
 #[derive(Default)]
 struct Timings {
@@ -64,14 +69,18 @@ struct Timings {
     scrolling: Vec<Duration>,
     /// Keystrokes in a cell of the 200 x 8 table.
     table: Vec<Duration>,
+    /// "Insert column right" in the 200 x 8 table.
+    column: Vec<Duration>,
+    /// Keystrokes in the last cell of the 1 000 x 8 table.
+    big: Vec<Duration>,
     /// Events whose first frame after them did not render.
     missed: usize,
 }
 
-/// A note holding a table of `TABLE_ROWS` body rows and `TABLE_COLUMNS`
+/// A note holding a table of `rows` body rows and `TABLE_COLUMNS`
 /// columns, with inline marks in some cells.
-fn table_note() -> String {
-    let mut out = String::from("# Table\n\nA table of 200 rows.\n\n|");
+fn table_note(rows: usize) -> String {
+    let mut out = format!("# Table\n\nA table of {rows} rows.\n\n|");
     for c in 0..TABLE_COLUMNS {
         out.push_str(&format!(" Column {c} |"));
     }
@@ -80,7 +89,7 @@ fn table_note() -> String {
         out.push_str(" --- |");
     }
     out.push('\n');
-    for r in 0..TABLE_ROWS {
+    for r in 0..rows {
         out.push('|');
         for c in 0..TABLE_COLUMNS {
             match (r + c) % 4 {
@@ -117,6 +126,9 @@ enum Event {
     Open,
     Key(char),
     Scroll,
+    /// A registry command, from the caret.
+    Command(&'static str),
+    Undo,
 }
 
 struct Bench {
@@ -178,6 +190,21 @@ async fn measure(bench: &Rc<RefCell<Bench>>, event: Event, cx: &mut AsyncApp) ->
                             );
                         });
                         bench.borrow_mut().timings.handler.push(start.elapsed());
+                    }
+                }
+                Event::Command(id) => {
+                    if let Some(editor) = root.read(cx).editor.clone() {
+                        editor.update(cx, |editor, cx| {
+                            let clock = editor::actions::clock();
+                            editor.update_state(cx, |state| state.run_command(id, &clock));
+                        });
+                    }
+                }
+                Event::Undo => {
+                    if let Some(editor) = root.read(cx).editor.clone() {
+                        editor.update(cx, |editor, cx| {
+                            editor.update_state(cx, |state| state.undo());
+                        });
                     }
                 }
                 Event::Scroll => {
@@ -324,10 +351,11 @@ async fn run(bench: Rc<RefCell<Bench>>, cx: &mut AsyncApp) -> anyhow::Result<Str
 
     // US-048: the caret at the end of a cell in the middle of the table.
     let handled = bench.borrow().timings.handler.len();
+    let missed_before_table = bench.borrow().timings.missed;
     window.update(cx, |_, _, cx| {
         if let Some(editor) = root.read(cx).editor.clone() {
             editor.update(cx, |editor, cx| {
-                editor.set_text(&table_note(), cx);
+                editor.set_text(&table_note(TABLE_ROWS), cx);
                 let doc = editor.state.doc();
                 let row = format!("| row {} cell 0 |", TABLE_ROWS / 2);
                 let at = doc.find(&row).map_or(0, |i| i + row.len() - 2);
@@ -348,6 +376,8 @@ async fn run(bench: Rc<RefCell<Bench>>, cx: &mut AsyncApp) -> anyhow::Result<Str
         bench.borrow_mut().timings.table.push(work);
     }
     let cell_typed: String = cell_typed.into_iter().collect();
+    let missed_table = bench.borrow().timings.missed;
+    let cell_handled = bench.borrow().timings.handler.len();
     let (in_cell, columns) = window.update(cx, |_, _, cx| {
         root.read(cx).editor.as_ref().map_or((false, 0), |editor| {
             let state = &editor.read(cx).state;
@@ -360,6 +390,59 @@ async fn run(bench: Rc<RefCell<Bench>>, cx: &mut AsyncApp) -> anyhow::Result<Str
                 drawn,
                 cerata_markdown::table::pipe_count(line).saturating_sub(1),
             )
+        })
+    })?;
+
+    // US-057: "Insert column right" from that cell, each one undone off
+    // the clock, so every insertion meets the same 200 x 8 table.
+    for _ in 0..COLUMN_INSERTS {
+        let delay = bench.borrow_mut().next_delay();
+        cx.background_executor().timer(delay).await;
+        let work = measure(&bench, Event::Command("table.columnRight"), cx)
+            .await
+            .context("no frame after a column insertion")?;
+        bench.borrow_mut().timings.column.push(work);
+        measure(&bench, Event::Undo, cx)
+            .await
+            .context("no frame after an undo")?;
+    }
+    let columns_after = window.update(cx, |_, _, cx| {
+        root.read(cx).editor.as_ref().map_or(0, |editor| {
+            let state = &editor.read(cx).state;
+            cerata_markdown::cells::grid_at(state, state.selection().main().head)
+                .map_or(0, |g| g.columns())
+        })
+    })?;
+    let missed_columns = bench.borrow().timings.missed;
+
+    // US-057: 200 characters in the last cell of a 1 000-row table.
+    window.update(cx, |_, _, cx| {
+        if let Some(editor) = root.read(cx).editor.clone() {
+            editor.update(cx, |editor, cx| {
+                editor.set_text(&table_note(BIG_TABLE_ROWS), cx);
+                let doc = editor.state.doc();
+                let end = doc.find("\n\nAfter the table.").unwrap_or(doc.len());
+                editor.select(cerata_markdown::Selection::cursor(end - 2), cx);
+            });
+        }
+    })?;
+    cx.background_executor()
+        .timer(Duration::from_millis(500))
+        .await;
+    for ch in &cell_typed.chars().collect::<Vec<char>>() {
+        let delay = bench.borrow_mut().next_delay();
+        cx.background_executor().timer(delay).await;
+        let work = measure(&bench, Event::Key(*ch), cx)
+            .await
+            .context("no frame after a keystroke in the big table")?;
+        bench.borrow_mut().timings.big.push(work);
+    }
+    let big_in_cell = window.update(cx, |_, _, cx| {
+        root.read(cx).editor.as_ref().is_some_and(|editor| {
+            let state = &editor.read(cx).state;
+            let head = state.selection().main().head;
+            state.doc()[..head].ends_with(&cell_typed)
+                && cerata_markdown::cells::cell_at(state, head).is_some()
         })
     })?;
 
@@ -376,6 +459,12 @@ async fn run(bench: Rc<RefCell<Bench>>, cx: &mut AsyncApp) -> anyhow::Result<Str
     let open = t.open.map_or(f64::NAN, |d| d.as_secs_f64() * 1000.0);
     let mut table: Vec<f64> = t.table.iter().map(|d| d.as_secs_f64() * 1000.0).collect();
     table.sort_by(f64::total_cmp);
+    let p99 = |values: &[Duration]| {
+        let mut ms: Vec<f64> = values.iter().map(|d| d.as_secs_f64() * 1000.0).collect();
+        ms.sort_by(f64::total_cmp);
+        percentile(&ms, 99.0)
+    };
+    let verdict = |p: f64| if p < 16.0 { "<" } else { ">=" };
     Ok(format!(
         "note: {} bytes\n\
          open -> first frame presented: {open:.1} ms\n\
@@ -384,14 +473,36 @@ async fn run(bench: Rc<RefCell<Bench>>, cx: &mut AsyncApp) -> anyhow::Result<Str
          typed text in the buffer: {found}\n\
          table {TABLE_ROWS} x {TABLE_COLUMNS}:\n{}\n{}\n\
          caret in a drawn cell: {in_cell}, cells in the row: {columns}\n\
+         frames that missed their event, table typing: {}, column insertions: {}, big table: {}\n\
+         {}\n\
+         columns after the insertions were undone: {columns_after}\n\
+         table {BIG_TABLE_ROWS} x {TABLE_COLUMNS}:\n{}\n{}\n\
+         caret after the typed text in a drawn cell: {big_in_cell}\n\
+         verdict: column insertion p99 {:.3} ms {} 16 ms; big table typing p99 {:.3} ms {} 16 ms\n\
          verdict: typing p99 {:.3} ms {} 16 ms; scroll p99 {:.3} ms {} 16.7 ms; open {open:.1} ms {} 100 ms; table typing p99 {:.3} ms {} 16 ms",
         b.note.len(),
         summary("keystroke: input handler", &t.handler[..handled]),
         summary("keystroke: frame work", &t.typing),
         summary("scroll jump: frame work (cold)", &t.scrolling),
-        t.missed,
-        summary("cell keystroke: input handler", &t.handler[handled..]),
+        missed_before_table,
+        summary(
+            "cell keystroke: input handler",
+            &t.handler[handled..cell_handled]
+        ),
         summary("cell keystroke: frame work", &t.table),
+        missed_table - missed_before_table,
+        missed_columns - missed_table,
+        t.missed - missed_columns,
+        summary("insert column: frame work", &t.column),
+        summary(
+            "big table keystroke: input handler",
+            &t.handler[cell_handled..]
+        ),
+        summary("big table keystroke: frame work", &t.big),
+        p99(&t.column),
+        verdict(p99(&t.column)),
+        p99(&t.big),
+        verdict(p99(&t.big)),
         percentile(&work, 99.0),
         if percentile(&work, 99.0) < 16.0 {
             "<"
