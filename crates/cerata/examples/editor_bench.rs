@@ -18,6 +18,10 @@
 //!
 //! App work is `presented - frame`; the wait for the refresh is excluded.
 //! Each keystroke must be drawn by the first frame after it.
+//!
+//! A second scenario (US-048, ADR 0007) types 200 characters in a cell in
+//! the middle of a drawn table of 200 rows and 8 columns: the editor lays
+//! the whole table out in the frame of each keystroke.
 
 #![allow(clippy::single_range_in_vec_init)]
 
@@ -49,6 +53,8 @@ use editor::{Editor, EditorConfig};
 
 const CHARS: usize = 200;
 const SCROLL_JUMPS: usize = 60;
+const TABLE_ROWS: usize = 200;
+const TABLE_COLUMNS: usize = 8;
 
 #[derive(Default)]
 struct Timings {
@@ -56,8 +62,40 @@ struct Timings {
     handler: Vec<Duration>,
     typing: Vec<Duration>,
     scrolling: Vec<Duration>,
+    /// Keystrokes in a cell of the 200 x 8 table.
+    table: Vec<Duration>,
     /// Events whose first frame after them did not render.
     missed: usize,
+}
+
+/// A note holding a table of `TABLE_ROWS` body rows and `TABLE_COLUMNS`
+/// columns, with inline marks in some cells.
+fn table_note() -> String {
+    let mut out = String::from("# Table\n\nA table of 200 rows.\n\n|");
+    for c in 0..TABLE_COLUMNS {
+        out.push_str(&format!(" Column {c} |"));
+    }
+    out.push_str("\n|");
+    for _ in 0..TABLE_COLUMNS {
+        out.push_str(" --- |");
+    }
+    out.push('\n');
+    for r in 0..TABLE_ROWS {
+        out.push('|');
+        for c in 0..TABLE_COLUMNS {
+            match (r + c) % 4 {
+                0 => out.push_str(&format!(" row {r} cell {c} |")),
+                1 => out.push_str(&format!(" **bold {r}** |")),
+                2 => out.push_str(&format!(
+                    " `code {c}` and [link](https://example.com/{r}) |"
+                )),
+                _ => out.push_str(&format!(" {} |", "word ".repeat(1 + r % 5).trim_end())),
+            }
+        }
+        out.push('\n');
+    }
+    out.push_str("\nAfter the table.\n");
+    out
 }
 
 struct Root {
@@ -283,6 +321,48 @@ async fn run(bench: Rc<RefCell<Bench>>, cx: &mut AsyncApp) -> anyhow::Result<Str
             .as_ref()
             .is_some_and(|editor| editor.read(cx).state.doc().contains(&typed))
     })?;
+
+    // US-048: the caret at the end of a cell in the middle of the table.
+    let handled = bench.borrow().timings.handler.len();
+    window.update(cx, |_, _, cx| {
+        if let Some(editor) = root.read(cx).editor.clone() {
+            editor.update(cx, |editor, cx| {
+                editor.set_text(&table_note(), cx);
+                let doc = editor.state.doc();
+                let row = format!("| row {} cell 0 |", TABLE_ROWS / 2);
+                let at = doc.find(&row).map_or(0, |i| i + row.len() - 2);
+                editor.select(cerata_markdown::Selection::cursor(at), cx);
+            });
+        }
+    })?;
+    cx.background_executor()
+        .timer(Duration::from_millis(300))
+        .await;
+    let cell_typed: Vec<char> = "in a cell ".chars().cycle().take(CHARS).collect();
+    for ch in &cell_typed {
+        let delay = bench.borrow_mut().next_delay();
+        cx.background_executor().timer(delay).await;
+        let work = measure(&bench, Event::Key(*ch), cx)
+            .await
+            .context("no frame after a keystroke in a cell")?;
+        bench.borrow_mut().timings.table.push(work);
+    }
+    let cell_typed: String = cell_typed.into_iter().collect();
+    let (in_cell, columns) = window.update(cx, |_, _, cx| {
+        root.read(cx).editor.as_ref().map_or((false, 0), |editor| {
+            let state = &editor.read(cx).state;
+            let head = state.selection().main().head;
+            let line = state.text().slice(state.text().line_at(head).range());
+            let row = format!("| row {} cell 0{cell_typed} |", TABLE_ROWS / 2);
+            let line = if line.starts_with(&row) { line } else { "" };
+            let drawn = cerata_markdown::cells::cell_at(state, head).is_some();
+            (
+                drawn,
+                cerata_markdown::table::pipe_count(line).saturating_sub(1),
+            )
+        })
+    })?;
+
     let b = bench.borrow();
     let t = &b.timings;
     let mut work: Vec<f64> = t.typing.iter().map(|d| d.as_secs_f64() * 1000.0).collect();
@@ -294,18 +374,24 @@ async fn run(bench: Rc<RefCell<Bench>>, cx: &mut AsyncApp) -> anyhow::Result<Str
         .collect();
     scroll.sort_by(f64::total_cmp);
     let open = t.open.map_or(f64::NAN, |d| d.as_secs_f64() * 1000.0);
+    let mut table: Vec<f64> = t.table.iter().map(|d| d.as_secs_f64() * 1000.0).collect();
+    table.sort_by(f64::total_cmp);
     Ok(format!(
         "note: {} bytes\n\
          open -> first frame presented: {open:.1} ms\n\
          {}\n{}\n{}\n\
          frames that missed their event: {}\n\
          typed text in the buffer: {found}\n\
-         verdict: typing p99 {:.3} ms {} 16 ms; scroll p99 {:.3} ms {} 16.7 ms; open {open:.1} ms {} 100 ms",
+         table {TABLE_ROWS} x {TABLE_COLUMNS}:\n{}\n{}\n\
+         caret in a drawn cell: {in_cell}, cells in the row: {columns}\n\
+         verdict: typing p99 {:.3} ms {} 16 ms; scroll p99 {:.3} ms {} 16.7 ms; open {open:.1} ms {} 100 ms; table typing p99 {:.3} ms {} 16 ms",
         b.note.len(),
-        summary("keystroke: input handler", &t.handler),
+        summary("keystroke: input handler", &t.handler[..handled]),
         summary("keystroke: frame work", &t.typing),
         summary("scroll jump: frame work (cold)", &t.scrolling),
         t.missed,
+        summary("cell keystroke: input handler", &t.handler[handled..]),
+        summary("cell keystroke: frame work", &t.table),
         percentile(&work, 99.0),
         if percentile(&work, 99.0) < 16.0 {
             "<"
@@ -319,6 +405,12 @@ async fn run(bench: Rc<RefCell<Bench>>, cx: &mut AsyncApp) -> anyhow::Result<Str
             ">="
         },
         if open < 100.0 { "<" } else { ">=" },
+        percentile(&table, 99.0),
+        if percentile(&table, 99.0) < 16.0 {
+            "<"
+        } else {
+            ">="
+        },
     ))
 }
 
