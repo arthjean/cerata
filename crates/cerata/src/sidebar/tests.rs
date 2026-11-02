@@ -225,6 +225,34 @@ fn a_new_file_being_named_stays_out_of_recents(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn recents_leave_out_the_active_file_and_keep_their_page_full(cx: &mut TestAppContext) {
+    let env = setup(cx);
+    for i in 0..12 {
+        env.file(&format!("n{i}.md"), "x");
+    }
+    let (_handle, sidebar) = open(cx, &env);
+    wait_for_index(cx, &sidebar);
+    let paths = |s: &Sidebar| s.recents.iter().map(|e| e.path.clone()).collect::<Vec<_>>();
+    let before = sidebar.read_with(cx, |s, _| paths(s));
+    let active = before[0].clone();
+
+    sidebar.update(cx, |s, cx| s.set_active_path(Some(active.clone()), cx));
+    cx.run_until_parked();
+    let shown = sidebar.read_with(cx, |s, _| paths(s));
+    assert!(
+        !shown.contains(&active),
+        "the active file is not in Recents"
+    );
+    assert_eq!(shown.len(), 4);
+    assert_eq!(shown[..3], before[1..]);
+
+    // Leaving it brings it back.
+    sidebar.update(cx, |s, cx| s.set_active_path(None, cx));
+    cx.run_until_parked();
+    assert_eq!(sidebar.read_with(cx, |s, _| paths(s)), before);
+}
+
+#[gpui::test]
 fn pinned_files_show_in_pages_of_six(cx: &mut TestAppContext) {
     let env = setup(cx);
     let files: Vec<PathBuf> = (0..8).map(|i| env.file(&format!("p{i}.md"), "x")).collect();

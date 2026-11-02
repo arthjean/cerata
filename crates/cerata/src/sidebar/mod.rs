@@ -275,6 +275,8 @@ impl Sidebar {
     pub fn set_active_path(&mut self, path: Option<PathBuf>, cx: &mut Context<Self>) {
         if self.active_path != path {
             self.active_path = path;
+            // Recents leaves out the note being shown.
+            self.refresh_sections(cx);
             cx.notify();
         }
     }
@@ -479,7 +481,8 @@ impl Sidebar {
     // ---- Sections ----
 
     /// Reloads Pinned and Recents for their current page sizes. Recents
-    /// leaves out pinned files and a new file still being named in the tree.
+    /// leaves out pinned files, the active one, already in view, and a new
+    /// file still being named in the tree.
     pub fn refresh_sections(&mut self, cx: &mut Context<Self>) {
         let Some(runtime) = self.runtime.clone() else {
             self.pinned_entries.clear();
@@ -496,6 +499,7 @@ impl Sidebar {
         let excluded: HashSet<PathBuf> = self
             .pinned
             .iter()
+            .chain(self.active_path.as_ref())
             .chain(self.pending_rename.as_ref())
             .chain(
                 self.renaming
