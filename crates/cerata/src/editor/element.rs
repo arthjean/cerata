@@ -43,6 +43,8 @@ impl IntoElement for EditorElement {
 pub struct FrameRecord {
     pub code_scroll: Vec<(usize, f32)>,
     pub selections: Vec<Bounds<Pixels>>,
+    /// Search result rects, and whether each is the current one.
+    pub matches: Vec<(Bounds<Pixels>, bool)>,
     pub carets: Vec<Bounds<Pixels>>,
     /// Window bounds of each drawn table cell, named `table-cell-{row}-{column}`
     /// (row 0 is the header).
@@ -301,6 +303,13 @@ impl Element for EditorElement {
                     let first = editor.state.text().line_at(code.block_start).number;
                     code.scroll_x = editor.code_scroll.offset_of_line(first);
                 }
+                let stale = line.block.as_ref().is_some_and(|b| match &b.kind {
+                    BlockKind::Table(t) => t.scroll != editor.code_scroll.offset_of_line(line.ix),
+                    _ => false,
+                });
+                if stale {
+                    *line = editor.layout_line_with(line.ix, Some(&inputs), &mut jobs, window);
+                }
             }
             editor.start_loads(jobs, cx);
             editor.start_math(cx);
@@ -339,20 +348,56 @@ impl Element for EditorElement {
                     && let BlockKind::Table(table) = &block.kind
                 {
                     let top = painted.top + px(block.top);
-                    for range in &ranges {
+                    // A scrolled table shows inside the text column only.
+                    let right = column_left + px(viewport.column_width);
+                    let clip = |r: Bounds<Pixels>| {
+                        let left = r.left().max(column_left);
+                        let end = r.right().min(right);
+                        (end > left).then(|| {
+                            Bounds::new(point(left, r.top()), size(end - left, r.size.height))
+                        })
+                    };
+                    // A rectangle of cells: their backgrounds (US-054).
+                    let rect = editor
+                        .state
+                        .table_selection()
+                        .filter(|ts| ts.table == table.grid.range.start);
+                    if let Some(ts) = rect {
+                        for cell in &table.cells {
+                            let row = if cell.row == 0 { 0 } else { cell.row + 1 };
+                            if !ts.contains(row, cell.column) {
+                                continue;
+                            }
+                            let (x, w) = table.columns[cell.column];
+                            let (y, h) = table.rows[cell.row];
+                            let b = cerata_markdown::table::BORDER_WIDTH;
+                            let bounds = Bounds::new(
+                                point(column_left + px(x), top + px(y)),
+                                size(px(w - b), px(h - b)),
+                            );
+                            selections.extend(clip(bounds));
+                        }
+                    }
+                    for range in ranges.iter().filter(|_| rect.is_none()) {
                         for cell in &table.cells {
                             for segment in &cell.segments {
-                                selections.extend(range_rects(segment, top, column_left, range));
+                                selections.extend(
+                                    range_rects(segment, top, column_left, range)
+                                        .into_iter()
+                                        .filter_map(clip),
+                                );
                             }
                         }
                     }
                     for r in editor.state.selection().ranges() {
-                        if editor.marked_range.is_some() && !r.is_empty() {
+                        if (editor.marked_range.is_some() && !r.is_empty()) || rect.is_some() {
                             continue;
                         }
                         if let Some((c, s)) = table.segment_for(r.head)
                             && let Some(caret) =
                                 caret_rect(&table.cells[c].segments[s], top, column_left, r.head)
+                            && caret.left() >= column_left - px(1.0)
+                            && caret.left() <= right
                         {
                             carets.push(caret);
                         }
@@ -434,6 +479,31 @@ impl Element for EditorElement {
                 for (i, m) in search.matches_in(visible) {
                     let current = search.current() == Some(i);
                     for painted in &lines {
+                        // In a drawn table: over its cells' lines (US-056).
+                        if let Some(block) = &painted.line.block
+                            && let BlockKind::Table(table) = &block.kind
+                        {
+                            let top = painted.top + px(block.top);
+                            let right = column_left + px(viewport.column_width);
+                            for cell in &table.cells {
+                                for segment in &cell.segments {
+                                    for r in range_rects(segment, top, column_left, &m) {
+                                        let left = r.left().max(column_left);
+                                        let end = r.right().min(right);
+                                        if end > left {
+                                            matches.push((
+                                                Bounds::new(
+                                                    point(left, r.top()),
+                                                    size(end - left, r.size.height),
+                                                ),
+                                                current,
+                                            ));
+                                        }
+                                    }
+                                }
+                            }
+                            continue;
+                        }
                         let rects = range_rects(&painted.line, painted.top, column_left, &m);
                         for rect in code_clip(&painted.line, rects) {
                             matches.push((rect, current));
@@ -464,9 +534,25 @@ impl Element for EditorElement {
             }
 
             // Code block scrollbars, on the last laid-out line of each
-            // overflowing block.
+            // overflowing block; a wide table's inside its last row.
             let mut thumbs = Vec::new();
             for painted in &lines {
+                if let Some(block) = &painted.line.block
+                    && let BlockKind::Table(table) = &block.kind
+                    && let Some(thumb) = editor.code_scroll.thumb(painted.line.ix)
+                {
+                    let y = painted.top
+                        + px(block.top + table.grid_bottom() - THUMB_HEIGHT - THUMB_INSET);
+                    thumbs.push(ThumbHit {
+                        first_line: painted.line.ix,
+                        bounds: Bounds::new(
+                            point(column_left + px(thumb.left), y),
+                            size(px(thumb.width), px(THUMB_HEIGHT)),
+                        ),
+                        per_pixel: thumb.per_pixel,
+                    });
+                    continue;
+                }
                 let Some(code) = &painted.line.code else {
                     continue;
                 };
@@ -514,6 +600,7 @@ impl Element for EditorElement {
                         .filter_map(|p| p.line.code.as_ref().map(|c| (p.line.ix, c.scroll_x)))
                         .collect(),
                     selections: selections.clone(),
+                    matches: matches.clone(),
                     carets: carets.clone(),
                     cells: lines
                         .iter()
@@ -822,7 +909,10 @@ fn paint_chrome(painted: &Painted, left: Pixels, width: Pixels, window: &mut Win
     if let Some(block) = &line.block
         && let BlockKind::Table(table) = &block.kind
     {
-        super::table::paint_grid(table, left, top + px(block.top), window);
+        let clip = table_clip(left, width, top + px(block.top), block.height);
+        window.with_content_mask(Some(ContentMask { bounds: clip }), |window| {
+            super::table::paint_grid(table, left, top + px(block.top), window);
+        });
     }
     if let Some(block) = &line.block
         && matches!(block.kind, BlockKind::Rule)
@@ -894,7 +984,11 @@ fn paint_text(painted: &Painted, left: Pixels, width: Pixels, window: &mut Windo
     if let Some(block) = &line.block
         && let BlockKind::Table(table) = &block.kind
     {
-        super::table::paint_text(table, left, painted.top + px(block.top), window, cx);
+        let top = painted.top + px(block.top);
+        let clip = table_clip(left, width, top, block.height);
+        window.with_content_mask(Some(ContentMask { bounds: clip }), |window| {
+            super::table::paint_text(table, left, top, window, cx);
+        });
     }
     let Some(wrapped) = &line.wrapped else {
         return;
@@ -918,4 +1012,13 @@ fn paint_text(painted: &Painted, left: Pixels, width: Pixels, window: &mut Windo
     } else {
         paint(window, cx);
     }
+}
+
+/// The text column over a table block: a wide table scrolls under it
+/// (US-056). A pixel of slack keeps the outer border's antialiasing.
+fn table_clip(left: Pixels, width: Pixels, top: Pixels, height: f32) -> Bounds<Pixels> {
+    Bounds::new(
+        point(left - px(1.0), top),
+        size(width + px(2.0), px(height)),
+    )
 }

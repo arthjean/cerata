@@ -37,14 +37,98 @@ pub struct CellBox {
     /// Each line's `text_left` is column-relative and its `text_top` is
     /// relative to the block's top, like the table's line.
     pub segments: Vec<LaidLine>,
+    /// What the next layout takes the cell from when only other cells
+    /// changed (US-057): the slot's text, each segment's longest word and
+    /// width, its text runs, and the width its text wrapped at.
+    source: Rc<str>,
+    measures: Rc<[(f32, f32)]>,
+    runs: Rc<[Rc<[gpui::TextRun]>]>,
+    inner: f32,
+}
+
+/// The cells a layout takes from the table's previous layout, by index in
+/// [`Grid::cells`] order, and the buffer range the others span.
+pub struct Reuse<'a> {
+    previous: &'a TableLayout,
+    cells: Vec<Option<usize>>,
+}
+
+/// The ranges a cell's layout depends on besides its text: the
+/// selection's, a drag's frozen selection's and the IME's marked text.
+pub fn edit_ranges(
+    selection: &cerata_markdown::Selection,
+    drag: Option<&cerata_markdown::Selection>,
+    marked: Option<&Range<usize>>,
+) -> Vec<Range<usize>> {
+    selection
+        .ranges()
+        .iter()
+        .chain(drag.map(|d| d.ranges()).unwrap_or_default())
+        .map(|r| r.anchor.min(r.head)..r.anchor.max(r.head))
+        .chain(marked.cloned())
+        .collect()
+}
+
+/// Which cells of `previous`, the table laid out for the state before an
+/// edit inside it, `grid` takes as they are (US-057): the same row and
+/// column and slot text, and no end of an `old` or `new` range (selection,
+/// drag, marked text) in the slot, which would reveal syntax or show typed
+/// spaces. Also returns the range the other cells span, which their
+/// decorations are collected over (`None` when every cell is reused).
+pub fn reusable<'a>(
+    state: &EditorState,
+    grid: &Grid,
+    previous: &'a TableLayout,
+    old: &[Range<usize>],
+    new: &[Range<usize>],
+) -> (Reuse<'a>, Option<Range<usize>>) {
+    let touches = |ranges: &[Range<usize>], slot: Range<usize>| {
+        ranges
+            .iter()
+            .any(|r| r.start <= slot.end && slot.start <= r.end)
+    };
+    let columns = grid.columns().max(1);
+    let mut cells = Vec::new();
+    let mut fresh: Option<Range<usize>> = None;
+    for (row, (_, grid_line)) in grid.text_rows().enumerate() {
+        for (column, cell) in grid_line.cells.iter().enumerate().take(columns) {
+            let found = previous
+                .cells
+                .binary_search_by_key(&(row, column), |c| (c.row, c.column))
+                .ok()
+                .filter(|&i| {
+                    let old_cell = &previous.cells[i];
+                    let source = state.text().slice(cell.slot.clone());
+                    // The same slot text puts the content at the same
+                    // offset in it.
+                    let old_start =
+                        (old_cell.content.start + cell.slot.start).checked_sub(cell.content.start);
+                    old_cell.missing == (cell.kind == CellKind::Missing)
+                        && &*old_cell.source == source
+                        && old_start.is_some_and(|s| !touches(old, s..s + source.len()))
+                        && !touches(new, cell.slot.clone())
+                });
+            if found.is_none() {
+                fresh = Some(match fresh {
+                    Some(r) => r.start.min(cell.slot.start)..r.end.max(cell.slot.end),
+                    None => cell.slot.clone(),
+                });
+            }
+            cells.push(found);
+        }
+    }
+    (Reuse { previous, cells }, fresh)
 }
 
 /// The geometry of a drawn table, relative to its line's top and the text
-/// column's left edge.
+/// column's left edge, shifted left by its horizontal scroll: a table wider
+/// than the text column scrolls like a code block (US-056).
 pub struct TableLayout {
     pub grid: Arc<Grid>,
     /// Width of the grid, borders included.
     pub width: f32,
+    /// Horizontal scroll the geometry is shifted by.
+    pub scroll: f32,
     /// Height of the whole block, its vertical padding included.
     pub height: f32,
     /// Top of the grid's outer border.
@@ -215,6 +299,11 @@ impl TableLayout {
     pub fn row_count(&self) -> usize {
         self.rows.len()
     }
+
+    /// Bottom of the grid's outer border, relative to the line's top.
+    pub fn grid_bottom(&self) -> f32 {
+        self.rows.last().map_or(self.grid_top, |(y, h)| y + h)
+    }
 }
 
 /// Display replacements of a cell line, then its invisible ranges.
@@ -271,7 +360,7 @@ fn replacements(decorations: &[&Decoration], range: &Range<usize>) -> Replacemen
 struct Measured {
     range: Range<usize>,
     display: DisplayLine,
-    runs: Vec<gpui::TextRun>,
+    runs: Rc<[gpui::TextRun]>,
     /// Longest word and whole text, in pixels.
     word: f32,
     content: f32,
@@ -386,19 +475,117 @@ fn measure(
     Measured {
         range,
         display,
-        runs,
+        runs: runs.into(),
         word,
         content,
     }
 }
 
+/// `exact` column widths rounded up to whole pixels, then narrowed one
+/// pixel at a time where a column has room above its `min`, so rounding
+/// never makes a table that fits its text column wider than it: that would
+/// clip its right border and show a scroll bar for nothing (US-056 review).
+fn whole_pixels(exact: &[f32], min: &[f32], available: f32) -> Vec<f32> {
+    let mut widths: Vec<f32> = exact.iter().map(|w| w.ceil()).collect();
+    if exact.iter().sum::<f32>() > available + 0.5 {
+        return widths;
+    }
+    let mut excess = widths.iter().sum::<f32>() - available.floor();
+    while excess >= 1.0 {
+        let slack = |i: usize| widths[i] - min[i].ceil();
+        let Some(i) = (0..widths.len())
+            .filter(|&i| slack(i) >= 1.0)
+            .max_by(|&a, &b| slack(a).total_cmp(&slack(b)))
+        else {
+            break;
+        };
+        widths[i] -= 1.0;
+        excess -= 1.0;
+    }
+    widths
+}
+
+/// A line of a cell's text at `text_left`, its top set once the rows are.
+#[allow(clippy::too_many_arguments)]
+fn cell_line(
+    ix: usize,
+    range: Range<usize>,
+    metrics: LineMetrics,
+    display: DisplayLine,
+    wrapped: Option<Rc<gpui::WrappedLine>>,
+    row_starts: Vec<usize>,
+    text_left: f32,
+) -> LaidLine {
+    LaidLine {
+        ix,
+        start: range.start,
+        len: range.len(),
+        metrics,
+        display,
+        wrapped,
+        row_starts,
+        text_left,
+        text_top: 0.0,
+        prefix: None,
+        quote_bars: Vec::new(),
+        code: None,
+        table_source: None,
+        block: None,
+        inline_math: Vec::new(),
+        height: 0.0,
+    }
+}
+
+/// How far a line `content` wide sits from its column's left edge: one row
+/// is aligned in the column, wrapped rows fill it.
+fn align_shift(align: Option<Align>, inner: f32, content: f32, rows: usize) -> f32 {
+    if rows != 1 {
+        return 0.0;
+    }
+    let free = (inner - content).max(0.0);
+    match align {
+        Some(Align::Center) => (free / 2.0).floor(),
+        Some(Align::Right) => free,
+        _ => 0.0,
+    }
+}
+
+/// The column widths of the table the caret edits, kept while it stays in
+/// it (US-058): typing wraps the cell in its column instead of sizing the
+/// columns again. Never written to the file nor kept past the editor.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FrozenWidths {
+    /// The table's start in the document.
+    pub start: usize,
+    /// Text column width the widths were computed in.
+    pub column_width: f32,
+    /// One per column, borders included.
+    pub widths: Vec<f32>,
+}
+
+impl FrozenWidths {
+    /// The widths still apply to `grid` in a column `column_width` wide:
+    /// the same table with as many columns.
+    pub fn fits(&self, grid: &Grid, column_width: f32) -> bool {
+        self.start == grid.range.start
+            && self.widths.len() == grid.columns().max(1)
+            && self.column_width == column_width
+    }
+}
+
 /// Lays out `grid` in a text column `cx.column_width` wide, with the
-/// decorations of `inputs` (which cover the whole table).
+/// decorations of `inputs` (which cover every cell `reuse` does not take
+/// from the previous layout). `frozen` widths, one per column, replace the
+/// sizing rules (US-058). The geometry is shifted left by `scroll` (US-056).
+#[allow(clippy::too_many_arguments)]
 pub fn layout(
     state: &EditorState,
     line_ix: usize,
     grid: Arc<Grid>,
     inputs: &FrameInputs,
+    frozen: Option<&[f32]>,
+    scroll: f32,
+    reuse: Option<&Reuse<'_>>,
     cx: &LayoutCx<'_>,
     window: &Window,
 ) -> TableLayout {
@@ -411,13 +598,16 @@ pub fn layout(
     let columns = grid.columns().max(1);
     let cell_inputs = CellInputs::new(inputs);
 
-    // Measure every cell line once, unwrapped.
-    struct Pending {
+    // Measure every cell line once, unwrapped, or take it from the
+    // previous layout.
+    struct Pending<'a> {
         row: usize,
         column: usize,
         content: Range<usize>,
         missing: bool,
+        source: Rc<str>,
         lines: Vec<Measured>,
+        old: Option<&'a CellBox>,
     }
     let ends: Vec<usize> = state
         .selection()
@@ -440,7 +630,12 @@ pub fn layout(
                 .filter(|e| *e > cell.content.end && cell.holds_edit(*e))
                 .max();
             let content = cell.content.start..tail.unwrap_or(cell.content.end);
-            let lines: Vec<Measured> = if missing {
+            let old = reuse.and_then(|r| {
+                let i = (*r.cells.get(pending.len())?)?;
+                Some(&r.previous.cells[i])
+            });
+            // A reused cell's lines are measured already.
+            let lines: Vec<Measured> = if missing || old.is_some() {
                 Vec::new()
             } else {
                 let mut segments = cell.segments();
@@ -462,32 +657,48 @@ pub fn layout(
                     })
                     .collect()
             };
-            for line in &lines {
-                min[column] = min[column].max(line.word + padding);
-                max[column] = max[column].max(line.content + padding);
+            let measured = match old {
+                Some(old) => &old.measures[..],
+                None => &lines
+                    .iter()
+                    .map(|m| (m.word, m.content))
+                    .collect::<Vec<_>>()[..],
+            };
+            for &(word, width) in measured {
+                min[column] = min[column].max(word + padding);
+                max[column] = max[column].max(width + padding);
             }
             pending.push(Pending {
                 row,
                 column,
                 content,
                 missing,
+                source: match old {
+                    Some(old) => old.source.clone(),
+                    None => state.text().slice(cell.slot.clone()).into(),
+                },
                 lines,
+                old,
             });
         }
     }
     let ch = cx.ch.max(em * 0.5);
     let cap = table::CELL_MAX_WIDTH_CH * ch + padding;
-    let widths: Vec<f32> = table::size_columns(&min, &max, cx.column_width - border, cap)
-        .into_iter()
-        .map(f32::ceil)
-        .collect();
+    let widths: Vec<f32> = match frozen {
+        Some(widths) if widths.len() == columns => widths.to_vec(),
+        _ => {
+            let available = cx.column_width - border;
+            let exact = table::size_columns(&min, &max, available, cap);
+            whole_pixels(&exact, &min, available)
+        }
+    };
     let mut lefts = Vec::with_capacity(columns);
-    let mut x = border;
+    let mut x = border - scroll;
     for w in &widths {
         lefts.push(x);
         x += w;
     }
-    let width = x;
+    let width = x + scroll;
 
     let metrics = LineMetrics {
         font_size: em,
@@ -501,20 +712,76 @@ pub fn layout(
         .map(|p| {
             let inner = (widths[p.column] - padding).max(ch);
             let align = grid.alignments.get(p.column).copied().flatten();
-            let segments = p
-                .lines
+            let left = lefts[p.column] + pad_x;
+            let mut lines = p.lines;
+            if let Some(old) = p.old {
+                // An old line starts as far into the content as it did.
+                let moved = |s: &LaidLine| {
+                    let start = s.start - old.content.start + p.content.start;
+                    start..start + s.len
+                };
+                if old.inner == inner {
+                    // Wrapped at the same width: the shaped lines hold.
+                    let segments = old
+                        .segments
+                        .iter()
+                        .zip(old.measures.iter())
+                        .map(|(s, &(_, content))| {
+                            let shift = align_shift(align, inner, content, s.row_starts.len());
+                            cell_line(
+                                line_ix,
+                                moved(s),
+                                metrics,
+                                s.display.clone(),
+                                s.wrapped.clone(),
+                                s.row_starts.clone(),
+                                left + shift,
+                            )
+                        })
+                        .collect();
+                    return CellBox {
+                        row: p.row,
+                        column: p.column,
+                        content: p.content,
+                        missing: p.missing,
+                        segments,
+                        source: p.source,
+                        measures: old.measures.clone(),
+                        runs: old.runs.clone(),
+                        inner,
+                    };
+                }
+                lines = old
+                    .segments
+                    .iter()
+                    .zip(old.measures.iter())
+                    .zip(old.runs.iter())
+                    .map(|((s, &(word, content)), runs)| Measured {
+                        range: moved(s),
+                        display: s.display.clone(),
+                        runs: runs.clone(),
+                        word,
+                        content,
+                    })
+                    .collect();
+            }
+            let measures = lines.iter().map(|m| (m.word, m.content)).collect();
+            let runs = lines.iter().map(|m| m.runs.clone()).collect();
+            let segments = lines
                 .into_iter()
                 .map(|m| {
-                    let shaped = window.text_system().shape_text(
-                        SharedString::from(m.display.text.clone()),
-                        px(em),
-                        &m.runs,
-                        Some(px(inner)),
-                        None,
-                    );
-                    let wrapped = shaped
+                    let wrapped = window
+                        .text_system()
+                        .shape_text(
+                            SharedString::from(m.display.text.clone()),
+                            px(em),
+                            &m.runs,
+                            Some(px(inner)),
+                            None,
+                        )
                         .ok()
-                        .and_then(|mut lines| (!lines.is_empty()).then(|| lines.swap_remove(0)));
+                        .and_then(|mut lines| (!lines.is_empty()).then(|| lines.swap_remove(0)))
+                        .map(Rc::new);
                     let row_starts = wrapped.as_ref().map_or_else(
                         || vec![0],
                         |line| {
@@ -525,35 +792,16 @@ pub fn layout(
                                 .collect()
                         },
                     );
-                    // One row: aligned in its column; wrapped rows fill it.
-                    let shift = if row_starts.len() == 1 {
-                        let free = (inner - m.content).max(0.0);
-                        match align {
-                            Some(Align::Center) => (free / 2.0).floor(),
-                            Some(Align::Right) => free,
-                            _ => 0.0,
-                        }
-                    } else {
-                        0.0
-                    };
-                    LaidLine {
-                        ix: line_ix,
-                        start: m.range.start,
-                        len: m.range.len(),
+                    let shift = align_shift(align, inner, m.content, row_starts.len());
+                    cell_line(
+                        line_ix,
+                        m.range,
                         metrics,
-                        display: m.display,
+                        m.display,
                         wrapped,
                         row_starts,
-                        text_left: lefts[p.column] + pad_x + shift,
-                        text_top: 0.0,
-                        prefix: None,
-                        quote_bars: Vec::new(),
-                        code: None,
-                        table_source: None,
-                        block: None,
-                        inline_math: Vec::new(),
-                        height: 0.0,
-                    }
+                        left + shift,
+                    )
                 })
                 .collect();
             CellBox {
@@ -562,6 +810,10 @@ pub fn layout(
                 content: p.content,
                 missing: p.missing,
                 segments,
+                source: p.source,
+                measures,
+                runs,
+                inner,
             }
         })
         .collect();
@@ -597,6 +849,7 @@ pub fn layout(
     TableLayout {
         grid,
         width,
+        scroll,
         height: (y + widget_pad).ceil(),
         grid_top,
         columns: lefts.into_iter().zip(widths).collect(),
@@ -607,6 +860,7 @@ pub fn layout(
 
 /// Border, header background and rules of a table whose line top is `top`.
 pub fn paint_grid(t: &TableLayout, left: Pixels, top: Pixels, window: &mut Window) {
+    let left = left - px(t.scroll);
     let border = theme::border();
     let b = px(table::BORDER_WIDTH);
     let grid_height = t.rows.last().map_or(0.0, |(y, h)| y + h) - t.grid_top;
@@ -634,8 +888,10 @@ pub fn paint_grid(t: &TableLayout, left: Pixels, top: Pixels, window: &mut Windo
         ));
     }
     let last_row = t.rows.len().saturating_sub(1);
+    let mask = window.content_mask().bounds;
     for (r, (y, h)) in t.rows.iter().enumerate() {
-        if r < last_row {
+        let bottom = top + px(y + h);
+        if r < last_row && bottom >= mask.top() && bottom <= mask.bottom() + px(1.0) {
             window.paint_quad(fill(
                 Bounds::new(
                     point(left + b, top + px(y + h) - b),
@@ -652,7 +908,7 @@ pub fn paint_grid(t: &TableLayout, left: Pixels, top: Pixels, window: &mut Windo
         if c < last_column {
             window.paint_quad(fill(
                 Bounds::new(
-                    point(left + px(x + w) - b, top + px(rows_top)),
+                    point(left + px(x + t.scroll + w) - b, top + px(rows_top)),
                     size(b, px(rows_bottom - rows_top)),
                 ),
                 border,
@@ -677,7 +933,13 @@ pub fn paint_text(
     window: &mut Window,
     cx: &mut gpui::App,
 ) {
+    // Only the rows in sight: a long table paints a screenful (US-057).
+    let mask = window.content_mask().bounds;
     for cell in &t.cells {
+        let (y, h) = t.rows[cell.row];
+        if top + px(y) > mask.bottom() || top + px(y + h) < mask.top() {
+            continue;
+        }
         for segment in &cell.segments {
             let Some(wrapped) = &segment.wrapped else {
                 continue;
@@ -694,5 +956,25 @@ pub fn paint_text(
                 log::error!("failed to paint a table cell: {error:#}");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::whole_pixels;
+
+    /// US-056 review: columns shrunk to fill the text column exactly stay
+    /// within it once rounded to whole pixels, and none drops below its
+    /// longest word; a table too wide for any width keeps its minimums.
+    #[test]
+    fn rounded_widths_never_overflow_a_table_that_fits() {
+        let exact = [40.4, 120.3, 99.3, 140.0];
+        let min = [40.0, 60.0, 80.0, 90.0];
+        let widths = whole_pixels(&exact, &min, 400.0);
+        assert!(widths.iter().sum::<f32>() <= 400.0, "{widths:?}");
+        assert!(widths.iter().zip(&min).all(|(w, m)| w >= m));
+        assert!(widths.iter().all(|w| w.fract() == 0.0));
+        let wide = whole_pixels(&[300.5, 300.5], &[300.5, 300.5], 400.0);
+        assert_eq!(wide, vec![301.0, 301.0]);
     }
 }

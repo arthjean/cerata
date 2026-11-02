@@ -411,6 +411,22 @@ pub fn register(mut root: Stateful<Div>, cx: &mut Context<Editor>) -> Stateful<D
 impl Editor {
     fn horizontal(&mut self, forward: bool, extend: bool, cx: &mut Context<Self>) {
         self.goal_x = None;
+        let columns = if forward { 1 } else { -1 };
+        // A rectangle of cells (US-054): Shift moves its head cell, a plain
+        // arrow collapses it; Shift at a content's edge starts one.
+        if self.state.table_selection().is_some() {
+            self.update_state(cx, |state| {
+                if extend {
+                    state.extend_cells(0, columns, false)
+                } else {
+                    state.collapse_cells(forward)
+                }
+            });
+            return;
+        }
+        if extend && self.update_state(cx, |state| state.extend_cells(0, columns, false)) {
+            return;
+        }
         self.update_state(cx, |state| state.move_char(forward, extend));
     }
 
@@ -428,6 +444,32 @@ impl Editor {
         } else {
             cerata_markdown::Vertical::Up
         };
+        let rows = if down { 1 } else { -1 };
+        // A rectangle of cells (US-054), as for Left and Right.
+        if self.state.table_selection().is_some() {
+            self.update_state(cx, |state| {
+                if extend {
+                    state.extend_cells(rows, 0, true)
+                } else {
+                    state.collapse_cells(down)
+                }
+            });
+            return;
+        }
+        // Shift+Up or Down leaving a cell for the one above or below.
+        if extend && self.state.selection().ranges().len() == 1 {
+            let head = self.state.selection().main().head;
+            if let Some((grid, row, column)) = cerata_markdown::cells::cell_at(&self.state, head) {
+                let target = self.vertical_target(head, down, self.goal_x, window, cx);
+                let leaves = target.is_none_or(|(t, _)| {
+                    cerata_markdown::cells::cell_at(&self.state, t)
+                        .is_none_or(|(g, r, c)| g.range != grid.range || (r, c) != (row, column))
+                });
+                if leaves && self.update_state(cx, |state| state.extend_cells(rows, 0, true)) {
+                    return;
+                }
+            }
+        }
         if !extend
             && self.state.selection().ranges().len() == 1
             && self.state.selection().main().is_empty()
@@ -663,13 +705,35 @@ impl Editor {
     }
 
     pub fn copy(&mut self, cx: &mut Context<Self>) {
+        if self.copy_cells(cx) {
+            return;
+        }
         let text = self.selected_text();
         if !text.is_empty() {
             cx.write_to_clipboard(ClipboardItem::new_string(text));
         }
     }
 
+    /// A rectangle of cells copies as a GFM table, the grid as metadata
+    /// (US-055). `false` without a rectangle.
+    fn copy_cells(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(block) = self.state.copied_cells() else {
+            return false;
+        };
+        let metadata = super::clip::CellClip::from_block(&block);
+        cx.write_to_clipboard(ClipboardItem::new_string_with_json_metadata(
+            block.to_gfm(),
+            metadata,
+        ));
+        true
+    }
+
     pub fn cut(&mut self, cx: &mut Context<Self>) {
+        // A rectangle: copied, then its cells emptied in one step.
+        if self.copy_cells(cx) {
+            self.update_state(cx, |state| state.cut_cells());
+            return;
+        }
         let text = self.selected_text();
         if text.is_empty() {
             return;
@@ -706,7 +770,43 @@ impl Editor {
             }
         }
         if let Some(text) = item.text() {
+            if self.paste_cells(&text, item.metadata().map(String::as_str), cx) {
+                return;
+            }
             self.paste_text(&text, cx);
+        }
+    }
+
+    /// In a drawn cell, a grid on the clipboard (our metadata, a GFM table
+    /// or TSV) fills the cells from the caret (US-055); `false` when the
+    /// text is pasted as text instead.
+    pub fn paste_cells(
+        &mut self,
+        text: &str,
+        metadata: Option<&str>,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        use cerata_markdown::table_clip::{self, PasteCells};
+        let head = self.state.selection().main().head;
+        if self.state.table_selection().is_none()
+            && cerata_markdown::cells::cell_at(&self.state, head).is_none()
+        {
+            return false;
+        }
+        let Some(block) = metadata
+            .and_then(super::clip::CellClip::parse)
+            .or_else(|| table_clip::parse_gfm(text))
+            .or_else(|| table_clip::parse_tsv(text))
+        else {
+            return false;
+        };
+        match self.update_state(cx, |state| state.paste_cells(&block)) {
+            PasteCells::Outside => false,
+            PasteCells::Pasted => true,
+            PasteCells::TooLarge(count) => {
+                self.show_notice(super::clip::too_large(count), cx);
+                true
+            }
         }
     }
 

@@ -212,6 +212,10 @@ impl EditorState {
         if self.is_loading() {
             return false;
         }
+        // Over a rectangle of cells: its anchor cell takes the text (US-054).
+        if let Some(done) = self.type_over_cells(text, event) {
+            return done;
+        }
         let ranges: Vec<SelectionRange> = match range {
             Some(range) => vec![SelectionRange::new(range.start, range.end)],
             None => self.selection().ranges().to_vec(),
@@ -291,6 +295,10 @@ impl EditorState {
     pub fn delete_backward(&mut self) -> bool {
         if self.is_loading() {
             return false;
+        }
+        // Over a rectangle of cells: they are emptied (US-054).
+        if let Some(done) = self.clear_cells() {
+            return done;
         }
         let s = self.doc();
         let cut: Vec<std::ops::Range<usize>> = self

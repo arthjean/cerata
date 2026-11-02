@@ -153,6 +153,7 @@ impl Editor {
                 action: MenuAction::CopyLink(heading_link(heading)),
             }],
             open_submenu: None,
+            in_submenu: false,
         });
         cx.notify();
     }

@@ -203,7 +203,7 @@ fn a_loading_document_runs_no_command() {
 
 #[test]
 fn the_registry_has_stable_unique_ids_labels_and_chords() {
-    assert_eq!(COMMANDS.len(), 22);
+    assert_eq!(COMMANDS.len(), 22 + crate::table_ops::IDS.len());
     let mut ids: Vec<&str> = COMMANDS.iter().map(|c| c.id).collect();
     ids.sort_unstable();
     ids.dedup();

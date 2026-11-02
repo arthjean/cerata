@@ -427,11 +427,14 @@ impl Editor {
             }
             return;
         };
-        let caret = selected.start + replacement.len();
+        let Some(change) = replacement_in(&self.state, selected, &replacement) else {
+            return;
+        };
+        let caret = change.from + change.insert.len();
         self.update_state(cx, |state| {
             let _ = state.apply(
                 Transaction::new()
-                    .change(Change::new(selected, replacement.clone()))
+                    .change(change)
                     .select(Selection::cursor(caret))
                     .event(UserEvent::Command)
                     .scroll(),
@@ -458,7 +461,7 @@ impl Editor {
             .read(cx)
             .matches()
             .iter()
-            .map(|m| Change::new(m.clone(), replacement.clone()))
+            .filter_map(|m| replacement_in(&self.state, m.clone(), &replacement))
             .collect();
         if changes.is_empty() {
             return;
@@ -471,6 +474,22 @@ impl Editor {
                     .scroll(),
             );
         });
+    }
+}
+
+/// The change replacing `range` by `replacement`: in a drawn table's cell,
+/// its `|` escaped and its line breaks as `<br>` (US-056); `None` where the
+/// cell refuses it.
+fn replacement_in(
+    state: &cerata_markdown::EditorState,
+    range: Range<usize>,
+    replacement: &str,
+) -> Option<Change> {
+    use cerata_markdown::cells::{CellEdit, cell_edit};
+    match cell_edit(state, range.clone(), replacement) {
+        CellEdit::Outside => Some(Change::new(range, replacement.to_owned())),
+        CellEdit::Edit(change) => Some(change),
+        CellEdit::Refused => None,
     }
 }
 

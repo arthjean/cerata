@@ -6,7 +6,7 @@
 //! history on tab swap, `use-prosemark-editor.ts:139-203`).
 
 use crate::change::{Bias, Change, ChangeError, ChangeSet};
-use crate::decorate::{Decoration, decorate, decorate_range};
+use crate::decorate::{Decoration, decorate_range_with};
 use crate::history::{History, UserEvent};
 use crate::selection::Selection;
 use crate::text::Text;
@@ -159,6 +159,12 @@ pub struct EditorState {
     /// Diagrams are atomic blocks (`atomic.rs`); off for an editor showing
     /// plain source (a diagram's edit panel).
     atomic_blocks: bool,
+    /// The table "Edit as Markdown" shows as source, by its start, until
+    /// the selection leaves it (US-056).
+    table_source: Option<usize>,
+    /// The rectangle of cells the selection projects (US-054), until the
+    /// next commit that does not set it.
+    pub(crate) cell_selection: Option<crate::table_select::TableSelection>,
 }
 
 impl EditorState {
@@ -184,12 +190,32 @@ impl EditorState {
             splices: Vec::new(),
             now_ms: 0,
             atomic_blocks: true,
+            table_source: None,
+            cell_selection: None,
         }
     }
 
     /// Whether diagrams are atomic blocks the caret steps over.
     pub fn atomic_blocks(&self) -> bool {
         self.atomic_blocks
+    }
+
+    /// The start of the table shown as source by "Edit as Markdown".
+    pub fn table_source(&self) -> Option<usize> {
+        self.table_source
+    }
+
+    /// "Edit as Markdown": `grid`'s table shows its source, edited as
+    /// text, until the selection leaves it.
+    pub fn edit_table_source(&mut self, grid: &crate::table::Grid) -> bool {
+        self.table_source = Some(grid.range.start);
+        let selection = self.selection.clone();
+        self.apply(
+            Transaction::new()
+                .select(selection)
+                .event(UserEvent::Select),
+        )
+        .is_ok()
     }
 
     /// Plain source: the caret goes anywhere (a diagram's edit panel).
@@ -220,6 +246,27 @@ impl EditorState {
         let pos = self.text.floor_char_boundary(head);
         self.selection = Selection::cursor(pos);
         self.tree = MarkdownTree::parse(self.text.as_str());
+        self.table_source = None;
+        self.cell_selection = None;
+        // The kept offset may fall inside a diagram's source or on a drawn
+        // table's structure: it moves on, as after any commit (US-057).
+        if self.atomic_blocks {
+            let previous = self.selection.clone();
+            self.selection = crate::atomic::skip(
+                &self.tree,
+                &self.text,
+                std::mem::take(&mut self.selection),
+                &previous,
+            );
+            self.selection = crate::cells::snap(
+                &self.tree,
+                &self.text,
+                None,
+                std::mem::take(&mut self.selection),
+                &previous,
+                false,
+            );
+        }
         self.history.clear();
         self.scroll.pos = self.text.floor_char_boundary(self.scroll.pos);
         self.revision += 1;
@@ -251,18 +298,35 @@ impl EditorState {
     /// Live-preview decorations for the current tree and selection, frozen
     /// on the drag's starting selection while a drag is in flight.
     pub fn decorations(&self) -> Vec<Decoration> {
-        decorate(&self.tree, &self.text, &self.selection, self.drag.as_ref())
+        self.decorations_in(0..self.text.len())
     }
 
     /// Decorations of the nodes touching `range` (inclusive): the subset of
     /// [`EditorState::decorations`] a renderer needs for the lines it shows.
     pub fn decorations_in(&self, range: Range<usize>) -> Vec<Decoration> {
-        decorate_range(
+        decorate_range_with(
             &self.tree,
             &self.text,
             &self.selection,
             self.drag.as_ref(),
             range,
+            self.table_source,
+        )
+    }
+
+    /// [`Self::decorations_in`] without the content of the tables drawn as
+    /// grids, whose ranges come second (US-057).
+    pub fn frame_decorations_in(
+        &self,
+        range: Range<usize>,
+    ) -> (Vec<Decoration>, Vec<Range<usize>>) {
+        crate::decorate::decorate_outside_drawn_tables(
+            &self.tree,
+            &self.text,
+            &self.selection,
+            self.drag.as_ref(),
+            range,
+            self.table_source,
         )
     }
 
@@ -424,6 +488,8 @@ impl EditorState {
         scroll_into_view: bool,
     ) -> Applied {
         let doc_changed = !changes.is_empty();
+        // A rectangle of cells holds only for the selection that set it.
+        self.cell_selection = None;
         let previous_text = std::mem::replace(&mut self.text, text);
         if doc_changed {
             push_splices(&mut self.splices, &previous_text, &self.text, &changes);
@@ -439,6 +505,14 @@ impl EditorState {
             self.revision += 1;
         }
         self.selection = selection;
+        if let Some(start) = self.table_source {
+            let start = if doc_changed {
+                changes.map_pos(start, Bias::Left)
+            } else {
+                start
+            };
+            self.table_source = self.source_table_holds_selection(start).then_some(start);
+        }
         if explicit_selection {
             for filter in self.filters.clone() {
                 let filtered = filter(self, self.selection.clone());
@@ -457,6 +531,7 @@ impl EditorState {
             self.selection = crate::cells::snap(
                 &self.tree,
                 &self.text,
+                self.table_source,
                 std::mem::take(&mut self.selection),
                 &previous_selection,
                 doc_changed && explicit_selection,
@@ -521,6 +596,26 @@ fn push_splices(out: &mut Vec<LineSplice>, before: &Text, after: &Text, changes:
 /// The selection filters every editor installs.
 pub fn default_filters() -> Vec<SelectionFilter> {
     vec![crate::list::prefix_selection_guard]
+}
+
+impl EditorState {
+    /// The table starting at `start` holds every selection range, its
+    /// container prefixes included.
+    fn source_table_holds_selection(&self, start: usize) -> bool {
+        let Some(node) = self
+            .tree
+            .iter_range(start..start)
+            .find(|n| n.kind() == crate::tree::NodeKind::Table && n.from() == start)
+        else {
+            return false;
+        };
+        let from = self.text.line_at(node.from()).from;
+        let to = self.text.line_at(node.to()).to;
+        self.selection
+            .ranges()
+            .iter()
+            .all(|r| from <= r.from() && r.to() <= to)
+    }
 }
 
 #[cfg(test)]

@@ -99,10 +99,12 @@ impl CodeScroll {
             .collect();
     }
 
+    /// The bar of a block that overflows by a pixel or more: offsets are
+    /// whole pixels, so less cannot scroll (a table's rounded columns).
     pub fn thumb(&self, first_line: usize) -> Option<Thumb> {
         let (_, visible) = *self.widths.get(&first_line)?;
         let max = self.max(first_line);
-        (max > 0.0).then(|| thumb_geometry(self.offset_of_line(first_line), max, visible))
+        (max >= 1.0).then(|| thumb_geometry(self.offset_of_line(first_line), max, visible))
     }
 }
 
@@ -183,6 +185,9 @@ mod tests {
         scroll.clamp_measured();
         assert_eq!(scroll.offset_of_line(0), 0.0);
         assert!(scroll.thumb(0).is_none());
+        scroll.begin_frame();
+        scroll.measure(0, 500.4, 500.0);
+        assert!(scroll.thumb(0).is_none(), "less than a pixel cannot scroll");
     }
 
     #[test]

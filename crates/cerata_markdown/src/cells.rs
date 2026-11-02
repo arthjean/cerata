@@ -26,15 +26,25 @@ use crate::tree::{MarkdownTree, NodeKind};
 
 /// The table edited in place whose zone (`Grid::zone`) holds `pos`; a
 /// table with cells past its header's width is edited as source
-/// ([`Grid::has_extra`]).
-pub fn grid_in(tree: &MarkdownTree, text: &Text, pos: usize) -> Option<Grid> {
+/// ([`Grid::has_extra`]), and so is the one "Edit as Markdown" shows
+/// (`source`, its start).
+pub fn grid_in(
+    tree: &MarkdownTree,
+    text: &Text,
+    pos: usize,
+    source: Option<usize>,
+) -> Option<Grid> {
     let line = text.line_at(pos);
     tree.iter_range(line.from..line.to)
         .filter(|n| n.kind() == NodeKind::Table)
         .find_map(|n| {
             let grid = Grid::from_node(text, n)?;
             let zone = grid.zone();
-            (zone.start <= pos && pos <= zone.end && !grid.has_extra()).then_some(grid)
+            (zone.start <= pos
+                && pos <= zone.end
+                && !grid.has_extra()
+                && source != Some(grid.range.start))
+            .then_some(grid)
         })
 }
 
@@ -43,7 +53,7 @@ pub fn grid_at(state: &EditorState, pos: usize) -> Option<Grid> {
     if !state.atomic_blocks() {
         return None;
     }
-    grid_in(state.tree(), state.text(), pos)
+    grid_in(state.tree(), state.text(), pos, state.table_source())
 }
 
 /// The drawn cell the caret at `pos` edits (its content, or the spaces an
@@ -99,6 +109,7 @@ pub fn snap_pos(grid: &Grid, text: &Text, pos: usize, forward: bool) -> usize {
 pub fn snap(
     tree: &MarkdownTree,
     text: &Text,
+    source: Option<usize>,
     selection: Selection,
     previous: &Selection,
     edited: bool,
@@ -112,8 +123,20 @@ pub fn snap(
         .enumerate()
         .map(|(i, r)| {
             let before = previous.ranges().get(i).copied().unwrap_or(previous.main());
+            // A range from one cell's slot to another's reveals the table's
+            // source: its ends stay where they are (a search result that
+            // crosses a `|`, US-056).
+            if !r.is_empty()
+                && let Some(grid) = grid_in(tree, text, r.head, source)
+            {
+                let zone = grid.zone();
+                let inside = zone.start <= r.anchor && r.anchor <= zone.end;
+                if inside && grid.cell_at(r.anchor) != grid.cell_at(r.head) {
+                    return *r;
+                }
+            }
             let kept = |grid: &Grid, pos: usize| edited && grid.cell_holding(pos).is_some();
-            let head = match grid_in(tree, text, r.head) {
+            let head = match grid_in(tree, text, r.head, source) {
                 Some(grid) if !covers(r, &grid) && !kept(&grid, r.head) => {
                     snap_pos(&grid, text, r.head, r.head >= before.head)
                 }
@@ -122,7 +145,7 @@ pub fn snap(
             let anchor = if r.is_empty() {
                 head
             } else {
-                match grid_in(tree, text, r.anchor) {
+                match grid_in(tree, text, r.anchor, source) {
                     Some(grid) if !covers(r, &grid) && !kept(&grid, r.anchor) => {
                         snap_pos(&grid, text, r.anchor, r.anchor >= before.anchor)
                     }
@@ -153,7 +176,7 @@ pub enum CellEdit {
 
 /// `text` as cell content: unescaped `|` become `\|` and line breaks
 /// `<br>`. `escaped` says the text goes right after an escaping `\`.
-fn escape(text: &str, mut escaped: bool) -> (String, bool) {
+pub(crate) fn escape(text: &str, mut escaped: bool) -> (String, bool) {
     let mut out = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
@@ -257,8 +280,9 @@ impl EditorState {
                 continue;
             }
             let text = self.text();
-            let grid = grid_in(self.tree(), text, cut.start)
-                .or_else(|| grid_in(self.tree(), text, cut.end))
+            let source = self.table_source();
+            let grid = grid_in(self.tree(), text, cut.start, source)
+                .or_else(|| grid_in(self.tree(), text, cut.end, source))
                 .filter(|g| {
                     let zone = g.zone();
                     let outside = r.head < zone.start || r.head > zone.end;

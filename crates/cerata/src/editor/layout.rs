@@ -34,9 +34,16 @@ pub enum Span {
 pub struct FrameInputs {
     pub range: Range<usize>,
     pub decorations: Vec<Decoration>,
+    /// The short decorations' starts and indices, by start, and the long
+    /// ones' indices: a line finds its own without scanning them all, which
+    /// a long table's folded lines would make quadratic (US-057).
+    by_start: Vec<(usize, usize)>,
+    long: Vec<usize>,
     pub lists: ListDecorations,
     pub spans: Vec<(Range<usize>, Span)>,
     pub highlights: Vec<HighlightSpan>,
+    /// The drawn tables whose content was left out ([`Self::collect_frame`]).
+    drawn_tables: Vec<Range<usize>>,
 }
 
 impl FrameInputs {
@@ -46,11 +53,42 @@ impl FrameInputs {
         highlight: &mut dyn FnMut(&str, &str) -> std::rc::Rc<Vec<HighlightSpan>>,
     ) -> Self {
         let decorations = state.decorations_in(range.clone());
+        Self::from_decorations(state, range, decorations, Vec::new(), highlight)
+    }
+
+    /// [`Self::collect`] without the content of the tables drawn as grids:
+    /// a table's layout gathers what the cells it lays out need (US-057).
+    pub fn collect_frame(
+        state: &EditorState,
+        range: Range<usize>,
+        highlight: &mut dyn FnMut(&str, &str) -> std::rc::Rc<Vec<HighlightSpan>>,
+    ) -> Self {
+        let (decorations, drawn_tables) = state.frame_decorations_in(range.clone());
+        Self::from_decorations(state, range, decorations, drawn_tables, highlight)
+    }
+
+    fn from_decorations(
+        state: &EditorState,
+        range: Range<usize>,
+        decorations: Vec<Decoration>,
+        drawn_tables: Vec<Range<usize>>,
+        highlight: &mut dyn FnMut(&str, &str) -> std::rc::Rc<Vec<HighlightSpan>>,
+    ) -> Self {
         let lists = list_decorations_in(state.tree(), state.text(), range.clone());
         let mut spans = Vec::new();
         let mut highlights = Vec::new();
+        let mut skipped = drawn_tables.iter().peekable();
         for node in state.tree().iter_range(range.clone()) {
             use NodeKind as K;
+            // The nodes of a drawn table follow it, inside its range.
+            while skipped.peek().is_some_and(|t| t.end < node.from()) {
+                skipped.next();
+            }
+            if skipped.peek().is_some_and(|t| {
+                t.start <= node.from() && node.to() <= t.end && node.kind() != K::Table
+            }) {
+                continue;
+            }
             let span = match node.kind() {
                 K::StrongEmphasis => Some(Span::Bold),
                 K::Emphasis => Some(Span::Italic),
@@ -102,19 +140,72 @@ impl FrameInputs {
                 spans.push((node.range(), Span::Muted));
             }
         }
-        Self {
+        let mut inputs = Self {
             range,
             decorations,
+            by_start: Vec::new(),
+            long: Vec::new(),
             lists,
             spans,
             highlights,
+            drawn_tables,
+        };
+        inputs.index();
+        inputs
+    }
+
+    /// The decorations and spans of every node in `range` are here.
+    pub fn covers_content(&self, range: &Range<usize>) -> bool {
+        self.covers(range)
+            && !self
+                .drawn_tables
+                .iter()
+                .any(|t| t.start <= range.end && range.start <= t.end)
+    }
+
+    fn index(&mut self) {
+        self.by_start.clear();
+        self.long.clear();
+        for (i, d) in self.decorations.iter().enumerate() {
+            let r = d.range();
+            if r.len() > SHORT_DECORATION {
+                self.long.push(i);
+            } else {
+                self.by_start.push((r.start, i));
+            }
         }
+        self.by_start.sort_unstable();
+    }
+
+    /// No decorations at all (source-only editors).
+    pub fn clear_decorations(&mut self) {
+        self.decorations.clear();
+        self.index();
+    }
+
+    /// The decorations overlapping `line` (bounds included), in their order.
+    pub fn line_decorations(&self, line: &Range<usize>) -> Vec<&Decoration> {
+        let from = line.start.saturating_sub(SHORT_DECORATION);
+        let lo = self.by_start.partition_point(|(s, _)| *s < from);
+        let hi = self.by_start.partition_point(|(s, _)| *s <= line.end);
+        let mut hits: Vec<usize> = self.by_start[lo..hi]
+            .iter()
+            .map(|(_, i)| *i)
+            .chain(self.long.iter().copied())
+            .filter(|i| overlaps(&self.decorations[*i].range(), line))
+            .collect();
+        hits.sort_unstable();
+        hits.into_iter().map(|i| &self.decorations[i]).collect()
     }
 
     pub fn covers(&self, line: &Range<usize>) -> bool {
         self.range.start <= line.start && line.end <= self.range.end
     }
 }
+
+/// Decorations longer than this many bytes are scanned for every line;
+/// shorter ones are found by their start.
+const SHORT_DECORATION: usize = 1024;
 
 /// Fonts resolved for this editor.
 #[derive(Clone, Debug)]
@@ -147,9 +238,19 @@ pub trait BlockSizer {
     fn math(&mut self, tex: &str, display: bool) -> super::math::MathState;
     /// Height of a rich block in a column `width` wide.
     fn rich_height(&mut self, widget: &Widget, width: f32) -> f32;
-    /// The table already laid out on line `ix` for this state, if any.
-    fn table(&mut self, ix: usize) -> Option<std::rc::Rc<super::table::TableLayout>>;
+    /// The table already laid out on line `ix` for this state and this
+    /// horizontal scroll, if any.
+    fn table(&mut self, ix: usize, scroll: f32) -> Option<std::rc::Rc<super::table::TableLayout>>;
     fn keep_table(&mut self, ix: usize, table: std::rc::Rc<super::table::TableLayout>);
+    /// The column widths kept for the table the caret edits (US-058).
+    fn frozen_widths(&mut self) -> &mut Option<super::table::FrozenWidths>;
+
+    /// The layout of the table at line `ix` for the state before, when
+    /// every edit since was inside it, with that state's edit ranges.
+    fn previous_table(
+        &mut self,
+        ix: usize,
+    ) -> Option<(std::rc::Rc<super::table::TableLayout>, Vec<Range<usize>>)>;
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -217,7 +318,8 @@ pub struct LaidLine {
     pub metrics: LineMetrics,
     pub display: DisplayLine,
     /// `None` when the line is hidden or a block widget replaces it.
-    pub wrapped: Option<WrappedLine>,
+    /// Shared so a table cell's unchanged line is reused (US-057).
+    pub wrapped: Option<std::rc::Rc<WrappedLine>>,
     /// Display offsets where each wrapped row starts.
     pub row_starts: Vec<usize>,
     /// Column-relative x of the text.
@@ -307,11 +409,7 @@ pub fn layout_line(
     let line = text.line(ix);
     let range = line.range();
     let source = text.slice(range.clone());
-    let decorations: Vec<&Decoration> = inputs
-        .decorations
-        .iter()
-        .filter(|d| overlaps(&d.range(), &range))
-        .collect();
+    let decorations: Vec<&Decoration> = inputs.line_decorations(&range);
 
     let mut style: Option<LineStyle> = None;
     let mut quote = false;
@@ -420,26 +518,65 @@ pub fn layout_line(
             Widget::Table { grid, .. } => {
                 // Laid out once per state of the editor: hit-testing, the
                 // caret's row and the paint all ask for it (US-048).
-                let laid = match sizer.table(ix) {
+                // Scrolled like a code block, keyed by its first line.
+                let scroll = (cx.code_scroll)(grid.range.start);
+                let laid = match sizer.table(ix, scroll) {
                     Some(laid) => laid,
                     None => {
-                        let own;
-                        let table_inputs = if inputs.covers(&grid.range) {
-                            inputs
-                        } else {
-                            own = FrameInputs::collect(state, grid.range.clone(), &mut |_, _| {
-                                std::rc::Rc::new(Vec::new())
-                            });
-                            &own
+                        // After an edit in the table, the cells it left
+                        // alone are taken as they were (US-057).
+                        let previous = sizer.previous_table(ix);
+                        let ranges = super::table::edit_ranges(
+                            state.selection(),
+                            state.drag_selection(),
+                            cx.marked.as_ref(),
+                        );
+                        let (reuse, fresh) = match &previous {
+                            Some((table, old)) => {
+                                let (reuse, fresh) =
+                                    super::table::reusable(state, grid, table, old, &ranges);
+                                (Some(reuse), fresh)
+                            }
+                            None => (None, Some(grid.range.clone())),
                         };
+                        let own;
+                        let table_inputs = match fresh {
+                            Some(range) if !inputs.covers_content(&range) => {
+                                own = FrameInputs::collect(state, range, &mut |_, _| {
+                                    std::rc::Rc::new(Vec::new())
+                                });
+                                &own
+                            }
+                            _ => inputs,
+                        };
+                        // The caret's table keeps the widths it had when
+                        // the caret entered it (US-058).
+                        let head = state.selection().main().head;
+                        let zone = grid.zone();
+                        let editing = zone.start <= head && head <= zone.end;
+                        let frozen = sizer.frozen_widths();
+                        let keep = frozen
+                            .as_ref()
+                            .filter(|f| editing && f.fits(grid, cx.column_width))
+                            .map(|f| f.widths.clone());
                         let laid = std::rc::Rc::new(super::table::layout(
                             state,
                             ix,
                             grid.clone(),
                             table_inputs,
+                            keep.as_deref(),
+                            scroll,
+                            reuse.as_ref(),
                             cx,
                             window,
                         ));
+                        if editing && keep.is_none() {
+                            *frozen = Some(super::table::FrozenWidths {
+                                start: grid.range.start,
+                                column_width: cx.column_width,
+                                widths: laid.columns.iter().map(|(_, w)| *w).collect(),
+                            });
+                        }
                         sizer.keep_table(ix, laid.clone());
                         laid
                     }
@@ -678,7 +815,8 @@ pub fn layout_line(
         );
         let wrapped = shaped
             .ok()
-            .and_then(|mut lines| (!lines.is_empty()).then(|| lines.swap_remove(0)));
+            .and_then(|mut lines| (!lines.is_empty()).then(|| lines.swap_remove(0)))
+            .map(std::rc::Rc::new);
         let row_starts = wrapped.as_ref().map_or_else(
             || vec![0],
             |line| {

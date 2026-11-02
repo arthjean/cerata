@@ -21,6 +21,7 @@ macro_rules! secondary {
 
 pub mod actions;
 pub mod blocks;
+mod clip;
 mod code_scroll;
 pub mod complete;
 pub mod config;
@@ -353,10 +354,16 @@ impl Editor {
     /// height map, then remembers the time for undo grouping.
     fn sync_heights(&mut self) {
         let splices = self.state.take_line_splices();
+        self.tables.pending_splices.extend(splices.iter().cloned());
         let (tree, text) = (self.state.tree(), self.state.text());
         self.code_scroll.remap(&splices, |line| {
-            let from = text.line(line.min(text.line_count() - 1)).from;
+            let line = text.line(line.min(text.line_count() - 1));
+            let from = line.from;
             cerata_markdown::code::code_block_at(tree, from).is_some_and(|n| n.from() == from)
+                || tree.iter_range(from..line.to).any(|n| {
+                    n.kind() == cerata_markdown::NodeKind::Table
+                        && text.line_at(n.from()).from == from
+                })
         });
         for splice in splices {
             let heights = (splice.first..splice.first + splice.new)
@@ -551,9 +558,9 @@ impl Editor {
                 })
                 .clone()
         };
-        let mut inputs = FrameInputs::collect(&self.state, range, &mut highlight);
+        let mut inputs = FrameInputs::collect_frame(&self.state, range, &mut highlight);
         if self.source_only {
-            inputs.decorations.clear();
+            inputs.clear_decorations();
         }
         inputs
     }
@@ -660,6 +667,12 @@ impl Editor {
             let first = self.state.text().line_at(code.block_start).number;
             let visible = column_width - layout::CODE_PADDING * 2.0;
             self.code_scroll.measure(first, code.text_width, visible);
+        }
+        // A table wider than the column scrolls like a code block (US-056).
+        if let Some(block) = &line.block
+            && let layout::BlockKind::Table(t) = &block.kind
+        {
+            self.code_scroll.measure(ix, t.width, column_width);
         }
         line
     }
@@ -825,8 +838,8 @@ impl Editor {
         let scroll_top = self.scroll_top();
         let (top, bottom) = match request {
             Autoscroll::Caret => {
-                self.reveal_caret_in_code(window, cx);
                 let head = self.cursor();
+                self.reveal_in_block(head, window, cx);
                 let (line, row) = self.row_at(head, window, cx);
                 let line_top = self.heights.prefix(line.ix);
                 if line.wrapped.is_none() {
@@ -836,6 +849,17 @@ impl Editor {
                         line_top + (line.text_top + row as f32 * line.metrics.row_height) as f64;
                     (row_top, row_top + line.metrics.row_height as f64)
                 }
+            }
+            // A result in a drawn cell: its cell line, the table scrolled
+            // to it (US-056).
+            Autoscroll::Reveal(pos)
+                if cerata_markdown::cells::cell_at(&self.state, pos).is_some() =>
+            {
+                self.reveal_in_block(pos, window, cx);
+                let (line, row) = self.row_at(pos, window, cx);
+                let row_top = self.heights.prefix(line.ix)
+                    + (line.text_top + row as f32 * line.metrics.row_height) as f64;
+                (row_top, row_top + line.metrics.row_height as f64)
             }
             Autoscroll::Reveal(pos) => {
                 let ix = self.state.text().line_at(pos).number;
@@ -985,11 +1009,11 @@ impl layout::BlockSizer for Sizer<'_> {
         self.rich.height(widget, width, self.font_size)
     }
 
-    fn table(&mut self, ix: usize) -> Option<Rc<table::TableLayout>> {
+    fn table(&mut self, ix: usize, scroll: f32) -> Option<Rc<table::TableLayout>> {
         self.tables
             .layouts
             .iter()
-            .find(|(i, _)| *i == ix)
+            .find(|(i, t)| *i == ix && t.scroll == scroll)
             .map(|(_, t)| t.clone())
     }
 
@@ -999,13 +1023,33 @@ impl layout::BlockSizer for Sizer<'_> {
         }
         self.tables.layouts.push((ix, table));
     }
+
+    fn frozen_widths(&mut self) -> &mut Option<table::FrozenWidths> {
+        &mut self.tables.frozen
+    }
+
+    fn previous_table(&mut self, ix: usize) -> Option<(Rc<table::TableLayout>, Vec<Range<usize>>)> {
+        let tables = &self.tables;
+        tables.previous.iter().find_map(|(old_ix, t)| {
+            // Every splice since stays in the table's lines.
+            let mut lines = *old_ix..*old_ix + t.grid.rows.len();
+            for s in &tables.splices {
+                if s.first < lines.start || s.first + s.old > lines.end {
+                    return None;
+                }
+                lines.end = lines.end + s.new - s.old;
+            }
+            (lines.start == ix).then(|| (t.clone(), tables.previous_ranges.clone()))
+        })
+    }
 }
 
 /// What a table's layout depends on besides its line and the settings
 /// (a change of settings empties the cache): the text, the selection (what
 /// is revealed), a drag's frozen selection, the IME's marked range, the
-/// column width, the text size and the palette (a theme change that keeps
-/// the mode still recolors the cells' text).
+/// column width, the text size, the palette (a theme change that keeps
+/// the mode still recolors the cells' text) and the table "Edit as
+/// Markdown" shows as source.
 type TableKey = (
     u64,
     Selection,
@@ -1014,14 +1058,26 @@ type TableKey = (
     u32,
     u32,
     theme::Palette,
+    Option<usize>,
 );
 
 /// Table layouts valid for one state of the editor, so a table is laid out
-/// once per state whatever asks for it (US-048).
+/// once per state whatever asks for it (US-048), and the column widths of
+/// the table the caret edits (US-058), which a change of settings drops
+/// with the rest.
 #[derive(Default)]
 struct TableCache {
     key: Option<TableKey>,
     layouts: Vec<(usize, Rc<table::TableLayout>)>,
+    frozen: Option<table::FrozenWidths>,
+    /// The layouts of the state before, in the same settings, with that
+    /// state's edit ranges and the line splices from it to this one: an
+    /// edit in a table lays out only the cells it touched (US-057).
+    previous: Vec<(usize, Rc<table::TableLayout>)>,
+    previous_ranges: Vec<Range<usize>>,
+    splices: Vec<cerata_markdown::LineSplice>,
+    /// Splices since this state, for the next one.
+    pending_splices: Vec<cerata_markdown::LineSplice>,
 }
 
 impl TableCache {
@@ -1040,10 +1096,29 @@ impl TableCache {
             width.to_bits(),
             config.text_size().to_bits(),
             theme::palette(),
+            state.table_source(),
         );
         if self.key.as_ref() != Some(&key) {
+            let layouts = std::mem::take(&mut self.layouts);
+            self.previous.clear();
+            self.previous_ranges.clear();
+            if let Some(old) = &self.key
+                && (old.4, old.5, &old.6, old.7) == (key.4, key.5, &key.6, key.7)
+            {
+                self.previous = layouts;
+                self.previous_ranges = table::edit_ranges(&old.1, old.2.as_ref(), old.3.as_ref());
+            }
+            self.splices = std::mem::take(&mut self.pending_splices);
             self.key = Some(key);
-            self.layouts.clear();
+            // The caret left the table whose widths were kept: they are
+            // computed afresh, even if that table is not laid out now.
+            let head = state.selection().main().head;
+            if let Some(frozen) = &self.frozen
+                && cerata_markdown::cells::grid_at(state, head)
+                    .is_none_or(|grid| grid.range.start != frozen.start)
+            {
+                self.frozen = None;
+            }
         }
     }
 }

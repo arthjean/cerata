@@ -155,7 +155,7 @@ fn is_ws(b: u8) -> bool {
 }
 
 /// Unescaped `|` in `range` of `text`.
-fn pipes_in(text: &str, range: Range<usize>) -> Vec<usize> {
+pub(crate) fn pipes_in(text: &str, range: Range<usize>) -> Vec<usize> {
     let mut out = Vec::new();
     let mut escaped = false;
     for (offset, b) in text.as_bytes()[range.clone()].iter().enumerate() {
@@ -169,7 +169,7 @@ fn pipes_in(text: &str, range: Range<usize>) -> Vec<usize> {
 
 /// The cells of a row from its pipes. A stretch before the first pipe or
 /// after the last one is a cell only when it holds text.
-fn row_cells(text: &str, row: Range<usize>, pipes: &[usize]) -> Vec<Cell> {
+pub(crate) fn row_cells(text: &str, row: Range<usize>, pipes: &[usize]) -> Vec<Cell> {
     let bytes = text.as_bytes();
     let blank = |r: &Range<usize>| bytes[r.clone()].iter().all(|b| is_ws(*b));
     let mut slots = Vec::new();
@@ -237,6 +237,18 @@ pub fn is_break_tag(tag: &str) -> bool {
     )
 }
 
+/// The tables whose grids were derived last.
+const GRID_CACHE: usize = 4;
+
+thread_local! {
+    /// The last grids derived, with their lines' start and text: a table's
+    /// grid is asked for many times per keystroke (decorations, the caret's
+    /// moves, the layout), and a 1 000-row one takes most of a millisecond
+    /// to derive (US-057).
+    static GRIDS: std::cell::RefCell<Vec<(usize, String, Option<Grid>)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
 impl Grid {
     /// The grid of a `Table` node; `None` when its second line is not a
     /// delimiter row.
@@ -244,6 +256,29 @@ impl Grid {
         if node.kind() != NodeKind::Table {
             return None;
         }
+        // A grid depends only on its lines' text and where they start.
+        let lines = text.line_at(node.from()).from..text.line_at(node.to()).to;
+        let source = text.slice(lines.clone());
+        let hit = GRIDS.with_borrow(|grids| {
+            grids
+                .iter()
+                .find(|(start, s, _)| *start == lines.start && s == source)
+                .map(|(_, _, grid)| grid.clone())
+        });
+        if let Some(grid) = hit {
+            return grid;
+        }
+        let grid = Self::parse(text, node);
+        GRIDS.with_borrow_mut(|grids| {
+            if grids.len() >= GRID_CACHE {
+                grids.remove(0);
+            }
+            grids.push((lines.start, source.to_owned(), grid.clone()));
+        });
+        grid
+    }
+
+    fn parse(text: &Text, node: Node<'_>) -> Option<Grid> {
         let doc = text.as_str();
         let mut rows = Vec::new();
         for child in node.children() {

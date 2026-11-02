@@ -87,6 +87,10 @@ fn prefix_zone(line: &LaidLine, text: &str, x: f32) -> Option<usize> {
     })
 }
 
+/// A table's grid with a rectangle's anchor and head cells, as
+/// `(row, column)` (US-054).
+type CellRect = (cerata_markdown::table::Grid, (usize, usize), (usize, usize));
+
 impl Editor {
     /// The document line and the scroll-space y under a window point.
     pub(super) fn line_at_point(&self, position: Point<Pixels>) -> Option<(usize, f64)> {
@@ -300,6 +304,28 @@ impl Editor {
         }
         let pos = self.offset_for_point(event.position, window, cx);
         let checkbox = self.checkbox_at(event.position, window, cx);
+        // Shift+click in another cell of the caret's table: the rectangle
+        // from the caret's cell (or the current rectangle's anchor), which
+        // a drag goes on extending (US-054).
+        if unit == Unit::Char && event.modifiers.shift {
+            let anchor = match self.state.table_selection_grid() {
+                Some((ts, grid)) => grid.cell(ts.anchor.0, ts.anchor.1).map(|c| c.content.start),
+                None => Some(self.state.selection().main().anchor),
+            };
+            if let Some(anchor) = anchor
+                && let Some((grid, a, h)) = self.cell_rect(anchor, pos)
+            {
+                self.state.begin_drag();
+                self.drag = Some(Drag::Select {
+                    origin: anchor..anchor,
+                    unit,
+                    moved: false,
+                    checkbox: None,
+                });
+                self.update_state(cx, |state| state.select_cells(&grid, a, h));
+                return;
+            }
+        }
         // Freeze what is revealed in the shape the user is looking at.
         self.state.begin_drag();
         let origin = self.unit_range(pos, unit);
@@ -388,12 +414,28 @@ impl Editor {
                     Selection::single(origin.start, target.end.max(pos))
                 };
                 self.drag = Some(Drag::Select {
-                    origin,
+                    origin: origin.clone(),
                     unit,
                     moved: true,
                     checkbox,
                 });
-                if selection != *self.state.selection() {
+                // From one cell to another of the same table: the
+                // rectangle between them (US-054); out of the table, a
+                // text selection across its edge.
+                let rect = match unit {
+                    Unit::Char => self.cell_rect(origin.start, pos),
+                    _ => None,
+                };
+                if let Some((grid, a, h)) = rect {
+                    let same = self.state.table_selection().is_some_and(|ts| {
+                        ts.table == grid.range.start && ts.anchor == a && ts.head == h
+                    });
+                    if !same {
+                        self.update_state(cx, |state| state.select_cells(&grid, a, h));
+                    }
+                } else if selection != *self.state.selection()
+                    || self.state.table_selection().is_some()
+                {
                     self.select(selection, cx);
                 }
                 // Keep the drag position in view.
@@ -441,6 +483,14 @@ impl Editor {
         }
     }
 
+    /// Two positions in different drawn cells of one table: the table and
+    /// their cells, as a rectangle's anchor and head (US-054).
+    fn cell_rect(&self, anchor: usize, head: usize) -> Option<CellRect> {
+        let (grid, ar, ac) = cerata_markdown::cells::cell_at(&self.state, anchor)?;
+        let (other, hr, hc) = cerata_markdown::cells::cell_at(&self.state, head)?;
+        (other.range == grid.range && (ar, ac) != (hr, hc)).then_some((grid, (ar, ac), (hr, hc)))
+    }
+
     fn on_scroll_wheel(
         &mut self,
         event: &ScrollEvent,
@@ -465,7 +515,8 @@ impl Editor {
         }
     }
 
-    /// First line of the code block under the pointer.
+    /// First line of the code block, or of the drawn table, under the
+    /// pointer.
     fn code_block_line_at(
         &mut self,
         position: Point<Pixels>,
@@ -474,15 +525,49 @@ impl Editor {
     ) -> Option<usize> {
         let (ix, _) = self.line_at_point(position)?;
         let line = self.layout_line(ix, window, cx);
+        if let Some(block) = &line.block
+            && matches!(block.kind, BlockKind::Table(_))
+        {
+            return Some(ix);
+        }
         let code = line.code.as_ref()?;
         Some(self.state.text().line_at(code.block_start).number)
     }
 
-    /// Keeps the main caret visible inside its code block, by the smallest
-    /// change of the block's offset.
-    pub(super) fn reveal_caret_in_code(&mut self, window: &Window, cx: &mut Context<Self>) {
-        let head = self.cursor();
-        let (line, _) = self.row_at(head, window, cx);
+    /// Keeps the position `head` (the main caret, a search result) visible
+    /// inside its code block or wide table, by the smallest change of the
+    /// block's offset.
+    pub(super) fn reveal_in_block(&mut self, head: usize, window: &Window, cx: &mut Context<Self>) {
+        let (line, row) = self.row_at(head, window, cx);
+        // In a cell of a wide table: the table scrolls (US-056).
+        if let super::table::TextLine::Cell { table, .. } = &line {
+            let Some(wrapped) = &line.wrapped else {
+                return;
+            };
+            let display = line.display.to_display(head - line.start);
+            // From the start of the head's own row: at a wrap boundary,
+            // `position_for_index` answers the end of the row before.
+            let unwrapped = &wrapped.unwrapped_layout;
+            let row_start = line.row_starts.get(row).copied().unwrap_or(0);
+            let in_row = unwrapped.x_for_index(display) - unwrapped.x_for_index(row_start);
+            let first = self.state.text().line_at(table.grid.zone().start).number;
+            let offset = table.scroll;
+            // The caret's x in the unscrolled table, a padding of room.
+            let x = line.text_left + in_row.as_f32() + offset;
+            let pad = cerata_markdown::table::CELL_HORIZONTAL_PADDING_EM * self.config.text_size();
+            let visible = self.column_width();
+            let next = if x - pad < offset {
+                x - pad
+            } else if x + pad > offset + visible {
+                x + pad - visible
+            } else {
+                offset
+            };
+            if next != offset && CodeScroll::set(&mut self.code_scroll, first, next) {
+                cx.notify();
+            }
+            return;
+        }
         let (Some(code), Some(wrapped)) = (&line.code, &line.wrapped) else {
             return;
         };

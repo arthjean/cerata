@@ -55,6 +55,9 @@ pub enum Command {
     ZoomOut,
     ResetZoom,
     Settings,
+    /// An editor command of the registry, offered where it applies (the
+    /// table commands, with the caret in a drawn table: US-053).
+    Editor(&'static str),
 }
 
 impl Command {
@@ -87,6 +90,7 @@ impl Command {
             Self::ZoomOut => "Zoom Out",
             Self::ResetZoom => "Reset Zoom",
             Self::Settings => "Settings",
+            Self::Editor(id) => cerata_markdown::commands::command(id).map_or(id, |c| c.label),
         }
     }
 }
@@ -110,6 +114,7 @@ impl Command {
             Self::CloseTab | Self::CloseAllTabs => a.has_tabs && !a.compact,
             Self::CloseWorkspace => a.has_workspace,
             Self::Settings => !a.compact,
+            Self::Editor(_) => true,
             Self::OpenWorkspace
             | Self::ToggleTheme
             | Self::ZoomIn

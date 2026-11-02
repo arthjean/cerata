@@ -1,7 +1,8 @@
 //! The editor's context menu, drawn in the app (`editor-context-menu.ts:20-143`,
 //! `editor-body-menu.ts:10-70`): Cut, Copy, Paste in plain text, the
 //! Format, Paragraph and Insert submenus from the command registry with
-//! their shortcuts, Select all, and Open or Copy link over a link.
+//! their shortcuts, a Table submenu with the caret in a drawn table
+//! (US-053), Select all, and Open or Copy link over a link.
 
 use cerata_markdown::NodeKind;
 use cerata_markdown::commands::command;
@@ -91,8 +92,66 @@ const SUBMENUS: &[(&str, &[SubmenuEntry])] = &[
     ),
 ];
 
-/// The body menu's items. `link` is the destination under the pointer.
-pub fn body_items(has_clipboard_text: bool, link: Option<String>) -> Vec<MenuItem> {
+/// The Table submenu (US-053): rows, columns, alignment, sorting, then the
+/// whole table; `None` is a separator.
+const TABLE_SUBMENU: &[Option<&str>] = &[
+    Some("table.rowAbove"),
+    Some("table.rowBelow"),
+    Some("table.rowDuplicate"),
+    Some("table.rowUp"),
+    Some("table.rowDown"),
+    Some("table.rowDelete"),
+    None,
+    Some("table.columnLeft"),
+    Some("table.columnRight"),
+    Some("table.columnDuplicate"),
+    Some("table.columnMoveLeft"),
+    Some("table.columnMoveRight"),
+    Some("table.columnDelete"),
+    None,
+    Some("table.alignLeft"),
+    Some("table.alignCenter"),
+    Some("table.alignRight"),
+    Some("table.alignNone"),
+    None,
+    Some("table.sortAscending"),
+    Some("table.sortDescending"),
+    None,
+    Some("table.format"),
+    Some("table.editSource"),
+    None,
+    Some("table.delete"),
+];
+
+/// The Table submenu for `state`, when its caret is in a drawn table: each
+/// command enabled where it applies.
+fn table_submenu(state: &cerata_markdown::EditorState) -> Option<MenuItem> {
+    cerata_markdown::cells::grid_at(state, state.selection().main().head)?;
+    let items = TABLE_SUBMENU
+        .iter()
+        .map(|entry| match entry.and_then(command) {
+            None => MenuItem::Separator,
+            Some(c) => MenuItem::Action {
+                label: SharedString::new_static(c.label),
+                shortcut: None,
+                enabled: c.enabled(state),
+                action: MenuAction::Command(c.id),
+            },
+        })
+        .collect();
+    Some(MenuItem::Submenu {
+        label: SharedString::new_static("Table"),
+        items,
+    })
+}
+
+/// The body menu's items. `link` is the destination under the pointer;
+/// `state` gives the Table submenu.
+pub fn body_items(
+    has_clipboard_text: bool,
+    link: Option<String>,
+    state: &cerata_markdown::EditorState,
+) -> Vec<MenuItem> {
     let os = current_os();
     let item = |label: &str, enabled: bool, action: MenuAction| MenuItem::Action {
         label: SharedString::from(label.to_owned()),
@@ -134,6 +193,7 @@ pub fn body_items(has_clipboard_text: bool, link: Option<String>) -> Vec<MenuIte
             items: sub,
         });
     }
+    items.extend(table_submenu(state));
     items.push(MenuItem::Separator);
     items.push(item("Select all", true, MenuAction::SelectAll));
     if let Some(link) = link {
@@ -149,6 +209,9 @@ pub struct ContextMenu {
     pub position: Point<Pixels>,
     pub items: Vec<MenuItem>,
     pub open_submenu: Option<usize>,
+    /// The pointer is over the open submenu, which lies outside the menu's
+    /// bounds: a press there runs its item instead of closing the menu.
+    pub in_submenu: bool,
 }
 
 /// The destination of the link at `pos`: a link's URL, an autolink or a
@@ -183,8 +246,9 @@ impl Editor {
             .is_some_and(|text| !text.is_empty());
         self.menu = Some(ContextMenu {
             position,
-            items: body_items(has_text, link_at(&self.state, pos)),
+            items: body_items(has_text, link_at(&self.state, pos), &self.state),
             open_submenu: None,
+            in_submenu: false,
         });
         cx.notify();
     }
@@ -200,7 +264,10 @@ impl Editor {
             MenuAction::Cut => self.cut(cx),
             MenuAction::Copy => self.copy(cx),
             MenuAction::Paste => {
-                if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
+                if let Some(item) = cx.read_from_clipboard()
+                    && let Some(text) = item.text()
+                    && !self.paste_cells(&text, item.metadata().map(String::as_str), cx)
+                {
                     self.paste_text(&text, cx);
                 }
             }
@@ -249,11 +316,21 @@ fn menu_list(
         .shadow_md()
         .text_size(px(13.0))
         .flex()
-        .flex_col()
-        .on_mouse_down_out(cx.listener(|editor, _, _, cx| {
-            editor.menu = None;
-            cx.notify();
-        }));
+        .flex_col();
+    list = if top {
+        list.on_mouse_down_out(cx.listener(|editor, _, _, cx| {
+            if editor.menu.as_ref().is_some_and(|menu| !menu.in_submenu) {
+                editor.menu = None;
+                cx.notify();
+            }
+        }))
+    } else {
+        list.on_hover(cx.listener(|editor, hovered: &bool, _, _| {
+            if let Some(menu) = &mut editor.menu {
+                menu.in_submenu = *hovered;
+            }
+        }))
+    };
     for (index, item) in items.iter().enumerate() {
         match item {
             MenuItem::Separator => {
@@ -269,6 +346,10 @@ fn menu_list(
                 let enabled = *enabled;
                 let mut row = div()
                     .id(SharedString::from(format!("menu-{}", label)))
+                    .debug_selector({
+                        let label = label.clone();
+                        move || format!("menu-{label}")
+                    })
                     .px(px(10.0))
                     .h(px(26.0))
                     .flex()
@@ -298,6 +379,7 @@ fn menu_list(
                             && menu.open_submenu.is_some()
                         {
                             menu.open_submenu = None;
+                            menu.in_submenu = false;
                             cx.notify();
                         }
                     }));
@@ -307,6 +389,10 @@ fn menu_list(
             MenuItem::Submenu { label, items } => {
                 let mut row = div()
                     .id(SharedString::from(format!("submenu-{label}")))
+                    .debug_selector({
+                        let label = label.clone();
+                        move || format!("submenu-{label}")
+                    })
                     .relative()
                     .px(px(10.0))
                     .h(px(26.0))
@@ -317,24 +403,33 @@ fn menu_list(
                     .child(label.clone())
                     .child(icon(Icon::ChevronRight, 12.0, theme::muted()))
                     .on_hover(cx.listener(move |editor, hovered: &bool, _, cx| {
-                        if *hovered && let Some(menu) = &mut editor.menu {
+                        if *hovered
+                            && let Some(menu) = &mut editor.menu
+                            && menu.open_submenu != Some(index)
+                        {
                             menu.open_submenu = Some(index);
+                            menu.in_submenu = false;
                             cx.notify();
                         }
                     }))
                     .on_click(cx.listener(move |editor, _, _, cx| {
-                        if let Some(menu) = &mut editor.menu {
+                        if let Some(menu) = &mut editor.menu
+                            && menu.open_submenu != Some(index)
+                        {
                             menu.open_submenu = Some(index);
+                            menu.in_submenu = false;
                             cx.notify();
                         }
                     }));
                 if open == Some(index) {
+                    // Kept inside the window: the Table submenu is taller
+                    // than the space below its row near the bottom (US-053).
                     row = row.child(
-                        div()
-                            .absolute()
-                            .left(px(216.0))
-                            .top(px(-4.0))
-                            .child(menu_list(items, None, false, cx)),
+                        div().absolute().left(px(216.0)).top(px(-4.0)).child(
+                            anchored()
+                                .snap_to_window_with_margin(px(8.0))
+                                .child(menu_list(items, None, false, cx)),
+                        ),
                     );
                 }
                 list = list.child(row);
@@ -376,7 +471,8 @@ mod tests {
 
     #[test]
     fn body_menu_follows_writers_layout() {
-        let items = body_items(false, None);
+        let empty = cerata_markdown::EditorState::new("");
+        let items = body_items(false, None, &empty);
         let labels: Vec<String> = items
             .iter()
             .map(|i| match i {
@@ -424,7 +520,7 @@ mod tests {
             "Ctrl+B"
         };
         assert_eq!(bold.as_deref(), Some(expected));
-        let with_link = body_items(true, Some("https://a.b".into()));
+        let with_link = body_items(true, Some("https://a.b".into()), &empty);
         assert!(with_link.iter().any(|i| matches!(
             i,
             MenuItem::Action {
@@ -492,5 +588,57 @@ mod tests {
         assert_eq!(link_at(&state, 6).as_deref(), Some("https://a.b"));
         assert_eq!(link_at(&state, 30).as_deref(), Some("https://c.d"));
         assert_eq!(link_at(&state, 1), None);
+    }
+
+    fn table_items(doc: &str, at: &str) -> Vec<(String, bool)> {
+        let mut state = cerata_markdown::EditorState::new(doc);
+        let pos = doc.find(at).unwrap();
+        state
+            .select(cerata_markdown::Selection::cursor(pos))
+            .unwrap();
+        let items = body_items(false, None, &state);
+        let Some(MenuItem::Submenu { items: table, .. }) = items
+            .iter()
+            .find(|i| matches!(i, MenuItem::Submenu { label, .. } if label.as_ref() == "Table"))
+        else {
+            return Vec::new();
+        };
+        table
+            .iter()
+            .filter_map(|i| match i {
+                MenuItem::Action { label, enabled, .. } => Some((label.to_string(), *enabled)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// US-053: the Table submenu shows with the caret in a drawn table,
+    /// its row commands off in the header, column deletion off in a lone
+    /// column while table deletion stays.
+    #[test]
+    fn the_table_submenu_follows_the_caret() {
+        let doc = "x\n\n| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |\n";
+        assert!(table_items(doc, "x").is_empty(), "outside a table");
+        let enabled = |items: &[(String, bool)], label: &str| {
+            items
+                .iter()
+                .find(|(l, _)| l == label)
+                .unwrap_or_else(|| panic!("{label}"))
+                .1
+        };
+        let header = table_items(doc, "a |");
+        assert_eq!(header.len(), cerata_markdown::table_ops::IDS.len());
+        for label in ["Delete row", "Move row up", "Move row down"] {
+            assert!(!enabled(&header, label), "{label}");
+        }
+        assert!(enabled(&header, "Insert row above"));
+        let first = table_items(doc, "1 |");
+        assert!(!enabled(&first, "Move row up"));
+        assert!(enabled(&first, "Move row down"));
+        let last = table_items(doc, "3 |");
+        assert!(!enabled(&last, "Move row down"));
+        let one = table_items("| a |\n|---|\n| 1 |\n", "1 |");
+        assert!(!enabled(&one, "Delete column"));
+        assert!(enabled(&one, "Delete table"));
     }
 }

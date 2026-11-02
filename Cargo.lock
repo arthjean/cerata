@@ -1005,6 +1005,7 @@ dependencies = [
  "tree-sitter",
  "tree-sitter-md",
  "unicode-properties",
+ "unicode-width",
  "yaml-rust2",
 ]
 

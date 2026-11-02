@@ -106,6 +106,16 @@ pub struct EditorCommand {
 }
 
 impl EditorCommand {
+    /// The command applies to `state`: a table command needs the caret in
+    /// a drawn table, and some need a row or column to act on.
+    pub fn enabled(&self, state: &EditorState) -> bool {
+        if self.id.starts_with("table.") {
+            crate::table_ops::enabled(state, self.id)
+        } else {
+            true
+        }
+    }
+
     pub fn shortcut(&self, os: Os) -> Option<Chord> {
         let spec = match os {
             Os::MacOs => self.mac,
@@ -251,6 +261,102 @@ pub static COMMANDS: &[EditorCommand] = &[
         let time = format!("{:02}:{:02}", c.hour, c.minute);
         s.insert_at_head(time)
     }),
+    // Table structure (US-053): active with the caret in a drawn table.
+    command!("table.rowAbove", "Insert row above", None, None, |s, _| {
+        crate::table_ops::run(s, "table.rowAbove")
+    }),
+    command!("table.rowBelow", "Insert row below", None, None, |s, _| {
+        crate::table_ops::run(s, "table.rowBelow")
+    }),
+    command!("table.rowDuplicate", "Duplicate row", None, None, |s, _| {
+        crate::table_ops::run(s, "table.rowDuplicate")
+    }),
+    command!("table.rowUp", "Move row up", None, None, |s, _| {
+        crate::table_ops::run(s, "table.rowUp")
+    }),
+    command!("table.rowDown", "Move row down", None, None, |s, _| {
+        crate::table_ops::run(s, "table.rowDown")
+    }),
+    command!("table.rowDelete", "Delete row", None, None, |s, _| {
+        crate::table_ops::run(s, "table.rowDelete")
+    }),
+    command!(
+        "table.columnLeft",
+        "Insert column left",
+        None,
+        None,
+        |s, _| crate::table_ops::run(s, "table.columnLeft")
+    ),
+    command!(
+        "table.columnRight",
+        "Insert column right",
+        None,
+        None,
+        |s, _| crate::table_ops::run(s, "table.columnRight")
+    ),
+    command!(
+        "table.columnDuplicate",
+        "Duplicate column",
+        None,
+        None,
+        |s, _| crate::table_ops::run(s, "table.columnDuplicate")
+    ),
+    command!(
+        "table.columnMoveLeft",
+        "Move column left",
+        None,
+        None,
+        |s, _| crate::table_ops::run(s, "table.columnMoveLeft")
+    ),
+    command!(
+        "table.columnMoveRight",
+        "Move column right",
+        None,
+        None,
+        |s, _| crate::table_ops::run(s, "table.columnMoveRight")
+    ),
+    command!("table.columnDelete", "Delete column", None, None, |s, _| {
+        crate::table_ops::run(s, "table.columnDelete")
+    }),
+    command!("table.alignLeft", "Align left", None, None, |s, _| {
+        crate::table_ops::run(s, "table.alignLeft")
+    }),
+    command!("table.alignCenter", "Align center", None, None, |s, _| {
+        crate::table_ops::run(s, "table.alignCenter")
+    }),
+    command!("table.alignRight", "Align right", None, None, |s, _| {
+        crate::table_ops::run(s, "table.alignRight")
+    }),
+    command!("table.alignNone", "Remove alignment", None, None, |s, _| {
+        crate::table_ops::run(s, "table.alignNone")
+    }),
+    command!(
+        "table.sortAscending",
+        "Sort ascending",
+        None,
+        None,
+        |s, _| crate::table_ops::run(s, "table.sortAscending")
+    ),
+    command!(
+        "table.sortDescending",
+        "Sort descending",
+        None,
+        None,
+        |s, _| crate::table_ops::run(s, "table.sortDescending")
+    ),
+    command!("table.format", "Format table", None, None, |s, _| {
+        crate::table_ops::run(s, "table.format")
+    }),
+    command!(
+        "table.editSource",
+        "Edit as Markdown",
+        None,
+        None,
+        |s, _| crate::table_ops::run(s, "table.editSource")
+    ),
+    command!("table.delete", "Delete table", None, None, |s, _| {
+        crate::table_ops::run(s, "table.delete")
+    }),
 ];
 
 pub fn command(id: &str) -> Option<&'static EditorCommand> {
@@ -371,7 +477,7 @@ fn transform(command: LineCommand, line: &str, index: usize, lines: &[&str]) -> 
 }
 
 /// The smallest single replacement turning `before` into `after`.
-fn minimal_edit(before: &str, after: &str) -> Option<(Range<usize>, String)> {
+pub(crate) fn minimal_edit(before: &str, after: &str) -> Option<(Range<usize>, String)> {
     if before == after {
         return None;
     }

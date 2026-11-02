@@ -630,6 +630,63 @@ fn reload_takes_the_disk_version(cx: &mut TestAppContext) {
     assert!(!dirty);
 }
 
+/// US-057: a disk change while a cell is edited, then Keep or Reload in
+/// the banner: the caret is valid either way, in a drawn cell or out of
+/// the table, never on its structure.
+#[gpui::test]
+fn keep_or_reload_leaves_a_valid_caret_in_a_table(cx: &mut TestAppContext) {
+    let caret_is_valid = |cx: &mut TestAppContext, handle: WindowHandle<WindowView>| {
+        read(cx, handle, |view, cx| {
+            let state = &view.active_doc().unwrap().editor.read(cx).state;
+            let head = state.selection().main().head;
+            cerata_markdown::cells::grid_at(state, head).is_none()
+                || cerata_markdown::cells::cell_at(state, head).is_some()
+        })
+    };
+    for keep in [true, false] {
+        let env = setup(cx);
+        let doc = "x\n\n| name | value |\n|---|---|\n| first | 1 |\n| second | 2 |\n";
+        let a = env.file("t.md", doc);
+        let handle = workspace(cx, &env);
+        update(cx, handle, |view, window, cx| {
+            view.open_file(&a, window, cx)
+        });
+        make_dirty(cx, handle, &a);
+        // Then typing in a cell: the caret is in it when the disk changes.
+        let at = doc.find("first").unwrap() + 5;
+        update(cx, handle, |view, _, cx| {
+            let editor = view.active_doc().unwrap().editor.clone();
+            editor.update(cx, |editor, cx| {
+                editor.select(cerata_markdown::Selection::cursor(at), cx);
+                editor.update_state(cx, |s| {
+                    s.type_text(None, " edited", cerata_markdown::UserEvent::Type)
+                });
+            });
+        });
+        let text = editor_text(cx, handle);
+        assert!(text.contains("| first edited | 1 |"), "{text:?}");
+        // Theirs: the old caret offset falls on a pipe of a narrower table.
+        std::fs::write(
+            &a,
+            "x\n\n| n | v |\n|---|---|\n| f | 1 |\n| s | 2 |\n| t | 3 |\n",
+        )
+        .unwrap();
+        update(cx, handle, |view, window, cx| {
+            view.on_watch_event(file_event(&a, FileChange::Modified), window, cx)
+        });
+        assert!(conflict(cx, handle).is_some());
+        if keep {
+            update(cx, handle, |view, _, cx| view.keep_mine(cx));
+            assert!(editor_text(cx, handle).contains("first edited"));
+        } else {
+            update(cx, handle, |view, _, cx| view.reload_from_disk(cx));
+            assert!(editor_text(cx, handle).contains("| t | 3 |"));
+        }
+        assert_eq!(conflict(cx, handle), None);
+        assert!(caret_is_valid(cx, handle), "keep: {keep}");
+    }
+}
+
 #[gpui::test]
 fn a_deleted_dirty_file_offers_recreate_and_close(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -1036,6 +1093,77 @@ fn the_palette_commands_are_writers_filtered_by_substring(cx: &mut TestAppContex
         setting(cx, handle, crate::zoom::ZOOM_KEY),
         Some(ConfigValue::Number(110.0))
     );
+}
+
+/// US-053: with the caret in a drawn table, the palette lists the table
+/// commands that apply there, and choosing one edits the table in one
+/// undo step.
+#[gpui::test]
+fn the_palette_lists_the_table_commands_in_a_table(cx: &mut TestAppContext) {
+    use crate::palette::{Choice, Command};
+    let doc = "x
+
+| a | b |
+|---|---|
+| 1 | 2 |
+";
+    let env = setup(cx);
+    let a = env.file("t.md", doc);
+    let handle = workspace(cx, &env);
+    update(cx, handle, |view, window, cx| {
+        view.open_file(&a, window, cx)
+    });
+    focus_shell(cx, handle);
+    keys(cx, handle, secondary!("shift-p"));
+    assert!(
+        !choices(cx, handle)
+            .iter()
+            .any(|c| matches!(c, Choice::Command(Command::Editor(_)))),
+        "the caret is not in a table"
+    );
+    keys(cx, handle, "escape");
+    let editor = read(cx, handle, |view, _| {
+        view.active_doc().unwrap().editor.clone()
+    });
+    let one = doc.find("1 |").unwrap();
+    update(cx, handle, |_, _, cx| {
+        editor.update(cx, |e, cx| {
+            e.select(cerata_markdown::Selection::cursor(one), cx)
+        })
+    });
+    keys(cx, handle, secondary!("shift-p"));
+    let table: Vec<&str> = choices(cx, handle)
+        .into_iter()
+        .filter_map(|c| match c {
+            Choice::Command(Command::Editor(id)) => Some(id),
+            _ => None,
+        })
+        .collect();
+    assert!(table.contains(&"table.rowBelow"));
+    assert!(
+        !table.contains(&"table.rowUp"),
+        "the first body row cannot go up"
+    );
+    let mut vcx = VisualTestContext::from_window(handle.into(), cx);
+    vcx.simulate_input("insert row below");
+    vcx.run_until_parked();
+    keys(cx, handle, "enter");
+    let text = read(cx, handle, |_, cx| editor.read(cx).state.doc().to_owned());
+    assert_eq!(
+        text,
+        "x
+
+| a | b |
+|---|---|
+| 1 | 2 |
+|   |   |
+"
+    );
+    update(cx, handle, |_, _, cx| {
+        editor.update(cx, |e, cx| e.update_state(cx, |s| s.undo()))
+    });
+    let text = read(cx, handle, |_, cx| editor.read(cx).state.doc().to_owned());
+    assert_eq!(text, doc);
 }
 
 #[gpui::test]

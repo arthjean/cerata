@@ -235,6 +235,10 @@ impl EditorState {
         if self.is_loading() {
             return false;
         }
+        // Over a rectangle of cells: they are emptied (US-054).
+        if let Some(done) = self.clear_cells() {
+            return done;
+        }
         let text = self.text();
         let cut: Vec<std::ops::Range<usize>> = self
             .selection()

@@ -48,10 +48,11 @@ impl WindowView {
 
     pub fn open_palette(&mut self, intent: Intent, window: &mut Window, cx: &mut Context<Self>) {
         let availability = self.availability();
-        let available: Vec<Command> = Command::ALL
+        let mut available: Vec<Command> = Command::ALL
             .into_iter()
             .filter(|command| command.available(availability))
             .collect();
+        available.extend(self.editor_commands(cx));
         let runtime = self.core.runtime();
         let compact = self.chrome == Chrome::Compact;
         let recents = if compact {
@@ -137,7 +138,29 @@ impl WindowView {
             Command::ZoomOut => self.set_zoom(zoom::zoom_out(Some(self.zoom())), cx),
             Command::ResetZoom => self.set_zoom(zoom::DEFAULT, cx),
             Command::Settings => self.open_settings(window, cx),
+            Command::Editor(id) => {
+                if let super::Page::Editor(editor) = self.page(cx) {
+                    let clock = crate::editor::actions::clock();
+                    editor.update(cx, |editor, cx| {
+                        editor.update_state(cx, |state| state.run_command(id, &clock));
+                    });
+                }
+            }
         }
+    }
+
+    /// The active editor's table commands that apply at its caret (US-053).
+    fn editor_commands(&self, cx: &gpui::App) -> Vec<Command> {
+        let super::Page::Editor(editor) = self.page(cx) else {
+            return Vec::new();
+        };
+        let state = &editor.read(cx).state;
+        cerata_markdown::table_ops::IDS
+            .iter()
+            .filter_map(|id| cerata_markdown::commands::command(id))
+            .filter(|c| c.enabled(state))
+            .map(|c| Command::Editor(c.id))
+            .collect()
     }
 
     /// "Create: name.md" in the workspace root (or the active file's

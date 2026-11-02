@@ -258,17 +258,88 @@ pub fn decorate_range(
     drag_frozen: Option<&Selection>,
     range: Range<usize>,
 ) -> Vec<Decoration> {
+    decorate_range_with(tree, text, selection, drag_frozen, range, None)
+}
+
+/// [`decorate_range`] with the table whose source "Edit as Markdown"
+/// shows (its start), if any (US-056).
+pub fn decorate_range_with(
+    tree: &MarkdownTree,
+    text: &Text,
+    selection: &Selection,
+    drag_frozen: Option<&Selection>,
+    range: Range<usize>,
+    source_table: Option<usize>,
+) -> Vec<Decoration> {
+    decorate_nodes(
+        tree,
+        text,
+        selection,
+        drag_frozen,
+        range,
+        source_table,
+        false,
+    )
+    .0
+}
+
+/// [`decorate_range_with`] without the content of the tables drawn as
+/// grids, whose ranges come second: what a frame lays out lines from, the
+/// table's layout gathering its cells' own (US-057).
+pub fn decorate_outside_drawn_tables(
+    tree: &MarkdownTree,
+    text: &Text,
+    selection: &Selection,
+    drag_frozen: Option<&Selection>,
+    range: Range<usize>,
+    source_table: Option<usize>,
+) -> (Vec<Decoration>, Vec<Range<usize>>) {
+    decorate_nodes(
+        tree,
+        text,
+        selection,
+        drag_frozen,
+        range,
+        source_table,
+        true,
+    )
+}
+
+fn decorate_nodes(
+    tree: &MarkdownTree,
+    text: &Text,
+    selection: &Selection,
+    drag_frozen: Option<&Selection>,
+    range: Range<usize>,
+    source_table: Option<usize>,
+    skip_drawn_tables: bool,
+) -> (Vec<Decoration>, Vec<Range<usize>>) {
     let selection = drag_frozen.unwrap_or(selection).clamp(text);
     let mut cx = Cx {
         text,
         selection: &selection,
+        source_table,
         out: Vec::new(),
         drawn_tables: HashMap::new(),
     };
+    let mut skipped: Vec<Range<usize>> = Vec::new();
     for node in tree.iter_range(range.clone()) {
+        // A drawn table's nodes come right after it, inside its range.
+        if skipped
+            .last()
+            .is_some_and(|t| t.start <= node.from() && node.to() <= t.end)
+        {
+            continue;
+        }
         cx.hide(node);
         cx.fold(node);
         cx.line(node);
+        if skip_drawn_tables
+            && node.kind() == NodeKind::Table
+            && cx.drawn_tables.get(&node.from()) == Some(&true)
+        {
+            skipped.push(node.range());
+        }
     }
     cx.tabs(range);
     let mut out = cx.out;
@@ -287,12 +358,14 @@ pub fn decorate_range(
             unique.push(decoration);
         }
     }
-    unique
+    (unique, skipped)
 }
 
 struct Cx<'a> {
     text: &'a Text,
     selection: &'a Selection,
+    /// The table shown as source by "Edit as Markdown", by its start.
+    source_table: Option<usize>,
     out: Vec<Decoration>,
     /// Whether each table, by its start, is drawn as its grid: decided
     /// once per table, not once per `\|` of its cells.
@@ -567,9 +640,12 @@ impl Cx<'_> {
     /// (`table-decorations.ts:507-523`).
     fn fold_table(&mut self, node: Node<'_>) {
         let Some(grid) = Grid::from_node(self.text, node) else {
+            self.drawn_tables.insert(node.from(), false);
             return;
         };
-        if self.table_revealed(&grid) {
+        let revealed = self.table_revealed(&grid);
+        self.drawn_tables.insert(node.from(), !revealed);
+        if revealed {
             let (first, last) = (
                 self.text.line_at(node.from()).number,
                 self.text.line_at(node.to()).number,
@@ -609,6 +685,9 @@ impl Cx<'_> {
     }
 
     fn table_revealed(&self, grid: &Grid) -> bool {
+        if self.source_table == Some(grid.range.start) {
+            return true;
+        }
         // Cells past the header are not drawn: such a table reveals its
         // source on contact, as in Writer, so they stay in sight.
         if grid.has_extra() {

@@ -1859,6 +1859,801 @@ mod tables {
         let site_end = pos(" | 2");
         assert_eq!(selection(&editor, cx), vec![(site_end, site_end)]);
     }
+
+    /// US-053, review: the Table submenu works with the pointer. Hovering
+    /// "Table" opens it, a click on one of its items (outside the menu's
+    /// own bounds) runs the command instead of closing the menu.
+    #[gpui::test]
+    fn a_click_in_the_table_submenu_runs_its_command(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, DOC);
+        let two = pos(" 2 |") + 1;
+        let at = point_at(&editor, cx, two);
+        cx.simulate_event(MouseDownEvent {
+            button: MouseButton::Right,
+            position: at,
+            modifiers: Modifiers::default(),
+            click_count: 1,
+            first_mouse: false,
+        });
+        cx.run_until_parked();
+        let table = cx.debug_bounds("submenu-Table").expect("the Table row");
+        cx.simulate_mouse_move(table.center(), None, Modifiers::default());
+        cx.run_until_parked();
+        let item = cx
+            .debug_bounds("menu-Insert row below")
+            .expect("the submenu is open");
+        assert!(!table.contains(&item.center()));
+        cx.simulate_mouse_move(item.center(), None, Modifiers::default());
+        cx.run_until_parked();
+        cx.simulate_click(item.center(), Modifiers::default());
+        cx.run_until_parked();
+        assert!(editor.read_with(cx, |e, _| e.menu.is_none()));
+        let text = doc(&editor, cx);
+        assert!(
+            text.contains("| 2 |\n|                              |   |\n| alpha"),
+            "{text:?}"
+        );
+        // A press outside both lists still closes the menu.
+        cx.simulate_event(MouseDownEvent {
+            button: MouseButton::Right,
+            position: at,
+            modifiers: Modifiers::default(),
+            click_count: 1,
+            first_mouse: false,
+        });
+        cx.run_until_parked();
+        let table = cx.debug_bounds("submenu-Table").expect("the Table row");
+        cx.simulate_mouse_move(table.center(), None, Modifiers::default());
+        cx.run_until_parked();
+        let end = point_at(&editor, cx, DOC.len());
+        cx.simulate_mouse_move(end, None, Modifiers::default());
+        cx.simulate_click(end, Modifiers::default());
+        cx.run_until_parked();
+        assert!(editor.read_with(cx, |e, _| e.menu.is_none()));
+    }
+
+    /// US-053: a right click in a cell offers the Table submenu; its row
+    /// command edits the table, keeps it drawn with the caret in the new
+    /// row, and one undo puts the text and the caret back.
+    #[gpui::test]
+    fn the_context_menu_restructures_the_table(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, DOC);
+        set_cursor(&editor, cx, DOC.len());
+        let two = pos(" 2 |") + 1;
+        let at = point_at(&editor, cx, two);
+        cx.simulate_event(MouseDownEvent {
+            button: MouseButton::Right,
+            position: at,
+            modifiers: Modifiers::default(),
+            click_count: 1,
+            first_mouse: false,
+        });
+        cx.run_until_parked();
+        let before = selection(&editor, cx);
+        assert_eq!(before, vec![(two, two)]);
+        let action = editor.read_with(cx, |e, _| {
+            let menu = e.menu.as_ref().expect("menu open");
+            let table = menu
+                .items
+                .iter()
+                .find_map(|i| match i {
+                    super::super::menu::MenuItem::Submenu { label, items }
+                        if label.as_ref() == "Table" =>
+                    {
+                        Some(items.clone())
+                    }
+                    _ => None,
+                })
+                .expect("a Table submenu");
+            table
+                .into_iter()
+                .find_map(|i| match i {
+                    super::super::menu::MenuItem::Action {
+                        label,
+                        enabled: true,
+                        action,
+                        ..
+                    } if label.as_ref() == "Insert row below" => Some(action),
+                    _ => None,
+                })
+                .expect("Insert row below, enabled")
+        });
+        editor.update_in(cx, |e, window, cx| e.run_menu_action(action, window, cx));
+        cx.run_until_parked();
+        let text = doc(&editor, cx);
+        assert!(
+            text.contains(
+                "| [site](https://example.test) | 2 |
+|                              |   |
+| alpha"
+            ),
+            "{text:?}"
+        );
+        assert!(table_drawn(&editor, cx));
+        let (_, head) = selection(&editor, cx)[0];
+        let state = editor.read_with(cx, |e, _| e.state.clone());
+        let (_, row, column) = cerata_markdown::cells::cell_at(&state, head).expect("in a cell");
+        assert_eq!((row, column), (3, 1));
+        assert_eq!(table_at(&editor, cx, 2).rows.len(), 4);
+        cx.simulate_keystrokes(&secondary("z"));
+        assert_eq!(doc(&editor, cx), DOC);
+        assert_eq!(selection(&editor, cx), before);
+    }
+
+    /// Eight columns of long words: wider than any text column.
+    fn wide_doc() -> String {
+        let header: Vec<String> = (0..8).map(|c| format!("Heading{c}")).collect();
+        let body: Vec<String> = (0..8)
+            .map(|c| format!("Unbreakablewordnumber{c}xxxxxxxx"))
+            .collect();
+        format!(
+            "intro\n\n| {} |\n|{}\n| {} |\n\nend",
+            header.join(" | "),
+            "---|".repeat(8),
+            body.join(" | ")
+        )
+    }
+
+    fn table_offset(editor: &Entity<Editor>, cx: &mut VisualTestContext) -> f32 {
+        editor.read_with(cx, |e, _| e.code_scroll.offset_of_line(2))
+    }
+
+    /// The text column's horizontal bounds.
+    fn column(editor: &Entity<Editor>, cx: &mut VisualTestContext) -> (Pixels, Pixels) {
+        editor.read_with(cx, |e, _| {
+            let v = e.viewport.expect("painted");
+            (v.column_left, v.column_left + px(v.column_width))
+        })
+    }
+
+    /// US-056: a table wider than the text column scrolls horizontally with
+    /// a thin bar (Shift+wheel arrives as a horizontal delta); the caret
+    /// entering a hidden cell or typing there brings it into sight, and the
+    /// offset holds from one keystroke to the next.
+    #[gpui::test]
+    fn a_wide_table_scrolls_and_follows_the_caret(cx: &mut TestAppContext) {
+        let src = wide_doc();
+        let (editor, cx) = open(cx, &src);
+        set_cursor(&editor, cx, src.len());
+        let table = table_at(&editor, cx, 2);
+        let (left, right) = column(&editor, cx);
+        assert!(
+            table.width > (right - left).as_f32(),
+            "wider than the column"
+        );
+        let thumbs = editor.read_with(cx, |e, _| e.thumbs.clone());
+        assert_eq!(thumbs.len(), 1, "a thin bar");
+        assert_eq!(thumbs[0].first_line, 2);
+        assert!(thumbs[0].bounds.size.height <= px(6.0));
+        let first = cell(&editor, cx, 1, 0);
+        cx.simulate_event(ScrollEvent {
+            position: first.center(),
+            delta: ScrollDelta::Pixels(point(px(-120.0), px(0.0))),
+            ..Default::default()
+        });
+        cx.run_until_parked();
+        assert_eq!(table_offset(&editor, cx), 120.0);
+        assert_eq!(cell(&editor, cx, 1, 0).left(), first.left() - px(120.0));
+        assert!(table_drawn(&editor, cx));
+        // The caret in the last cell, out of sight: the table follows it.
+        let last = src.find("Unbreakablewordnumber7").unwrap() + 3;
+        set_cursor(&editor, cx, last);
+        let caret = last_caret(&editor, cx);
+        assert!(
+            caret.left() >= left && caret.right() <= right,
+            "{caret:?} in {left:?}..{right:?}"
+        );
+        let offset = table_offset(&editor, cx);
+        assert!(offset > 120.0);
+        cx.simulate_input("ab");
+        let typed = table_offset(&editor, cx);
+        assert!(typed >= offset, "kept while typing");
+        let caret = last_caret(&editor, cx);
+        assert!(caret.left() >= left && caret.right() <= right);
+        // Back to the first cell: the table scrolls back.
+        set_cursor(&editor, cx, src.find("Unbreakablewordnumber0").unwrap());
+        assert!(table_offset(&editor, cx) < typed);
+        let caret = last_caret(&editor, cx);
+        assert!(caret.left() >= left);
+    }
+
+    /// US-056: search marks its results in the cells; going to one selects
+    /// it in the cell, keeps the table drawn and scrolls the table to it.
+    /// A result across a `|` reveals the source.
+    #[gpui::test]
+    fn search_finds_text_in_cells(cx: &mut TestAppContext) {
+        let src = wide_doc();
+        let (editor, cx) = open(cx, &src);
+        set_cursor(&editor, cx, 0);
+        cx.simulate_keystrokes(&secondary("f"));
+        cx.simulate_input("number7");
+        cx.simulate_keystrokes("enter");
+        let at = src.find("number7").unwrap();
+        assert_eq!(selection(&editor, cx), [(at, at + 7)]);
+        assert!(table_drawn(&editor, cx), "the source stays hidden");
+        let (left, right) = column(&editor, cx);
+        let marks = editor.read_with(cx, |e, _| e.frames.last().unwrap().matches.clone());
+        let hidden = cell(&editor, cx, 1, 7);
+        assert!(!marks.is_empty());
+        assert!(
+            marks.iter().all(|(r, _)| hidden.contains(&r.center())
+                && r.left() >= left
+                && r.right() <= right),
+            "{marks:?} in {hidden:?}"
+        );
+        assert!(table_offset(&editor, cx) > 0.0, "scrolled to the result");
+        // Across a pipe: selected as is, the source shows.
+        cx.simulate_keystrokes("escape");
+        set_cursor(&editor, cx, 0);
+        cx.simulate_keystrokes(&secondary("f"));
+        cx.simulate_keystrokes(&secondary("a"));
+        cx.simulate_input("xx | Unb");
+        cx.simulate_keystrokes("enter");
+        let across = src.find("xx | Unb").unwrap();
+        assert_eq!(selection(&editor, cx), [(across, across + 8)]);
+        assert!(!table_drawn(&editor, cx));
+    }
+
+    /// US-056 review: a result to the left of a table scrolled right comes
+    /// into sight whole, its start included, not just up to its end.
+    #[gpui::test]
+    fn a_result_left_of_the_scrolled_table_shows_whole(cx: &mut TestAppContext) {
+        // A second row whose first cell wraps: the result starts its
+        // second visual row.
+        let mut src = wide_doc();
+        let row: Vec<&str> = (0..8).map(|_| "x").collect();
+        let at_row = src
+            .find(
+                "
+
+end",
+            )
+            .unwrap();
+        src.insert_str(
+            at_row,
+            &format!(
+                "
+| short Unbreakablewordnumber9xxxxxxxx | {} |",
+                row[1..].join(" | ")
+            ),
+        );
+        let (editor, cx) = open(cx, &src);
+        set_cursor(&editor, cx, src.find("Unbreakablewordnumber7").unwrap() + 3);
+        assert!(table_offset(&editor, cx) > 0.0);
+        let wrapped = table_at(&editor, cx, 2)
+            .cells
+            .iter()
+            .find(|c| c.row == 2 && c.column == 0)
+            .map(|c| c.segments[0].row_starts.len());
+        assert_eq!(wrapped, Some(2), "the cell wraps before the result");
+        // The caret leaves the table, which stays scrolled; the query is
+        // typed a letter at a time.
+        set_cursor(&editor, cx, 0);
+        assert!(table_offset(&editor, cx) > 0.0);
+        cx.simulate_keystrokes(&secondary("f"));
+        for c in "Unbreakablewordnumber9".chars() {
+            cx.simulate_input(&c.to_string());
+        }
+        cx.simulate_keystrokes("enter");
+        let at = src.find("Unbreakablewordnumber9").unwrap();
+        assert_eq!(selection(&editor, cx), [(at, at + 22)]);
+        let (left, right) = column(&editor, cx);
+        let marks = editor.read_with(cx, |e, _| e.frames.last().unwrap().matches.clone());
+        assert!(!marks.is_empty());
+        assert!(
+            marks
+                .iter()
+                .all(|(r, _)| r.left() >= left && r.right() <= right),
+            "{marks:?} in {left:?}..{right:?}"
+        );
+        // A caret at that wrap boundary, the table scrolled right again.
+        cx.simulate_keystrokes("escape");
+        set_cursor(&editor, cx, src.find("Unbreakablewordnumber7").unwrap() + 3);
+        set_cursor(&editor, cx, at);
+        let caret = last_caret(&editor, cx);
+        assert!(
+            caret.left() >= left && caret.right() <= right,
+            "{caret:?} in {left:?}..{right:?}"
+        );
+    }
+
+    /// US-056: replacing a result in a cell escapes the replacement's `|`
+    /// and line breaks, so the row keeps its cells.
+    #[gpui::test]
+    fn replacing_in_a_cell_escapes_the_replacement(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, DOC);
+        set_cursor(&editor, cx, 0);
+        cx.simulate_keystrokes(&secondary("f"));
+        cx.simulate_input("beta");
+        cx.simulate_keystrokes("enter");
+        let field = cx
+            .debug_bounds("text-field-Replace")
+            .expect("replace field drawn");
+        press(cx, field.center(), 1, false);
+        release(cx, field.center());
+        cx.run_until_parked();
+        cx.simulate_input("a|b");
+        cx.simulate_keystrokes("enter");
+        let text = doc(&editor, cx);
+        assert!(text.contains("| alpha a\\|b | |"), "{text:?}");
+    }
+
+    /// US-056: "Edit as Markdown" shows the table's source until the
+    /// selection leaves it; then the table is drawn again.
+    #[gpui::test]
+    fn edit_as_markdown_reveals_the_source_until_the_selection_leaves(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, DOC);
+        set_cursor(&editor, cx, pos("alpha") + 2);
+        editor.update_in(cx, |e, window, cx| {
+            e.run_menu_action(
+                super::super::menu::MenuAction::Command("table.editSource"),
+                window,
+                cx,
+            )
+        });
+        cx.run_until_parked();
+        assert!(!table_drawn(&editor, cx), "the source shows");
+        // The caret moves freely in the source, a pipe included.
+        let pipe = pos("| alpha");
+        set_cursor(&editor, cx, pipe);
+        assert_eq!(selection(&editor, cx), [(pipe, pipe)]);
+        assert!(!table_drawn(&editor, cx));
+        cx.simulate_input("|");
+        assert!(doc(&editor, cx).contains("|| alpha"), "typed as source");
+        cx.simulate_keystrokes(&secondary("z"));
+        set_cursor(&editor, cx, DOC.len());
+        assert!(table_drawn(&editor, cx), "drawn once the selection left");
+        set_cursor(&editor, cx, pos("alpha"));
+        assert!(
+            table_drawn(&editor, cx),
+            "and stays drawn when it comes back"
+        );
+    }
+
+    fn rect(
+        editor: &Entity<Editor>,
+        cx: &mut VisualTestContext,
+    ) -> Option<((usize, usize), (usize, usize))> {
+        editor.read_with(cx, |e, _| {
+            e.state.table_selection().map(|ts| (ts.anchor, ts.head))
+        })
+    }
+
+    /// US-054: a drag from one cell to another selects the rectangle
+    /// between them, painted as cell backgrounds with the table drawn;
+    /// Shift+click extends it from the caret's cell; a drag out of the
+    /// table is a text selection that shows the source on release.
+    #[gpui::test]
+    fn dragging_across_cells_selects_a_rectangle(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, DOC);
+        set_cursor(&editor, cx, DOC.len());
+        let link = cell(&editor, cx, 0, 0);
+        let two = cell(&editor, cx, 1, 1);
+        press(cx, link.center(), 1, false);
+        drag_to(cx, two.center(), true);
+        assert_eq!(rect(&editor, cx), Some(((0, 0), (2, 1))));
+        release(cx, two.center());
+        cx.run_until_parked();
+        assert_eq!(rect(&editor, cx), Some(((0, 0), (2, 1))));
+        assert!(table_drawn(&editor, cx));
+        let ranges: Vec<String> = editor.read_with(cx, |e, _| {
+            e.state
+                .selection()
+                .ranges()
+                .iter()
+                .map(|r| e.state.doc()[r.range()].to_owned())
+                .collect()
+        });
+        assert_eq!(ranges, ["Link", "N", "[site](https://example.test)", "2"]);
+        let painted = editor.read_with(cx, |e, _| e.frames.last().unwrap().selections.clone());
+        assert_eq!(painted.len(), 4, "one background per cell");
+        for (r, c) in [(0, 0), (0, 1), (1, 0), (1, 1)] {
+            let b = cell(&editor, cx, r, c);
+            assert!(painted.iter().any(|p| b.contains(&p.center())), "{r}-{c}");
+        }
+        // Shift+click from the caret's cell.
+        set_cursor(&editor, cx, pos("alpha"));
+        let empty = cell(&editor, cx, 2, 1);
+        click(cx, empty.center(), 1, true);
+        assert_eq!(rect(&editor, cx), Some(((3, 0), (3, 1))));
+        // Out of the table: a text selection; the source shows on release.
+        let alpha = point_at(&editor, cx, pos("alpha"));
+        let end = point_at(&editor, cx, DOC.len());
+        press(cx, alpha, 1, false);
+        let into = cell(&editor, cx, 2, 1).center();
+        drag_to(cx, into, true);
+        assert!(rect(&editor, cx).is_some());
+        drag_to(cx, end, true);
+        assert!(rect(&editor, cx).is_none());
+        release(cx, end);
+        cx.run_until_parked();
+        assert_eq!(selection(&editor, cx), [(pos("alpha"), DOC.len())]);
+        assert!(!table_drawn(&editor, cx));
+    }
+
+    /// US-054: Shift+arrows at a content's edge grow a rectangle cell by
+    /// cell; formatting applies to each non-empty cell and Backspace empties
+    /// them, one undo step each; a plain arrow collapses it; typing replaces
+    /// the anchor cell.
+    #[gpui::test]
+    fn the_keyboard_drives_a_rectangle(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, DOC);
+        set_cursor(&editor, cx, pos("Link") + 4);
+        cx.simulate_keystrokes("shift-right");
+        assert_eq!(rect(&editor, cx), Some(((0, 0), (0, 1))));
+        cx.simulate_keystrokes("shift-down");
+        assert_eq!(rect(&editor, cx), Some(((0, 0), (2, 1))));
+        assert!(table_drawn(&editor, cx));
+        cx.simulate_keystrokes(&secondary("b"));
+        let text = doc(&editor, cx);
+        assert!(text.contains("| **Link** | **N** |"), "{text:?}");
+        assert!(
+            text.contains("| **[site](https://example.test)** | **2** |"),
+            "{text:?}"
+        );
+        cx.simulate_keystrokes(&secondary("z"));
+        assert_eq!(doc(&editor, cx), DOC);
+        // The rectangle again, then Backspace.
+        set_cursor(&editor, cx, pos("Link") + 4);
+        cx.simulate_keystrokes("shift-right shift-down");
+        cx.simulate_keystrokes("backspace");
+        let text = doc(&editor, cx);
+        assert!(
+            text.contains("|  |  |\n|:--|--:|\n|  |  |\n| alpha beta | |"),
+            "{text:?}"
+        );
+        cx.simulate_keystrokes(&secondary("z"));
+        assert_eq!(doc(&editor, cx), DOC);
+        // Left collapses to the first cell, Right to the last.
+        set_cursor(&editor, cx, pos("Link") + 4);
+        cx.simulate_keystrokes("shift-right shift-down");
+        cx.simulate_keystrokes("left");
+        assert_eq!(selection(&editor, cx), [(pos("Link"), pos("Link"))]);
+        assert!(rect(&editor, cx).is_none());
+        set_cursor(&editor, cx, pos("Link") + 4);
+        cx.simulate_keystrokes("shift-right shift-down");
+        cx.simulate_keystrokes("down");
+        assert_eq!(selection(&editor, cx), [(pos(" 2 |") + 2, pos(" 2 |") + 2)]);
+        // Typing over it: the anchor cell's content goes.
+        set_cursor(&editor, cx, pos("Link") + 4);
+        cx.simulate_keystrokes("shift-right shift-down");
+        cx.simulate_input("H");
+        let text = doc(&editor, cx);
+        assert!(text.contains("| H | N |"), "{text:?}");
+        assert_eq!(selection(&editor, cx), [(pos("Link") + 1, pos("Link") + 1)]);
+        assert!(rect(&editor, cx).is_none());
+    }
+
+    const TWO: &str = "| a | b |\n|:--|--:|\n| 1 | 2 |\n| 3 | 4 |\n\nmid\n\n| x | y |\n|---|---|\n| p | q |\n\nend";
+
+    fn in_two(needle: &str) -> usize {
+        TWO.find(needle).unwrap()
+    }
+
+    /// US-055: a rectangle copies as a GFM table with the grid as metadata
+    /// and pastes into another table from the caret's cell, adding the rows
+    /// it needs, in one undo step; out of a table it pastes as Markdown;
+    /// cut empties the cells in one step.
+    #[gpui::test]
+    fn cells_copy_cut_and_paste_between_tables(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, TWO);
+        set_cursor(&editor, cx, in_two("1 |") + 1);
+        cx.simulate_keystrokes("shift-right shift-down");
+        cx.simulate_keystrokes(&secondary("c"));
+        let item = cx.read_from_clipboard().expect("copied");
+        assert_eq!(
+            item.text().as_deref(),
+            Some("| 1 | 2 |\n| :-- | --: |\n| 3 | 4 |")
+        );
+        assert!(
+            item.metadata()
+                .is_some_and(|m| m.contains("cerata.table-cells"))
+        );
+        // Into the second table's last cell: one row added.
+        set_cursor(&editor, cx, in_two("q |"));
+        cx.simulate_keystrokes(&secondary("v"));
+        let text = doc(&editor, cx);
+        assert!(
+            text.ends_with("| x | y |   |\n|---|---| --- |\n| p | 1 | 2 |\n|   | 3 | 4 |\n\nend"),
+            "{text:?}"
+        );
+        let drawn = editor.update_in(cx, |e, window, cx| {
+            matches!(
+                e.layout_line(7, window, cx).block.map(|b| b.kind),
+                Some(BlockKind::Table(_))
+            )
+        });
+        assert!(drawn, "the second table stays drawn");
+        cx.simulate_keystrokes(&secondary("z"));
+        assert_eq!(doc(&editor, cx), TWO, "one step");
+        // Out of a table: the Markdown as is.
+        set_cursor(&editor, cx, in_two("mid") + 3);
+        cx.simulate_keystrokes(&secondary("v"));
+        assert!(doc(&editor, cx).contains("mid| 1 | 2 |\n| :-- | --: |\n| 3 | 4 |\n"));
+        cx.simulate_keystrokes(&secondary("z"));
+        // Cut: copied, then emptied in one step.
+        set_cursor(&editor, cx, in_two("1 |") + 1);
+        cx.simulate_keystrokes("shift-right");
+        cx.simulate_keystrokes(&secondary("x"));
+        assert!(doc(&editor, cx).starts_with("| a | b |\n|:--|--:|\n|  |  |\n"));
+        assert_eq!(
+            cx.read_from_clipboard().and_then(|i| i.text()).as_deref(),
+            Some("| 1 | 2 |\n| :-- | --: |")
+        );
+        cx.simulate_keystrokes(&secondary("z"));
+        assert_eq!(doc(&editor, cx), TWO);
+    }
+
+    /// US-055: spreadsheet TSV fills cells with its `|` and line breaks
+    /// escaped; unknown or broken metadata pastes the text; a grid over
+    /// the limit pastes nothing and says why.
+    #[gpui::test]
+    fn spreadsheet_cells_bad_metadata_and_the_limit(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, TWO);
+        set_cursor(&editor, cx, in_two("p |"));
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string("a|b\tc\n".into()));
+        cx.simulate_keystrokes(&secondary("v"));
+        assert!(
+            doc(&editor, cx).contains("| a\\|b | c |"),
+            "{:?}",
+            doc(&editor, cx)
+        );
+        cx.simulate_keystrokes(&secondary("z"));
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string_with_metadata(
+            "hello".into(),
+            "{broken".into(),
+        ));
+        set_cursor(&editor, cx, in_two("p |") + 1);
+        cx.simulate_keystrokes(&secondary("v"));
+        assert!(doc(&editor, cx).contains("| phello | q |"));
+        cx.simulate_keystrokes(&secondary("z"));
+        let mut big = String::new();
+        for _ in 0..101 {
+            big.push_str(&"v\t".repeat(100));
+            big.push_str("v\n");
+        }
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(big));
+        cx.simulate_keystrokes(&secondary("v"));
+        assert_eq!(doc(&editor, cx), TWO, "nothing pasted");
+        let notice = editor.read_with(cx, |e, _| e.notice.clone());
+        assert_eq!(
+            notice.as_deref(),
+            Some("Paste canceled: 10,201 cells are over the 10,000 limit")
+        );
+    }
+
+    /// The table on line `ix` laid out afresh, every cell measured again,
+    /// with the column widths the caret's table keeps.
+    fn fresh_table_at(
+        editor: &Entity<Editor>,
+        cx: &mut VisualTestContext,
+        ix: usize,
+    ) -> std::rc::Rc<crate::editor::table::TableLayout> {
+        editor.update(cx, |editor, _| {
+            let frozen = editor.tables.frozen.take();
+            editor.tables = crate::editor::TableCache {
+                frozen,
+                ..Default::default()
+            };
+        });
+        table_at(editor, cx, ix)
+    }
+
+    /// What a table layout shows, as comparable values.
+    fn table_geometry(t: &crate::editor::table::TableLayout) -> Vec<String> {
+        let mut out = vec![format!(
+            "{} {} {:?} {:?}",
+            t.width, t.height, t.columns, t.rows
+        )];
+        for c in &t.cells {
+            out.push(format!(
+                "{} {} {:?} {}",
+                c.row, c.column, c.content, c.missing
+            ));
+            for s in &c.segments {
+                out.push(format!(
+                    "  {} {} {} {:?} {:?} {} {} {} {:?}",
+                    s.ix,
+                    s.start,
+                    s.len,
+                    s.display.text,
+                    s.row_starts,
+                    s.text_left,
+                    s.text_top,
+                    s.height,
+                    s.wrapped.as_ref().map(|w| w.text.to_string()),
+                ));
+            }
+        }
+        out
+    }
+
+    const STYLED: &str = "intro
+
+| Name | Kind | Note |
+|---|:-:|--:|
+| **bold** cell | `code` | [link](https://example.com) |
+| plain | *it* | a<br>b |
+| last | x |
+
+end";
+
+    /// US-057: after an edit in a table, the cells it left alone are taken
+    /// from the previous layout, and the table looks exactly as if every
+    /// cell were laid out again: typing, revealing syntax, moving between
+    /// cells, a new line in a cell, undo.
+    #[gpui::test]
+    fn reused_cells_match_a_fresh_layout(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, STYLED);
+        let check = |editor: &Entity<Editor>, cx: &mut VisualTestContext, step: &str| {
+            let reused = table_at(editor, cx, 2);
+            let fresh = fresh_table_at(editor, cx, 2);
+            assert_eq!(table_geometry(&reused), table_geometry(&fresh), "{step}");
+            fresh
+        };
+        let plain = STYLED.find("plain").unwrap() + 5;
+        set_cursor(&editor, cx, plain);
+        let first = check(&editor, cx, "enter");
+        cx.simulate_input("ly");
+        let typed = table_at(&editor, cx, 2);
+        // A cell away from the caret kept its shaped line.
+        let link = |t: &crate::editor::table::TableLayout| {
+            t.cells
+                .iter()
+                .find(|c| c.row == 1 && c.column == 2)
+                .and_then(|c| c.segments[0].wrapped.clone())
+                .unwrap()
+        };
+        assert!(std::rc::Rc::ptr_eq(&link(&first), &link(&typed)));
+        check(&editor, cx, "typed");
+        // Into the bold cell (its syntax revealed), then typing there.
+        let bold = doc(&editor, cx).find("bold**").unwrap() + 2;
+        set_cursor(&editor, cx, bold);
+        check(&editor, cx, "into bold");
+        cx.simulate_input("er");
+        check(&editor, cx, "typed in bold");
+        // To the next cell by Tab, a new line in it, then undo twice.
+        cx.simulate_keystrokes("tab");
+        check(&editor, cx, "tab");
+        cx.simulate_keystrokes("enter");
+        check(&editor, cx, "new line");
+        cx.simulate_keystrokes(&secondary("z"));
+        check(&editor, cx, "undo");
+        cx.simulate_keystrokes(&secondary("z"));
+        check(&editor, cx, "undo typing");
+        assert!(table_drawn(&editor, cx));
+    }
+
+    /// The column edges (left, right) of drawn row `row` in the last frame.
+    fn column_edges(
+        editor: &Entity<Editor>,
+        cx: &mut VisualTestContext,
+        row: usize,
+        columns: usize,
+    ) -> Vec<(Pixels, Pixels)> {
+        (0..columns)
+            .map(|c| {
+                let b = cell(editor, cx, row, c);
+                (b.left(), b.right())
+            })
+            .collect()
+    }
+
+    /// The table on line `ix`, laid out for the current state.
+    fn table_at(
+        editor: &Entity<Editor>,
+        cx: &mut VisualTestContext,
+        ix: usize,
+    ) -> std::rc::Rc<crate::editor::table::TableLayout> {
+        editor.update_in(cx, |editor, window, cx| {
+            match editor.layout_line(ix, window, cx).block.map(|b| b.kind) {
+                Some(BlockKind::Table(table)) => table,
+                other => panic!("not a table: {other:?}"),
+            }
+        })
+    }
+
+    const NARROW: &str = "intro
+
+| Feature | N | Note |
+|---|---|---|
+| A long cell that wraps across several lines of text because its column reaches the cap | x | mid |
+
+end";
+
+    /// US-058: typing a sentence in a narrow column keeps every column's
+    /// edges while the caret stays in the table: the cell wraps and only
+    /// its row grows. Leaving the table sizes the columns again.
+    #[gpui::test]
+    fn column_widths_hold_while_typing_in_the_table(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, NARROW);
+        let x = NARROW.find("x |").unwrap();
+        set_cursor(&editor, cx, x + 1);
+        let before = column_edges(&editor, cx, 1, 3);
+        let row_before = cell(&editor, cx, 1, 1).size.height;
+        for word in "a sentence typed in the narrow column".split_inclusive(' ') {
+            cx.simulate_input(word);
+            assert_eq!(column_edges(&editor, cx, 1, 3), before, "after {word:?}");
+            assert!(table_drawn(&editor, cx));
+        }
+        assert!(
+            cell(&editor, cx, 1, 1).size.height > row_before,
+            "the cell wraps in its column"
+        );
+        // Out of the table: the columns are sized again, the typed column
+        // now asks for more room.
+        let end = doc(&editor, cx).len();
+        set_cursor(&editor, cx, end);
+        let after = column_edges(&editor, cx, 1, 3);
+        assert_ne!(after, before);
+        assert!(after[1].1 - after[1].0 > before[1].1 - before[1].0);
+        // Back in the table: the widths it is entered with hold again.
+        let x = doc(&editor, cx).find("xa sentence").unwrap();
+        set_cursor(&editor, cx, x + 1);
+        let entered = column_edges(&editor, cx, 1, 3);
+        assert_eq!(entered, after);
+        cx.simulate_input(" more");
+        assert_eq!(column_edges(&editor, cx, 1, 3), entered);
+    }
+
+    /// US-058: a word longer than its frozen column wraps inside it without
+    /// running into the next column; out of the table, the column is at
+    /// least as wide as that word again (US-032).
+    #[gpui::test]
+    fn a_long_word_wraps_in_its_frozen_column(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, NARROW);
+        let x = NARROW.find("x |").unwrap();
+        set_cursor(&editor, cx, x + 1);
+        let frozen = table_at(&editor, cx, 2).columns.clone();
+        cx.simulate_input("Supercalifragilisticexpialidocious");
+        let table = table_at(&editor, cx, 2);
+        assert_eq!(table.columns, frozen);
+        let n = table
+            .cells
+            .iter()
+            .find(|c| c.row == 1 && c.column == 1)
+            .unwrap();
+        let (left, width) = table.columns[1];
+        let line = n.segments[0].wrapped.as_ref().unwrap();
+        assert!(!line.wrap_boundaries().is_empty(), "the word is cut");
+        let right = n.segments[0].text_left + line.width().as_f32();
+        assert!(right <= left + width, "{right} past {}", left + width);
+        let end = doc(&editor, cx).len();
+        set_cursor(&editor, cx, end);
+        let out = table_at(&editor, cx, 2);
+        let n = out
+            .cells
+            .iter()
+            .find(|c| c.row == 1 && c.column == 1)
+            .unwrap();
+        assert_eq!(
+            n.segments[0].rows(),
+            1,
+            "out of the table, the column holds the word"
+        );
+    }
+
+    /// US-058: a change of text column width (or of text size) sizes the
+    /// columns again, even with the caret in the table; the kept widths
+    /// live in the editor only.
+    #[gpui::test]
+    fn a_new_column_width_sizes_the_frozen_table_again(cx: &mut TestAppContext) {
+        let (editor, cx) = open(cx, NARROW);
+        let x = NARROW.find("x |").unwrap();
+        set_cursor(&editor, cx, x + 1);
+        cx.simulate_input(" typed words");
+        let wide = table_at(&editor, cx, 2).columns.clone();
+        cx.simulate_resize(size(px(700.0), px(800.0)));
+        cx.run_until_parked();
+        let narrow = table_at(&editor, cx, 2).columns.clone();
+        assert_ne!(narrow, wide);
+        let mut config = editor.read_with(cx, |e, _| e.config.clone());
+        config.zoom = 1.5;
+        editor.update(cx, |e, cx| e.set_config(config, cx));
+        cx.run_until_parked();
+        assert_ne!(table_at(&editor, cx, 2).columns, narrow);
+        assert!(doc(&editor, cx).contains("| x typed words |"));
+    }
 }
 
 mod frontmatter {
