@@ -33,7 +33,7 @@ Les valeurs des listes déroulantes viennent du schéma telles quelles (« syste
 
 ### Vérification
 
-Captures `revue2-*.png` et `us-026-arbre-50k-revue2.png` ; arbre UIA et parcours de tabulation avant et après correctifs ; tests `cargo test --workspace`. Non vérifié : lecture par un lecteur d'écran (Narrateur ou NVDA), mode Contraste élevé de Windows, zoom système à 200 % (le zoom de Cerata ne grossit que le texte de la note), macOS et Linux (EP-007, EP-008).
+Captures `revue2-*.png` et `us-026-arbre-50k-revue2.png` ; arbre UIA et parcours de tabulation avant et après correctifs ; tests `cargo test --workspace`. Non vérifié : lecture par un lecteur d'écran (Narrateur ou NVDA), mode Contraste élevé de Windows, zoom système à 200 % (le zoom de Cerata ne grossit que le texte de la note), macOS et Linux (EP-009, EP-010).
 
 Verdict : Approve. Aucun constat HIGH ne subsiste dans le périmètre.
 
@@ -80,6 +80,6 @@ La capitalisation « UI font » vient du schéma de Writer, porté tel quel. Le 
 
 Chaque correctif a été revu sur l'application lancée (captures `apres-*`), en clair et en sombre, à 800 px de large et à 200 % de zoom. Tests de régression : contraste des jetons sur chaque préréglage, clavier des menus et restitution du focus, notice d'échec d'enregistrement, chemins des récents, liaisons par position, arbre de 50 000 fichiers.
 
-Non vérifié : lecture par un lecteur d'écran (Narrateur ou NVDA) de l'arbre AccessKit, mode Contraste élevé de Windows, macOS et Linux (EP-007, EP-008).
+Non vérifié : lecture par un lecteur d'écran (Narrateur ou NVDA) de l'arbre AccessKit, mode Contraste élevé de Windows, macOS et Linux (EP-009, EP-010).
 
 Verdict : Approve. Aucun constat HIGH ne subsiste dans le périmètre.

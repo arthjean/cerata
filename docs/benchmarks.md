@@ -7,8 +7,8 @@ Ce document fixe les machines sur lesquelles Cerata est mesuré et la procédure
 | OS | Machine | Processeur | Mémoire | GPU | Stockage | Système | Statut |
 |---|---|---|---|---|---|---|---|
 | Windows | poste fixe d'Arthur | AMD Ryzen 7 7800X3D (8 cœurs) | 32 Go | NVIDIA RTX 4070 Ti SUPER (iGPU AMD Radeon présent) | Samsung SSD 990 PRO 1 To (NVMe) | Windows 11 Pro 10.0.26300 | désignée le 2026-10-31 |
-| macOS | Mac Apple Silicon loué chez Scaleway (seule cible de Writer) | | | | | | à documenter en US-046 (EP-008) |
-| Linux | machine d'Arthur (Wayland et X11 sur la même machine) | | | | | | à documenter en US-045 (EP-007) |
+| macOS | Mac Apple Silicon loué chez Scaleway (seule cible de Writer) | | | | | | à documenter en US-046 (EP-010) |
+| Linux | machine d'Arthur (Wayland et X11 sur la même machine) | | | | | | à documenter en US-045 (EP-009) |
 
 Règles : machine branchée sur secteur, mode performance, aucune autre application ouverte, build `--release`, trois exécutions de chauffe puis la médiane d'au moins cinq mesures. Une valeur « à froid » exige un redémarrage de la machine (ou `sudo purge` sur macOS, `echo 3 | sudo tee /proc/sys/vm/drop_caches` sous Linux) juste avant la mesure.
 
@@ -39,10 +39,10 @@ Writer ne publie que des binaires macOS arm64 (`docs/releasing.md:89-92` de writ
 
 | Mesure | macOS | Statut |
 |---|---|---|
-| Démarrage à froid | à mesurer | US-046 (EP-008) |
-| Démarrage à chaud | à mesurer | US-046 (EP-008) |
-| Mémoire, 10 000 fichiers | à mesurer | US-046 (EP-008) |
-| Ouverture, 10 000 fichiers | à mesurer | US-046 (EP-008) |
+| Démarrage à froid | à mesurer | US-046 (EP-010) |
+| Démarrage à chaud | à mesurer | US-046 (EP-010) |
+| Mémoire, 10 000 fichiers | à mesurer | US-046 (EP-010) |
+| Ouverture, 10 000 fichiers | à mesurer | US-046 (EP-010) |
 
 Writer ne tourne pas sous Windows ni sous Linux : ces colonnes n'existent pas pour lui.
 

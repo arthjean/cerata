@@ -1,6 +1,6 @@
 # ADR 0001 : moteur d'édition, élément GPUI dédié à hauteurs de ligne variables
 
-> Statut : **go pour EP-001** (option C), mesuré sous Windows le 2026-10-31. Les vérifications restantes ne relèvent plus de EP-001 : latence et IME sous Linux (Wayland et X11) suivis par US-045 (EP-007, validation Linux, testée par Arthur), latence et IME sous macOS suivis par US-046 (EP-008, validation macOS sur un Mac Scaleway). Pinyin sous Windows reste à vérifier à la main, par Arthur, en US-045 (voir IME).
+> Statut : **go pour EP-001** (option C), mesuré sous Windows le 2026-10-31. Les vérifications restantes ne relèvent plus de EP-001 : latence et IME sous Linux (Wayland et X11) suivis par US-045 (EP-009, validation Linux, testée par Arthur), latence et IME sous macOS suivis par US-046 (EP-010, validation macOS sur un Mac Scaleway). Pinyin sous Windows reste à vérifier à la main, par Arthur, en US-045 (voir IME).
 > Story : US-002. Plan : `PLAN.md` §3.4 (option C), §7 (matrice plateformes), §10 (risques).
 > GPUI : rev `37faef81f74fc1bb08be9939c4cffc8ede6ced2f`. Référence fonctionnelle : writer-computer au commit `79b744c`.
 
@@ -143,8 +143,8 @@ Volontaires, sans effet sur la décision : buffer `String` au lieu d'une rope, h
 
 Ce qui reste, hors de EP-001 :
 
-- **Linux (Wayland et X11) : US-045, EP-007**, testé par Arthur. Même benchmark, au critère retenu ci-dessus, et liste de vérification IME. Rien dans le chemin mesuré n'est propre à Windows hors le rendu et `Present`, mais la mise en forme passe par cosmic-text, plus lent que DirectWrite sur les longues lignes.
-- **macOS : US-046, EP-008**, sur un Mac Scaleway la semaine prochaine. Même benchmark et liste IME (saisie japonaise, touches mortes AZERTY) ; mise en forme par Core Text.
+- **Linux (Wayland et X11) : US-045, EP-009**, testé par Arthur. Même benchmark, au critère retenu ci-dessus, et liste de vérification IME. Rien dans le chemin mesuré n'est propre à Windows hors le rendu et `Present`, mais la mise en forme passe par cosmic-text, plus lent que DirectWrite sur les longues lignes.
+- **macOS : US-046, EP-010**, sur un Mac Scaleway la semaine prochaine. Même benchmark et liste IME (saisie japonaise, touches mortes AZERTY) ; mise en forme par Core Text.
 - **Pinyin sous Windows** (US-045) : étape 3 de la liste, à la main ; l'entrée injectée n'a pas pu faire passer Microsoft Pinyin en mode chinois.
 - Seuils de réouverture de cette ADR : travail de l'application au-dessus de 8 ms au p99, ou frappe qui manque la frame suivante, sur une cible ; échec IME sur deux cibles ou plus. Un échec IME sur une seule cible ne remet pas en cause le moteur (le chemin est celui de GPUI, partagé avec Zed) mais ouvre une contribution upstream sur le backend concerné.
 - La définition de la métrique de latence est tranchée (critère retenu ci-dessus) ; le benchmark CI de EP-003 la reprend et isole le coût du gestionnaire d'entrée.
