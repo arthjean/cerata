@@ -12,7 +12,7 @@ use super::WindowView;
 use crate::editor::theme;
 use crate::menu::{Item, Menu};
 
-pub const HEIGHT: f32 = 44.0;
+pub const HEIGHT: f32 = 28.0;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Stats {
@@ -254,8 +254,8 @@ pub fn render(view: &mut WindowView, cx: &mut Context<WindowView>) -> Option<Any
         .flex()
         .items_center()
         .justify_end()
-        .gap(px(20.0))
-        .text_size(px(13.0))
+        .gap(px(16.0))
+        .text_size(px(12.0))
         .text_color(theme::muted())
         .on_mouse_down(
             MouseButton::Right,
