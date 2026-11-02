@@ -58,6 +58,8 @@ pub fn bindings() -> Vec<gpui::KeyBinding> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SidebarEvent {
     Open(PathBuf),
+    /// A note just made by "New File": opened with the caret at its end.
+    OpenCreated(PathBuf),
     OpenInNewTab(PathBuf),
     Renamed {
         old: PathBuf,
@@ -476,7 +478,8 @@ impl Sidebar {
 
     // ---- Sections ----
 
-    /// Reloads Pinned and Recents for their current page sizes.
+    /// Reloads Pinned and Recents for their current page sizes. Recents
+    /// leaves out pinned files and a new file still being named in the tree.
     pub fn refresh_sections(&mut self, cx: &mut Context<Self>) {
         let Some(runtime) = self.runtime.clone() else {
             self.pinned_entries.clear();
@@ -490,7 +493,18 @@ impl Sidebar {
             .take(self.pinned_visible + 1)
             .cloned()
             .collect();
-        let pinned: HashSet<PathBuf> = self.pinned.iter().cloned().collect();
+        let excluded: HashSet<PathBuf> = self
+            .pinned
+            .iter()
+            .chain(self.pending_rename.as_ref())
+            .chain(
+                self.renaming
+                    .as_ref()
+                    .filter(|renaming| renaming.created)
+                    .map(|renaming| &renaming.path),
+            )
+            .cloned()
+            .collect();
         let recents_visible = self.recents_visible;
         let generation = self.generation;
         self.sections_version += 1;
@@ -500,7 +514,7 @@ impl Sidebar {
                 .background_executor()
                 .spawn(async move {
                     let entries = with_titles(runtime.fs.file_entries(&wanted));
-                    let (recents, more) = load_recents(&runtime, &pinned, recents_visible);
+                    let (recents, more) = load_recents(&runtime, &excluded, recents_visible);
                     (entries, recents, more)
                 })
                 .await;
@@ -677,7 +691,7 @@ fn with_titles(mut entries: Vec<DirEntry>) -> Vec<DirEntry> {
 /// read until one more than `visible` rows are collected.
 fn load_recents(
     runtime: &WorkspaceRuntime,
-    pinned: &HashSet<PathBuf>,
+    excluded: &HashSet<PathBuf>,
     visible: usize,
 ) -> (Vec<DirEntry>, bool) {
     let index = runtime.index.lock();
@@ -692,7 +706,7 @@ fn load_recents(
         collected.extend(
             batch
                 .into_iter()
-                .filter(|file| !pinned.contains(&file.path)),
+                .filter(|file| !excluded.contains(&file.path)),
         );
         offset += 100;
         if collected.len() > visible || count == 0 || offset >= index.len() {

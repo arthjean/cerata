@@ -455,6 +455,9 @@ impl Render for Sidebar {
         {
             self.pending_rename = None;
             self.start_rename(&path, window, cx);
+            if let Some(renaming) = &mut self.renaming {
+                renaming.created = true;
+            }
         }
 
         let mut root = div()

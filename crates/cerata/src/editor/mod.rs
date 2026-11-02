@@ -141,6 +141,8 @@ pub struct Editor {
     pub workspace: Option<std::sync::Arc<cerata_core::workspace::WorkspaceRuntime>>,
     /// An anchor to scroll to once the note has loaded.
     pending_anchor: Option<String>,
+    /// The caret goes to the end once the note has loaded.
+    pending_caret_end: bool,
     /// The open wiki link completion.
     pub completion: Option<complete::Completion>,
     /// The change being applied was typed (opens the completion).
@@ -220,6 +222,7 @@ impl Editor {
             rich: blocks::RichBlocks::default(),
             workspace: None,
             pending_anchor: None,
+            pending_caret_end: false,
             completion: None,
             typed: false,
             frontmatter: panel,
@@ -405,6 +408,9 @@ impl Editor {
         {
             self.go_to_anchor(&anchor, cx);
         }
+        if !self.state.is_loading() && std::mem::take(&mut self.pending_caret_end) {
+            self.caret_to_end(cx);
+        }
         let typed = std::mem::take(&mut self.typed);
         self.refresh_completion(typed, cx);
         self.sync_frontmatter(cx);
@@ -429,6 +435,16 @@ impl Editor {
                     .scroll(),
             );
         });
+    }
+
+    /// Puts the caret at the end of the note; a note still loading does it
+    /// once loaded.
+    pub fn caret_to_end(&mut self, cx: &mut Context<Self>) {
+        if self.state.is_loading() {
+            self.pending_caret_end = true;
+            return;
+        }
+        self.select(Selection::cursor(self.state.text().len()), cx);
     }
 
     pub fn cursor(&self) -> usize {

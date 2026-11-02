@@ -188,6 +188,43 @@ fn recents_appear_from_ten_files_in_pages_of_four(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn a_new_file_being_named_stays_out_of_recents(cx: &mut TestAppContext) {
+    use cerata_core::fs::EntryKind;
+    let env = setup(cx);
+    for i in 0..12 {
+        env.file(&format!("n{i}.md"), "x");
+    }
+    let (handle, sidebar) = open(cx, &env);
+    wait_for_index(cx, &sidebar);
+    with_window(cx, handle, &sidebar, |s, window, cx| {
+        s.create_entry(None, EntryKind::File, window, cx)
+    });
+    let created = sidebar
+        .read_with(cx, |s, _| s.renaming.as_ref().map(|r| r.path.clone()))
+        .expect("the new file is renamed in place");
+    // The index (a real thread) learns of the new file.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !sidebar.read_with(cx, |s, _| {
+        s.runtime()
+            .is_some_and(|r| r.index.lock().contains(&created))
+    }) {
+        assert!(std::time::Instant::now() < deadline, "index timed out");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    sidebar.update(cx, |s, cx| s.refresh_sections(cx));
+    cx.run_until_parked();
+    let in_recents = sidebar.read_with(cx, |s, _| s.recents.iter().any(|e| e.path == created));
+    assert!(!in_recents, "the file being named shows only in the tree");
+
+    // Escape keeps the file: it is a recent file like any other.
+    with_window(cx, handle, &sidebar, |s, window, cx| {
+        s.cancel_rename(window, cx)
+    });
+    let in_recents = sidebar.read_with(cx, |s, _| s.recents.iter().any(|e| e.path == created));
+    assert!(in_recents, "once named, the new file is a recent file");
+}
+
+#[gpui::test]
 fn pinned_files_show_in_pages_of_six(cx: &mut TestAppContext) {
     let env = setup(cx);
     let files: Vec<PathBuf> = (0..8).map(|i| env.file(&format!("p{i}.md"), "x")).collect();
@@ -436,6 +473,61 @@ fn a_new_file_is_renamed_in_place_unless_the_workspace_changed(cx: &mut TestAppC
     });
     assert!(sidebar.read_with(cx, |s, _| s.renaming.is_none()
         && s.pending_rename.is_none()));
+}
+
+#[gpui::test]
+fn enter_on_a_new_file_names_its_heading_and_opens_it(cx: &mut TestAppContext) {
+    use cerata_core::fs::EntryKind;
+    let env = setup(cx);
+    env.file("a.md", "a");
+    let (handle, sidebar) = open(cx, &env);
+    with_window(cx, handle, &sidebar, |s, window, cx| {
+        s.create_entry(None, EntryKind::File, window, cx)
+    });
+    let field = sidebar.read_with(cx, |s, _| s.renaming.as_ref().unwrap().field.clone());
+    field.update(cx, |f, cx| f.set_text("Test Name", cx));
+    handle
+        .update(cx, |_, _, cx| {
+            field.update(cx, |_, cx| {
+                cx.emit(crate::editor::text_field::FieldEvent::Submit { backward: false })
+            })
+        })
+        .unwrap();
+    VisualTestContext::from_window(handle.into(), cx).run_until_parked();
+
+    let named = env.root().join("Test Name.md");
+    assert_eq!(std::fs::read_to_string(&named).unwrap(), "# Test Name\n\n");
+    let (active, caret) = handle
+        .read_with(cx, |view, cx| {
+            let caret = view
+                .docs
+                .get(&named)
+                .map(|doc| doc.editor.read(cx).cursor());
+            (view.tabs.active_path().map(Path::to_path_buf), caret)
+        })
+        .unwrap();
+    assert_eq!(active, Some(named));
+    // Ready to write below the heading.
+    assert_eq!(caret, Some("# Test Name\n\n".len()));
+}
+
+#[gpui::test]
+fn renaming_an_existing_file_leaves_its_heading_alone(cx: &mut TestAppContext) {
+    let env = setup(cx);
+    let a = env.file("a.md", "# ");
+    let (handle, sidebar) = open(cx, &env);
+    with_window(cx, handle, &sidebar, |s, window, cx| {
+        s.start_rename(&a, window, cx)
+    });
+    let field = sidebar.read_with(cx, |s, _| s.renaming.as_ref().unwrap().field.clone());
+    field.update(cx, |f, cx| f.set_text("b", cx));
+    with_window(cx, handle, &sidebar, |s, window, cx| {
+        s.commit_rename(window, cx)
+    });
+    assert_eq!(
+        std::fs::read_to_string(env.root().join("b.md")).unwrap(),
+        "# "
+    );
 }
 
 #[gpui::test]

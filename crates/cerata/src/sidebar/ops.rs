@@ -7,7 +7,7 @@
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use cerata_core::fs::{DirEntry, EntryKind, FsError};
+use cerata_core::fs::{DirEntry, EntryKind, FsError, NEW_FILE_CONTENT};
 use cerata_core::index::relative_slash_path;
 use cerata_core::settings::ConfigValue;
 use gpui::{AppContext as _, ClipboardItem, Context, Entity, Pixels, Point, Subscription, Window};
@@ -99,6 +99,9 @@ pub struct Renaming {
     pub path: PathBuf,
     pub field: Entity<TextField>,
     pub error: Option<String>,
+    /// Just made by "New File": committing names its empty heading, and
+    /// Enter opens it.
+    pub created: bool,
     _events: Subscription,
 }
 
@@ -318,7 +321,14 @@ impl Sidebar {
                 &field,
                 window,
                 |this, _, event: &FieldEvent, window, cx| match event {
-                    FieldEvent::Submit { .. } => this.commit_rename(window, cx),
+                    FieldEvent::Submit { .. } => {
+                        let created = this.renaming.as_ref().is_some_and(|r| r.created);
+                        if let Some(path) = this.commit_rename(window, cx)
+                            && created
+                        {
+                            cx.emit(SidebarEvent::OpenCreated(path));
+                        }
+                    }
                     FieldEvent::Escape => this.cancel_rename(window, cx),
                     FieldEvent::Changed => {
                         if let Some(renaming) = &mut this.renaming {
@@ -330,20 +340,25 @@ impl Sidebar {
         let focus = field.read(cx).focus_handle.clone();
         window.focus(&focus, cx);
         cx.on_blur(&focus, window, |this, window, cx| {
-            this.commit_rename(window, cx)
+            this.commit_rename(window, cx);
         })
         .detach();
         self.renaming = Some(Renaming {
             path: path.to_path_buf(),
             field,
             error: None,
+            created: false,
             _events: events,
         });
         cx.notify();
     }
 
     pub fn cancel_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.renaming.take().is_some() {
+        if let Some(renaming) = self.renaming.take() {
+            if renaming.created {
+                // The new file joins Recents.
+                self.refresh_sections(cx);
+            }
             window.focus(&self.focus_handle, cx);
             cx.notify();
         }
@@ -351,14 +366,19 @@ impl Sidebar {
 
     /// Enter or blur: the trimmed name, with a file's extension put back.
     /// An empty or unchanged name does nothing; a taken one shows an error
-    /// in place and leaves the file alone.
-    pub fn commit_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(renaming) = &self.renaming else {
-            return;
-        };
+    /// in place and leaves the file alone. A file just made by "New File"
+    /// gets the name as its heading. Returns the entry's path once the
+    /// rename is over, `None` while it stays open or was dropped.
+    pub fn commit_rename(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<PathBuf> {
+        let renaming = self.renaming.as_ref()?;
+        let created = renaming.created;
         let Some(entry) = self.entry_for(&renaming.path) else {
             self.renaming = None;
-            return;
+            return None;
         };
         let typed = renaming.field.read(cx).text.trim().to_owned();
         let name = if entry.is_dir {
@@ -369,9 +389,16 @@ impl Sidebar {
                 None => typed.clone(),
             }
         };
-        if typed.is_empty() || name == entry.name {
+        if typed.is_empty() {
             self.cancel_rename(window, cx);
-            return;
+            return None;
+        }
+        if name == entry.name {
+            self.cancel_rename(window, cx);
+            if created {
+                self.name_heading(&entry.path, &typed);
+            }
+            return Some(entry.path);
         }
         // A typed separator or `..` would move the entry, not rename it.
         if let Err(FsError::InvalidName { reason, .. }) = cerata_core::fs::validate_file_name(&name)
@@ -380,14 +407,10 @@ impl Sidebar {
                 renaming.error = Some(format!("\"{typed}\" cannot be used: {reason}."));
             }
             cx.notify();
-            return;
+            return None;
         }
-        let Some(runtime) = self.runtime().cloned() else {
-            return;
-        };
-        let Some(parent) = entry.path.parent().map(Path::to_path_buf) else {
-            return;
-        };
+        let runtime = self.runtime().cloned()?;
+        let parent = entry.path.parent().map(Path::to_path_buf)?;
         let new = parent.join(&name);
         if new.exists() && !same_entry_ignoring_case(&entry.path, &new) {
             let kind = if entry.is_dir { "folder" } else { "file" };
@@ -395,13 +418,18 @@ impl Sidebar {
                 renaming.error = Some(format!("A {kind} named \"{name}\" already exists."));
             }
             cx.notify();
-            return;
+            return None;
         }
+        let mut committed = None;
         match runtime.fs.rename(&entry.path, &new) {
             Ok(new) => {
                 self.renaming = None;
+                if created {
+                    self.name_heading(&new, &typed);
+                }
                 self.after_move(&entry.path, &new, cx);
                 window.focus(&self.focus_handle, cx);
+                committed = Some(new);
             }
             Err(FsError::AlreadyExists(_)) => {
                 let kind = if entry.is_dir { "folder" } else { "file" };
@@ -416,6 +444,28 @@ impl Sidebar {
             }
         }
         cx.notify();
+        committed
+    }
+
+    /// Writes `# {title}` and a blank line into `path` while it still holds
+    /// only the new-file template, so the note opens titled after the name
+    /// just typed, ready for its first paragraph.
+    fn name_heading(&self, path: &Path, title: &str) {
+        let Some(runtime) = self.runtime() else {
+            return;
+        };
+        let file = match runtime.fs.read_file(path) {
+            Ok(file) if file.content == NEW_FILE_CONTENT => file,
+            Ok(_) => return,
+            Err(error) => {
+                log::warn!("heading not named: {error}");
+                return;
+            }
+        };
+        let heading = format!("{NEW_FILE_CONTENT}{title}\n\n");
+        if let Err(error) = runtime.fs.write_file(path, &heading, file.format) {
+            log::warn!("heading not named: {error}");
+        }
     }
 
     /// Bookkeeping once `old` became `new` on disk: expanded folders,

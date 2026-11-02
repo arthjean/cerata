@@ -391,6 +391,12 @@ impl WindowView {
             SidebarEvent::Open(path) => self.with_window(cx, move |this, window, cx| {
                 this.open_file(&path, window, cx)
             }),
+            SidebarEvent::OpenCreated(path) => self.with_window(cx, move |this, window, cx| {
+                this.open_file(&path, window, cx);
+                if let Some(doc) = this.docs.get(&path) {
+                    doc.editor.update(cx, |editor, cx| editor.caret_to_end(cx));
+                }
+            }),
             SidebarEvent::OpenInNewTab(path) => self.with_window(cx, move |this, window, cx| {
                 this.open_file_in_new_tab(&path, window, cx)
             }),
