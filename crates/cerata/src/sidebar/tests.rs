@@ -267,11 +267,7 @@ fn a_failed_folder_shows_an_error_and_retries_on_the_next_expand(cx: &mut TestAp
     cx.run_until_parked();
     assert_eq!(
         row_names(cx, &sidebar),
-        [
-            ("dir".into(), 0),
-            ("x.md".into(), 1),
-            (tree::UNFILED.into(), 0)
-        ]
+        [("dir".into(), 0), ("x.md".into(), 1)]
     );
     assert!(matches!(
         sidebar.read_with(cx, |s, _| s.listings.get(&dir).cloned()),
@@ -852,10 +848,7 @@ fn a_read_from_an_earlier_open_of_the_same_root_is_dropped(cx: &mut TestAppConte
         !listed_under(cx, &sidebar, &dir),
         "the read of the first open does not land in the second"
     );
-    assert_eq!(
-        row_names(cx, &sidebar),
-        [("dir".into(), 0), (tree::UNFILED.into(), 0)]
-    );
+    assert_eq!(row_names(cx, &sidebar), [("dir".into(), 0)]);
     let expanded = sidebar.read_with(cx, |s, _| s.rows[0].expanded);
     assert!(!expanded);
 }
@@ -894,7 +887,6 @@ fn renaming_an_expanded_folder_keeps_it_and_its_subfolders_open(cx: &mut TestApp
         ("sub".into(), 1),
         ("deep.md".into(), 2),
         ("top.md".into(), 1),
-        (tree::UNFILED.into(), 0),
     ];
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     while row_names(cx, &sidebar) != shown {

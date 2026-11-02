@@ -280,7 +280,7 @@ pub struct Row {
 
 /// The rows of the root listing: each root folder as a project header with
 /// its expanded content right after it, then the Unfiled header and the
-/// root's own files, every level sorted (`flatten-tree.ts`).
+/// root's own files when it has any, every level sorted (`flatten-tree.ts`).
 pub fn flatten(
     root_dir: &Path,
     root: &[DirEntry],
@@ -298,8 +298,7 @@ pub fn flatten(
             row.kind = RowKind::Project;
         }
     }
-    // Shown even empty: dropping on it is the way back to the root.
-    if !root.is_empty() {
+    if !files.is_empty() {
         rows.push(Row {
             entry: DirEntry {
                 name: UNFILED.into(),
@@ -760,11 +759,8 @@ mod tests {
         );
         assert_eq!(
             shape(&only_projects),
-            [
-                ("work", 0, RowKind::Project),
-                (UNFILED, 0, RowKind::Unfiled)
-            ],
-            "Unfiled stays, empty, as the way back to the root"
+            [("work", 0, RowKind::Project)],
+            "no root files, no Unfiled"
         );
     }
 
@@ -854,7 +850,7 @@ mod tests {
             SortOptions::default(),
             true,
         );
-        assert_eq!(rows.len(), 2, "the project, then an empty Unfiled");
+        assert_eq!(rows.len(), 1, "the project alone, no Unfiled");
         assert_eq!(rows[0].error.as_deref(), Some("denied"));
         assert!(!rows[0].expanded);
     }
