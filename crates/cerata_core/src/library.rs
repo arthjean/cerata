@@ -126,7 +126,17 @@ pub fn read_marker(root: &Path) -> Marker {
     let path = paths::library_marker_path(root);
     let meta = match std::fs::symlink_metadata(&path) {
         Ok(meta) => meta,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Marker::Absent,
+        // A file named `.cerata` holds no marker: Unix says `ENOTDIR` where
+        // Windows says not found. Writing one then fails, without touching
+        // that file, and the folder is known by its path.
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+            ) =>
+        {
+            return Marker::Absent;
+        }
         Err(error) => {
             log::warn!("library marker {} unreadable: {error}", path.display());
             return Marker::Unusable;
