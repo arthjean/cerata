@@ -30,6 +30,7 @@ mod element;
 pub mod frontmatter;
 mod height_map;
 mod html;
+pub mod image_actions;
 pub mod images;
 pub mod import;
 mod input;
@@ -181,6 +182,8 @@ pub struct Editor {
     importing: Vec<u64>,
     /// The insertion bar of a file drag carrying images (US-061).
     drop_bar: Option<import::DropBar>,
+    /// What the block image toolbar follows (US-070).
+    toolbar: image_actions::Toolbar,
     /// Lines laid out by the last frame.
     pub laid_out: Range<usize>,
     /// Tables laid out for the current state, by line.
@@ -251,6 +254,7 @@ impl Editor {
             notice: None,
             importing: Vec::new(),
             drop_bar: None,
+            toolbar: image_actions::Toolbar::default(),
             laid_out: 0..0,
             tables: TableCache::default(),
             #[cfg(test)]

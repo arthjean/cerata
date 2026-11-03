@@ -272,6 +272,27 @@ impl EditorState {
     }
 }
 
+impl EditorState {
+    /// Removes the Markdown of the image whose node is `range` (US-069),
+    /// in one undo step; its file stays. The selection follows the text: an
+    /// object selection becomes a caret where the image was, a caret
+    /// elsewhere stays (a toolbar click, US-070). `false` when no image is
+    /// there.
+    pub fn delete_image(&mut self, range: Range<usize>) -> bool {
+        if self.is_loading()
+            || image_at(self.tree(), self.text(), range.start).is_none_or(|i| i.range != range)
+        {
+            return false;
+        }
+        self.apply(
+            Transaction::new()
+                .change(Change::new(range, ""))
+                .event(UserEvent::Command),
+        )
+        .is_ok()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -440,5 +461,45 @@ mod tests {
         assert!(!state.set_image_width(0..5, Some(300)), "no image there");
         state.undo();
         assert_eq!(state.doc(), doc);
+    }
+
+    #[test]
+    fn deleting_an_image_removes_its_markdown_in_one_undo_step() {
+        let doc = "intro
+
+![a|300](x.png)
+
+![[pic.png|40]]
+";
+        let mut state = state(doc);
+        assert!(!state.delete_image(0..5), "no image there");
+        assert!(!state.delete_image(7..12), "not the image's node");
+        let _ = state.select(Selection::single(22, 7));
+        assert!(state.delete_image(7..22));
+        assert_eq!(
+            state.doc(),
+            "intro
+
+
+
+![[pic.png|40]]
+"
+        );
+        assert_eq!(state.selection().main(), SelectionRange::cursor(7));
+        state.undo();
+        assert_eq!(state.doc(), doc);
+        let embed = doc.find("![[").unwrap_or(0);
+        let _ = state.select(Selection::cursor(2));
+        assert!(state.delete_image(embed..embed + 15));
+        assert_eq!(
+            state.doc(),
+            "intro
+
+![a|300](x.png)
+
+
+"
+        );
+        assert_eq!(state.selection().main(), SelectionRange::cursor(2), "stays");
     }
 }

@@ -188,7 +188,21 @@ fn gpui_format(kind: ImageKind) -> ImageFormat {
 #[derive(Clone, Debug)]
 pub enum Loaded {
     Path(PathBuf),
-    Bytes(Arc<Image>),
+    /// Decoded from memory: a remote or inline image, or a local SVG
+    /// checked before drawing (`file`).
+    Bytes {
+        image: Arc<Image>,
+        file: Option<PathBuf>,
+    },
+}
+
+/// What an image's actions reach (US-069): its local file, or the bytes
+/// of a remote or inline image.
+#[derive(Clone, Debug)]
+pub enum Reach {
+    File(PathBuf),
+    Remote { url: String, image: Arc<Image> },
+    Inline(Arc<Image>),
 }
 
 #[derive(Clone, Debug)]
@@ -219,7 +233,12 @@ fn local_loaded(path: PathBuf) -> Option<((f32, f32), Loaded)> {
         if is_svg(&header) {
             // GPUI would read the file itself: an SVG is checked like an
             // inline or remote one and handed over as bytes.
-            read_prefix(&path, MAX_SVG_BYTES).and_then(bytes_loaded)
+            let (size, loaded) = read_prefix(&path, MAX_SVG_BYTES).and_then(bytes_loaded)?;
+            let Loaded::Bytes { image, .. } = loaded else {
+                return None;
+            };
+            let file = Some(path);
+            Some((size, Loaded::Bytes { image, file }))
         } else {
             natural_size(&header).map(|size| (size, Loaded::Path(path)))
         }
@@ -284,10 +303,8 @@ fn bytes_loaded(bytes: Vec<u8>) -> Option<((f32, f32), Loaded)> {
     if format == ImageFormat::Svg && !svg_is_self_contained(&bytes) {
         return None;
     }
-    Some((
-        size,
-        Loaded::Bytes(Arc::new(Image::from_bytes(format, bytes))),
-    ))
+    let image = Arc::new(Image::from_bytes(format, bytes));
+    Some((size, Loaded::Bytes { image, file: None }))
 }
 
 /// The first `limit` bytes of a file.
@@ -413,6 +430,29 @@ impl ImageHost {
         }
     }
 
+    /// What the actions of the image at `url` reach once it was measured
+    /// (US-069): `None` while it is pending or unavailable.
+    pub fn reach(&self, url: &str) -> Option<Reach> {
+        let Some(Entry::Ready { data, .. }) = self.entries.get(url) else {
+            return None;
+        };
+        Some(match data {
+            Loaded::Path(path)
+            | Loaded::Bytes {
+                file: Some(path), ..
+            } => Reach::File(path.clone()),
+            Loaded::Bytes { image, file: None }
+                if url.to_ascii_lowercase().starts_with("https://") =>
+            {
+                Reach::Remote {
+                    url: url.to_owned(),
+                    image: image.clone(),
+                }
+            }
+            Loaded::Bytes { image, file: None } => Reach::Inline(image.clone()),
+        })
+    }
+
     /// The image at `url` was measured: it can be resized (US-067).
     pub fn is_ready(&self, url: &str) -> bool {
         self.natural(url).is_some()
@@ -500,7 +540,7 @@ impl ImageHost {
                 .child(img(path.clone()).size_full())
                 .into_any_element(),
             Some(Entry::Ready {
-                data: Loaded::Bytes(image),
+                data: Loaded::Bytes { image, .. },
                 ..
             }) => frame
                 .child(img(image.clone()).size_full())
@@ -533,7 +573,7 @@ pub fn pasted_source(image: &Image, now: chrono::DateTime<chrono::Local>) -> Imp
 
 /// An image's accessible name: its file name, as a browser names an
 /// `<img>` with no alt.
-fn accessible_name(url: &str) -> String {
+pub(super) fn accessible_name(url: &str) -> String {
     let path = url.strip_prefix(embed_key("").as_str()).unwrap_or(url);
     path.rsplit(['/', '\\']).next().unwrap_or(path).to_owned()
 }

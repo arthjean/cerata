@@ -669,8 +669,8 @@ impl Editor {
         self.select(selection, cx);
     }
 
-    /// Escape: closes the find bar or the menu, else collapses a multiple
-    /// selection to its main range.
+    /// Escape: closes the find bar, the menu or an image's toolbar, else
+    /// collapses a multiple selection to its main range.
     fn cancel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.cancel_resize(cx) {
             return;
@@ -684,6 +684,9 @@ impl Editor {
         }
         if self.menu.take().is_some() {
             cx.notify();
+            return;
+        }
+        if self.close_toolbar(cx) {
             return;
         }
         if self.search.is_some() {

@@ -148,6 +148,13 @@ impl WindowView {
                     editor.update(cx, |editor, cx| editor.set_image_width_preset(preset, cx));
                 }
             }
+            Command::Image(action) => {
+                if let super::Page::Editor(editor) = self.page(cx) {
+                    editor.update(cx, |editor, cx| {
+                        editor.run_image_action_at_head(action, window, cx)
+                    });
+                }
+            }
             Command::Editor(id) => {
                 if let super::Page::Editor(editor) = self.page(cx) {
                     let clock = crate::editor::actions::clock();
@@ -160,8 +167,8 @@ impl WindowView {
     }
 
     /// The active note's commands: "Insert image…" (US-062), the preset
-    /// widths of the block image at its caret (US-068), then the table
-    /// commands that apply at its caret (US-053).
+    /// widths and the actions of the block image at its caret (US-068,
+    /// US-069), then the table commands that apply at its caret (US-053).
     pub(super) fn editor_commands(&self, cx: &gpui::App) -> Vec<Command> {
         let super::Page::Editor(editor) = self.page(cx) else {
             return Vec::new();
@@ -175,6 +182,13 @@ impl WindowView {
                     .into_iter()
                     .filter(|(_, enabled)| *enabled)
                     .map(|(preset, _)| Command::ImageWidth(preset)),
+            )
+            .chain(
+                editor
+                    .image_actions()
+                    .into_iter()
+                    .filter(|(_, enabled)| *enabled)
+                    .map(|(action, _)| Command::Image(action)),
             )
             .chain(
                 cerata_markdown::table_ops::IDS

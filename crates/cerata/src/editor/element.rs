@@ -669,6 +669,10 @@ impl Element for EditorElement {
             }
 
             let mut blocks = Vec::new();
+            // The block loop below draws the toolbar, if one shows, and
+            // lists the image frames it draws.
+            editor.toolbar.drawn = None;
+            let mut framed = Vec::new();
             let style = editor.block_style(window);
             for painted in &lines {
                 let line = &painted.line;
@@ -750,32 +754,56 @@ impl Element for EditorElement {
                             .image_preview()
                             .is_some_and(|(start, _)| start == range.start);
                         // Handles on a drawn, measured image, unless a text
-                        // drag or a file drag is on (US-067).
-                        let handles = block.replaces
-                            && editor.images.is_ready(url)
+                        // drag or a file drag is on (US-067); the toolbar
+                        // on a drawn image, out of any drag (US-070).
+                        let drawn = block.replaces
                             && !editor.source_only
                             && editor.drop_bar.is_none()
                             && !matches!(editor.drag, Some(super::mouse::Drag::Select { .. }));
-                        let element = if handles {
+                        let ready = editor.images.is_ready(url);
+                        let element = if drawn {
+                            framed.push(ix);
                             let group =
                                 gpui::SharedString::from(format!("editor-image-group-{ix}"));
-                            let grip = super::resize::Grip {
+                            let object = is_object(&ranges, &range);
+                            let handles = if ready {
+                                let grip = super::resize::Grip {
+                                    range: range.clone(),
+                                    url: url.clone(),
+                                    ix,
+                                    width: block.width,
+                                    height: block.height,
+                                };
+                                editor.image_handles(&grip, &group, resizing || object, cx)
+                            } else {
+                                Vec::new()
+                            };
+                            let toolbar = (editor.drag.is_none()
+                                && editor.toolbar_shown(ix, object))
+                            .then(|| super::image_actions::Spot {
                                 range: range.clone(),
-                                url: url.clone(),
                                 ix,
                                 width: block.width,
-                                height: block.height,
-                            };
-                            let shown = resizing || is_object(&ranges, &range);
-                            let children = editor.image_handles(&grip, &group, shown, cx);
+                                origin,
+                                min_left: (bounds.left() - origin.x).as_f32() + 4.0,
+                            })
+                            .and_then(|spot| editor.image_toolbar(spot, ready, cx));
                             gpui::div()
                                 .id(gpui::SharedString::from(format!("editor-image-frame-{ix}")))
                                 .group(group)
                                 .relative()
                                 .w(px(block.width))
                                 .h(px(block.height))
+                                // Keys (Escape) do not end the hover.
+                                .hover_listener_mode(
+                                    gpui::HoverListenerMode::InputModalityIndependent,
+                                )
+                                .on_hover(cx.listener(move |editor, hovered: &bool, _, cx| {
+                                    editor.hover_image(ix, *hovered, false, cx);
+                                }))
                                 .child(image)
-                                .children(children)
+                                .children(handles)
+                                .children(toolbar)
                                 .into_any_element()
                         } else {
                             image
@@ -811,6 +839,10 @@ impl Element for EditorElement {
                     }
                     BlockKind::Rule | BlockKind::Table(_) => {}
                 }
+            }
+            // A hover held by an image that went shows the next frame.
+            if editor.toolbar.prune(&framed) {
+                cx.notify();
             }
             (
                 lines,

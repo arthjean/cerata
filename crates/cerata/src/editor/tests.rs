@@ -3891,7 +3891,7 @@ fn the_menu_entry_opens_the_picker(cx: &mut TestAppContext) {
     use super::menu::{MenuAction, MenuItem, body_items};
     let (editor, cx, _dir, _outside) = note_with_files(cx, "Intro", &[]);
     let insert = editor.read_with(cx, |editor, _| {
-        body_items(false, None, &editor.state, &[])
+        body_items(false, None, &editor.state, None)
             .into_iter()
             .find_map(|item| match item {
                 MenuItem::Submenu { label, items } if label.as_ref() == "Insert" => Some(items),
@@ -4602,7 +4602,7 @@ fn preset_widths_write_a_share_of_the_column(cx: &mut TestAppContext) {
     assert!(presets.contains(&(Preset::Original, true)));
     editor.update_in(cx, |e, window, cx| {
         e.run_menu_action(
-            super::menu::MenuAction::ImageWidth(Preset::Original),
+            super::menu::MenuAction::ImageWidth(Preset::Original, 7..26),
             window,
             cx,
         )
@@ -4634,4 +4634,504 @@ fn a_preset_width_applies_to_an_image_of_unknown_size(cx: &mut TestAppContext) {
     });
     let half = (column.floor() * 0.5).round() as u32;
     assert_eq!(doc(&editor, cx), format!("![x|{half}](bad.png)\n\nend"));
+}
+
+// EP-014: image actions and the hover toolbar --------------------------
+
+/// The labels of the open menu's top level, `---` for a separator, with
+/// `false` after a disabled entry.
+fn menu_labels(editor: &Entity<Editor>, cx: &mut VisualTestContext) -> Vec<String> {
+    editor.read_with(cx, |e, _| {
+        e.menu
+            .as_ref()
+            .expect("menu open")
+            .items
+            .iter()
+            .map(|i| match i {
+                super::menu::MenuItem::Action { label, enabled, .. } if !enabled => {
+                    format!("{label} false")
+                }
+                super::menu::MenuItem::Action { label, .. }
+                | super::menu::MenuItem::Submenu { label, .. } => label.to_string(),
+                super::menu::MenuItem::Separator => "---".to_owned(),
+            })
+            .collect()
+    })
+}
+
+fn right_click(cx: &mut VisualTestContext, position: Point<Pixels>) {
+    cx.simulate_event(MouseDownEvent {
+        button: MouseButton::Right,
+        position,
+        modifiers: Modifiers::default(),
+        click_count: 1,
+        first_mouse: false,
+    });
+    cx.run_until_parked();
+}
+
+fn image_action(
+    editor: &Entity<Editor>,
+    cx: &mut VisualTestContext,
+    action: super::image_actions::ImageAction,
+    range: std::ops::Range<usize>,
+) {
+    editor.update_in(cx, |e, window, cx| {
+        e.run_menu_action(super::menu::MenuAction::Image(action, range), window, cx)
+    });
+    cx.run_until_parked();
+}
+
+/// The format and bytes of the image on the clipboard.
+fn copied(cx: &mut VisualTestContext) -> Option<(ImageFormat, Vec<u8>)> {
+    match cx
+        .read_from_clipboard()
+        .and_then(|item| item.entries().first().cloned())
+    {
+        Some(ClipboardEntry::Image(image)) => Some((image.format, image.bytes().to_vec())),
+        _ => None,
+    }
+}
+
+/// US-069: on an image the menu starts with the Image section, then the
+/// text entries; Copy and Open are off for a missing file.
+#[gpui::test]
+fn the_image_menu_starts_with_its_section(cx: &mut TestAppContext) {
+    let note = "intro\n\n![a|300](wide.png)\n\n![m](missing.png)\n\nend";
+    let (editor, cx, _dir) = image_editor(cx, note);
+    let center = image_bounds(cx, 2).center();
+    right_click(cx, center);
+    let labels = menu_labels(&editor, cx);
+    assert_eq!(
+        labels[..10],
+        [
+            "Image width",
+            "Copy image",
+            "Open image",
+            "Edit source",
+            "Delete image",
+            "---",
+            "Cut",
+            "Copy",
+            "Paste false",
+            "---"
+        ]
+    );
+    // The missing image shows its source: the caret in it.
+    let missing = note.find("![m").unwrap_or(0);
+    set_cursor(&editor, cx, missing + 2);
+    let at = point_at(&editor, cx, missing + 2);
+    right_click(cx, at);
+    let labels = menu_labels(&editor, cx);
+    assert_eq!(
+        labels[..5],
+        [
+            "Image width",
+            "Copy image false",
+            "Open image false",
+            "Edit source",
+            "Delete image"
+        ]
+    );
+}
+
+/// US-069: Copy image reads the file off the main thread and puts it on
+/// the clipboard in its format, SVG included; a file deleted since the
+/// menu opened gives a notice.
+#[gpui::test]
+fn copy_image_puts_the_file_on_the_clipboard(cx: &mut TestAppContext) {
+    use super::image_actions::ImageAction;
+    let note = "![a](small.png)\n\n![s](pic.svg)\n\nend";
+    let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"></svg>"#;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("small.png"), png(200, 120)).unwrap();
+    std::fs::write(dir.path().join("pic.svg"), svg).unwrap();
+    let (editor, cx) = open_at(
+        cx,
+        note,
+        Some(dir.path().join("note.md")),
+        EditorConfig::default(),
+    );
+    set_cursor(&editor, cx, note.len());
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    image_action(&editor, cx, ImageAction::Copy, 0..15);
+    assert_eq!(
+        copied(cx),
+        Some((ImageFormat::Png, png(200, 120))),
+        "the PNG file"
+    );
+    image_action(&editor, cx, ImageAction::Copy, 17..30);
+    assert_eq!(copied(cx), Some((ImageFormat::Svg, svg.to_vec())), "SVG");
+    assert_eq!(doc(&editor, cx), note, "the text stays");
+    std::fs::remove_file(dir.path().join("small.png")).unwrap();
+    image_action(&editor, cx, ImageAction::Copy, 0..15);
+    assert_eq!(
+        notice(&editor, cx).as_deref(),
+        Some("Image not found: small.png. Restore the file or edit the image's source.")
+    );
+    assert_eq!(copied(cx).map(|c| c.0), Some(ImageFormat::Svg), "unchanged");
+    // A file that no longer reads as an image.
+    std::fs::write(dir.path().join("pic.svg"), b"garbage").unwrap();
+    image_action(&editor, cx, ImageAction::Copy, 17..30);
+    assert_eq!(
+        notice(&editor, cx).as_deref(),
+        Some(
+            "Can't copy pic.svg: the file can't be read as an image. Check it or edit the image's source."
+        )
+    );
+}
+
+/// US-069: Open image confirms before opening a local file (FR-14), says
+/// so when the file is gone, opens a remote image in the browser and is
+/// off for a `data:` URI, whose bytes Copy image still takes.
+#[gpui::test]
+fn open_image_follows_fr_14(cx: &mut TestAppContext) {
+    use super::image_actions::ImageAction;
+    let (editor, cx, dir) = image_editor(cx, "");
+    let url = "https://example.com/a.png";
+    let data = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    // Measured before the note draws it: no request leaves the test.
+    let remote = std::sync::Arc::new(Image::from_bytes(ImageFormat::Png, png(3, 2)));
+    editor.update(cx, |e, _| {
+        e.images.finish(
+            url.to_owned(),
+            Some((
+                (3.0, 2.0),
+                super::images::Loaded::Bytes {
+                    image: remote,
+                    file: None,
+                },
+            )),
+        );
+    });
+    let note = format!("![a](wide.png)\n\n![r]({url})\n\n![d]({data})\n\nend");
+    editor.update(cx, |e, cx| e.set_text(&note, cx));
+    set_cursor(&editor, cx, note.len());
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    let range = |name: &str| {
+        let start = note.find(name).unwrap_or(0);
+        start..note[start..].find(')').map_or(start, |end| start + end + 1)
+    };
+    image_action(&editor, cx, ImageAction::Open, range("![a"));
+    assert!(cx.has_pending_prompt(), "a local file asks first");
+    cx.simulate_prompt_answer("Cancel");
+    image_action(&editor, cx, ImageAction::Open, range("![r"));
+    assert_eq!(cx.opened_url().as_deref(), Some(url));
+    let d = range("![d");
+    set_cursor(&editor, cx, d.start + 2);
+    let actions = editor.read_with(cx, |e, _| e.image_actions());
+    assert_eq!(
+        actions,
+        [
+            (ImageAction::Copy, true),
+            (ImageAction::Open, false),
+            (ImageAction::EditSource, true),
+            (ImageAction::Delete, true)
+        ]
+    );
+    image_action(&editor, cx, ImageAction::Copy, d);
+    assert_eq!(copied(cx).map(|c| c.0), Some(ImageFormat::Png));
+    std::fs::remove_file(dir.path().join("wide.png")).unwrap();
+    image_action(&editor, cx, ImageAction::Open, range("![a"));
+    assert!(!cx.has_pending_prompt());
+    assert_eq!(
+        notice(&editor, cx).as_deref(),
+        Some("Image not found: wide.png. Restore the file or edit the image's source.")
+    );
+}
+
+/// US-069: Edit source shows the source, the caret at the end of the alt
+/// text; Delete image removes its Markdown in one undo step and leaves its
+/// file.
+#[gpui::test]
+fn edit_source_and_delete_image_act_on_the_text(cx: &mut TestAppContext) {
+    use super::image_actions::ImageAction;
+    let note = "intro\n\n![a|300](wide.png)\n\nend";
+    let (editor, cx, dir) = image_editor(cx, note);
+    image_action(&editor, cx, ImageAction::EditSource, 7..25);
+    assert_eq!(
+        selection(&editor, cx),
+        [(10, 10)],
+        "after `a`, before `|300`"
+    );
+    assert_eq!(doc(&editor, cx), note);
+    image_action(&editor, cx, ImageAction::Delete, 7..25);
+    assert_eq!(doc(&editor, cx), "intro\n\n\n\nend");
+    assert!(dir.path().join("wide.png").is_file(), "the file stays");
+    cx.simulate_keystrokes(&secondary("z"));
+    assert_eq!(doc(&editor, cx), note);
+    image_action(&editor, cx, ImageAction::Delete, 7..12);
+    assert_eq!(doc(&editor, cx), note, "not an image's node");
+}
+
+fn toolbar_bounds(cx: &mut VisualTestContext, ix: usize) -> Option<gpui::Bounds<Pixels>> {
+    cx.debug_bounds(selector(format!("image-toolbar-{ix}")))
+}
+
+fn toolbar_button(
+    cx: &mut VisualTestContext,
+    name: &str,
+    ix: usize,
+) -> Option<gpui::Bounds<Pixels>> {
+    cx.debug_bounds(selector(format!("image-toolbar-{name}-{ix}")))
+}
+
+/// The toolbar buttons drawn on line `ix`, in order.
+fn toolbar_buttons(cx: &mut VisualTestContext, ix: usize) -> Vec<&'static str> {
+    let mut buttons: Vec<(Pixels, &'static str)> = ["width", "copy", "open", "edit", "delete"]
+        .into_iter()
+        .filter_map(|name| toolbar_button(cx, name, ix).map(|b| (b.left(), name)))
+        .collect();
+    buttons.sort_by(|a, b| a.0.as_f32().total_cmp(&b.0.as_f32()));
+    buttons.into_iter().map(|(_, name)| name).collect()
+}
+
+fn away(cx: &mut VisualTestContext) {
+    hover(cx, point(px(5.0), px(5.0)));
+}
+
+/// US-070: hovering a block image shows its toolbar in its top right
+/// corner, 8 px from its edges, five 28 px buttons; it stays with the
+/// pointer on it, goes when the pointer leaves, shows while the image is
+/// selected as an object, and Escape closes it.
+#[gpui::test]
+fn the_toolbar_shows_on_hover_and_on_an_object_selection(cx: &mut TestAppContext) {
+    let note = "intro\n\n![a|300](wide.png)\n\nend";
+    let (editor, cx, _dir) = image_editor(cx, note);
+    assert!(toolbar_bounds(cx, 2).is_none(), "not hovered");
+    let image = image_bounds(cx, 2);
+    hover(cx, image.center());
+    let bar = toolbar_bounds(cx, 2).expect("shown on hover");
+    assert_eq!(bar.right(), image.right() - px(8.0));
+    assert_eq!(bar.top(), image.top() + px(8.0));
+    assert_eq!(
+        toolbar_buttons(cx, 2),
+        ["width", "copy", "open", "edit", "delete"]
+    );
+    for name in ["width", "copy", "open", "edit", "delete"] {
+        let button = toolbar_button(cx, name, 2).expect(name);
+        assert_eq!(button.size, size(px(28.0), px(28.0)), "{name}");
+    }
+    // On the toolbar, then away.
+    let edit = toolbar_button(cx, "edit", 2).expect("edit").center();
+    hover(cx, edit);
+    assert!(toolbar_bounds(cx, 2).is_some(), "the pointer is on it");
+    away(cx);
+    assert!(toolbar_bounds(cx, 2).is_none(), "the pointer left");
+    // Selected as an object, the pointer away.
+    click(cx, image.center(), 1);
+    away(cx);
+    assert_eq!(selection(&editor, cx), [(25, 7)]);
+    assert!(toolbar_bounds(cx, 2).is_some(), "selected as an object");
+    cx.simulate_keystrokes("escape");
+    assert!(toolbar_bounds(cx, 2).is_none(), "Escape closes it");
+    assert_eq!(
+        selection(&editor, cx),
+        [(25, 7)],
+        "the image stays selected"
+    );
+    // The pointer coming onto the image shows it again.
+    hover(cx, image.center());
+    assert!(toolbar_bounds(cx, 2).is_some(), "the pointer came back");
+    // Escape with the pointer on the image: closed while it stays there.
+    cx.simulate_keystrokes("escape");
+    hover(cx, image.center() + point(px(3.0), px(3.0)));
+    assert!(toolbar_bounds(cx, 2).is_none(), "the pointer did not leave");
+    away(cx);
+    hover(cx, image.center());
+    assert!(toolbar_bounds(cx, 2).is_some(), "left, then back");
+}
+
+/// US-070: a toolbar button runs its action on its image and leaves the
+/// caret where it was: Copy image, the width submenu under its button,
+/// Delete image.
+#[gpui::test]
+fn toolbar_buttons_act_without_moving_the_caret(cx: &mut TestAppContext) {
+    let note = "intro\n\n![a|300](wide.png)\n\nend";
+    let (editor, cx, _dir) = image_editor(cx, note);
+    set_cursor(&editor, cx, 2);
+    let image = image_bounds(cx, 2);
+    hover(cx, image.center());
+    let copy = toolbar_button(cx, "copy", 2).expect("copy").center();
+    hover(cx, copy);
+    click(cx, copy, 1);
+    assert_eq!(selection(&editor, cx), [(2, 2)], "the caret stays");
+    assert_eq!(copied(cx), Some((ImageFormat::Png, png(1600, 900))));
+    assert!(editor.update_in(cx, |e, window, _| e.focus_handle.is_focused(window)));
+    // Image width: its submenu opens under the button.
+    let width = toolbar_button(cx, "width", 2).expect("width");
+    click(cx, width.center(), 1);
+    let menu = editor
+        .read_with(cx, |e, _| e.menu.clone())
+        .expect("submenu");
+    assert_eq!(menu.position.x, width.left());
+    assert!(menu.position.y > width.bottom(), "under the button");
+    let labels = menu_labels(&editor, cx);
+    assert_eq!(labels, ["25%", "50%", "75%", "Full width", "Original size"]);
+    let half = cx.debug_bounds("menu-50%").expect("drawn").center();
+    hover(cx, half);
+    click(cx, half, 1);
+    let column = viewport(&editor, cx).column_width;
+    let w = (column.floor() * 0.5).round() as u32;
+    let sized = format!("intro\n\n![a|{w}](wide.png)\n\nend");
+    assert_eq!(doc(&editor, cx), sized);
+    assert_eq!(selection(&editor, cx), [(2, 2)]);
+    // Delete image: the Markdown goes, in one undo step.
+    let image = image_bounds(cx, 2);
+    hover(cx, image.center());
+    let delete = toolbar_button(cx, "delete", 2).expect("delete").center();
+    hover(cx, delete);
+    click(cx, delete, 1);
+    assert_eq!(doc(&editor, cx), "intro\n\n\n\nend");
+    assert_eq!(selection(&editor, cx), [(2, 2)]);
+    cx.simulate_keystrokes(&secondary("z"));
+    assert_eq!(doc(&editor, cx), sized);
+}
+
+/// US-070: on an image narrower than the toolbar, the toolbar keeps to
+/// the image's right edge and grows to the left, inside the editor.
+#[gpui::test]
+fn the_toolbar_of_a_narrow_image_grows_to_the_left(cx: &mut TestAppContext) {
+    let note = "intro\n\n![a|64](wide.png)\n\nend";
+    let (editor, cx, _dir) = image_editor(cx, note);
+    let image = image_bounds(cx, 2);
+    assert_eq!(image.size.width, px(64.0));
+    hover(cx, image.center());
+    let bar = toolbar_bounds(cx, 2).expect("shown");
+    assert_eq!(bar.right(), image.right() - px(8.0));
+    assert!(bar.left() < image.left(), "wider than the image");
+    // The pointer on the part past the image keeps it.
+    hover(cx, point(bar.left() + px(4.0), bar.center().y));
+    assert!(toolbar_bounds(cx, 2).is_some());
+    // An editor narrower than the toolbar: it stops at the editor's edge.
+    away(cx);
+    cx.simulate_resize(size(px(150.0), px(800.0)));
+    cx.run_until_parked();
+    let image = image_bounds(cx, 2);
+    hover(cx, image.center());
+    let bar = toolbar_bounds(cx, 2).expect("shown");
+    let left = viewport(&editor, cx).bounds.left();
+    assert!(bar.left() >= left, "{:?} inside {left:?}", bar.left());
+}
+
+/// US-070: an image not measured keeps Edit source and Delete image; no
+/// toolbar on an inline image, a revealed source, during a resize, a text
+/// drag or a file drag.
+#[gpui::test]
+fn the_toolbar_is_absent_where_it_does_not_apply(cx: &mut TestAppContext) {
+    let note = "see ![c](small.png) here\n\n![x](bad.png)\n\n![a|300](wide.png)\n\nend";
+    let (editor, cx, _dir) = image_editor(cx, note);
+    let bad = image_bounds(cx, 2).center();
+    hover(cx, bad);
+    assert_eq!(toolbar_buttons(cx, 2), ["edit", "delete"], "unreadable");
+    let inline = point_at(&editor, cx, 5);
+    hover(cx, inline);
+    assert!(toolbar_bounds(cx, 0).is_none(), "inline");
+    let image = image_bounds(cx, 4);
+    hover(cx, image.center());
+    assert!(toolbar_bounds(cx, 4).is_some(), "a drawn image");
+    // During a resize.
+    let start = handle_bounds(cx, "right", 4).expect("handle").center();
+    press(cx, start, 1, false);
+    drag_to(cx, point(start.x - px(20.0), start.y), true);
+    assert!(toolbar_bounds(cx, 4).is_none(), "resizing");
+    cx.simulate_keystrokes("escape");
+    release(cx, start);
+    cx.run_until_parked();
+    // Its source revealed.
+    let at = note.find("![a").unwrap_or(0) + 2;
+    set_cursor(&editor, cx, at);
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    assert!(toolbar_bounds(cx, 4).is_none(), "its source shows");
+    set_cursor(&editor, cx, note.len());
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    hover(cx, image.center());
+    assert!(toolbar_bounds(cx, 4).is_some());
+    // A file drag.
+    editor.update(cx, |e, cx| {
+        e.drop_bar = Some(super::import::DropBar { pos: 0, y: 0.0 });
+        cx.notify();
+    });
+    cx.run_until_parked();
+    assert!(toolbar_bounds(cx, 4).is_none(), "a file drag");
+    editor.update(cx, |e, cx| {
+        e.drop_bar = None;
+        cx.notify();
+    });
+    cx.run_until_parked();
+    // A text drag.
+    let from = point_at(&editor, cx, note.len() - 3);
+    press(cx, from, 1, false);
+    drag_to(cx, image.center(), true);
+    cx.run_until_parked();
+    assert!(toolbar_bounds(cx, 4).is_none(), "a text drag");
+    release(cx, image.center());
+    cx.run_until_parked();
+}
+
+/// US-070: a toolbar whose image goes without the pointer leaving it (a
+/// scroll, an edit) does not hold the hover: the next image hovered shows
+/// its own toolbar.
+#[gpui::test]
+fn a_toolbar_gone_under_the_pointer_lets_the_next_image_show_its_own(cx: &mut TestAppContext) {
+    let note = "intro
+
+![a|300](wide.png)
+
+![[small.png|100]]
+
+end";
+    let (editor, cx, _dir) = image_editor(cx, note);
+    let first = image_bounds(cx, 2).center();
+    hover(cx, first);
+    let copy = toolbar_button(cx, "copy", 2).expect("copy").center();
+    hover(cx, copy);
+    // The first image goes, its toolbar with it, the pointer still.
+    editor.update(cx, |e, cx| {
+        e.set_text(
+            "intro
+
+plain text
+
+![[small.png|100]]
+
+end",
+            cx,
+        )
+    });
+    cx.run_until_parked();
+    assert!(toolbar_bounds(cx, 2).is_none());
+    let embed = image_bounds(cx, 4).center();
+    hover(cx, embed);
+    assert!(
+        toolbar_bounds(cx, 4).is_some(),
+        "the embed shows its toolbar"
+    );
+}
+
+/// US-070: Escape with the pointer on the toolbar closes it; the image
+/// under the pointer does not bring it back until the pointer leaves.
+#[gpui::test]
+fn escape_on_the_toolbar_closes_it_until_the_pointer_leaves(cx: &mut TestAppContext) {
+    let note = "intro
+
+![a|300](wide.png)
+
+end";
+    let (_editor, cx, _dir) = image_editor(cx, note);
+    let image = image_bounds(cx, 2);
+    hover(cx, image.center());
+    let copy = toolbar_button(cx, "copy", 2).expect("copy").center();
+    hover(cx, copy);
+    cx.simulate_keystrokes("escape");
+    assert!(toolbar_bounds(cx, 2).is_none(), "Escape closes it");
+    hover(cx, copy + point(px(1.0), px(1.0)));
+    assert!(toolbar_bounds(cx, 2).is_none(), "the pointer did not leave");
+    away(cx);
+    hover(cx, image.center());
+    assert!(toolbar_bounds(cx, 2).is_some(), "left, then back");
 }

@@ -34,6 +34,11 @@ pub enum Icon {
     Minimize,
     Maximize,
     Restore,
+    Copy,
+    Delete,
+    OpenExternal,
+    Width,
+    Source,
 }
 
 impl Icon {
@@ -64,6 +69,11 @@ impl Icon {
             Icon::Minimize => include_bytes!("../assets/icons/minus-sign.svg"),
             Icon::Maximize => include_bytes!("../assets/icons/square.svg"),
             Icon::Restore => include_bytes!("../assets/icons/copy-01.svg"),
+            Icon::Copy => include_bytes!("../assets/icons/copy-01.svg"),
+            Icon::Delete => include_bytes!("../assets/icons/delete-02.svg"),
+            Icon::OpenExternal => include_bytes!("../assets/icons/link-square-02.svg"),
+            Icon::Width => include_bytes!("../assets/icons/arrow-horizontal.svg"),
+            Icon::Source => include_bytes!("../assets/icons/source-code.svg"),
         }
     }
 
@@ -93,7 +103,11 @@ impl Icon {
             Icon::UnfoldMore => "icons/unfold-more.svg",
             Icon::Minimize => "icons/minus-sign.svg",
             Icon::Maximize => "icons/square.svg",
-            Icon::Restore => "icons/copy-01.svg",
+            Icon::Restore | Icon::Copy => "icons/copy-01.svg",
+            Icon::Delete => "icons/delete-02.svg",
+            Icon::OpenExternal => "icons/link-square-02.svg",
+            Icon::Width => "icons/arrow-horizontal.svg",
+            Icon::Source => "icons/source-code.svg",
         }
     }
 }
@@ -139,6 +153,11 @@ mod tests {
             Icon::Minimize,
             Icon::Maximize,
             Icon::Restore,
+            Icon::Copy,
+            Icon::Delete,
+            Icon::OpenExternal,
+            Icon::Width,
+            Icon::Source,
         ];
         for icon in all {
             let text = std::str::from_utf8(icon.data()).unwrap();

@@ -117,6 +117,15 @@ impl Preset {
     }
 }
 
+/// The presets that apply to `image`: `Original size` only when it has a
+/// size.
+pub fn image_presets_of(image: &ImageNode) -> Vec<(Preset, bool)> {
+    Preset::ALL
+        .iter()
+        .map(|p| (*p, *p != Preset::Original || image.size.is_some()))
+        .collect()
+}
+
 /// The size written for a width the view shows: none within [`SNAP`] of
 /// the default width.
 pub fn written_width(width: f32, default_width: f32) -> Option<u32> {
@@ -151,7 +160,7 @@ impl Editor {
     }
 
     /// The host key of `image`: its destination, or an embed's key.
-    fn image_key(&self, image: &ImageNode) -> Option<String> {
+    pub(super) fn image_key(&self, image: &ImageNode) -> Option<String> {
         let text = self.state.text();
         if image.embed {
             let embed = cerata_markdown::wiki::image_embed_target(text.slice(image.label.clone()))?;
@@ -261,27 +270,33 @@ impl Editor {
     /// The preset width of the image at the head (US-068), in one undo
     /// step. A width within [`SNAP`] of the default one removes the size.
     pub fn set_image_width_preset(&mut self, preset: Preset, cx: &mut Context<Self>) -> bool {
-        let Some(image) = self.image_at_head() else {
-            return false;
-        };
-        let column = self.column_width().floor();
-        let default = self
-            .image_key(&image)
-            .map_or(column, |url| self.default_width(&url));
-        let width = preset.width(column).and_then(|w| written_width(w, default));
-        self.update_state(cx, |state| state.set_image_width(image.range, width))
+        match self.image_at_head() {
+            Some(image) => self.set_image_width_preset_of(&image, preset, cx),
+            None => false,
+        }
     }
 
-    /// The presets that apply to the image at the head: `Original size`
-    /// only when it has a size.
+    /// [`Editor::set_image_width_preset`] for `image`, wherever the caret
+    /// is (the toolbar's, US-070).
+    pub fn set_image_width_preset_of(
+        &mut self,
+        image: &ImageNode,
+        preset: Preset,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let column = self.column_width().floor();
+        let default = self
+            .image_key(image)
+            .map_or(column, |url| self.default_width(&url));
+        let width = preset.width(column).and_then(|w| written_width(w, default));
+        let range = image.range.clone();
+        self.update_state(cx, |state| state.set_image_width(range, width))
+    }
+
+    /// The presets that apply to the image at the head.
     pub fn image_presets(&self) -> Vec<(Preset, bool)> {
-        let Some(image) = self.image_at_head() else {
-            return Vec::new();
-        };
-        Preset::ALL
-            .iter()
-            .map(|p| (*p, *p != Preset::Original || image.size.is_some()))
-            .collect()
+        self.image_at_head()
+            .map_or_else(Vec::new, |image| image_presets_of(&image))
     }
 
     /// The two handles of `grip`'s image, shown on hover of `group` (its

@@ -2453,6 +2453,62 @@ mod images {
         assert_eq!(doc(cx, handle), "Intro\n\n![a](a.png)\n");
     }
 
+    /// US-069: with the caret in a block image's source the palette offers
+    /// the image's actions that apply (Copy and Open need its file); they
+    /// run in the active note.
+    #[gpui::test]
+    fn the_palette_offers_the_actions_of_the_image_at_the_caret(cx: &mut TestAppContext) {
+        use crate::editor::image_actions::ImageAction;
+        let env = setup(cx);
+        let (handle, _) = open_note(
+            cx,
+            &env,
+            "Intro
+
+![a|300](a.png)
+",
+        );
+        let editor = editor(cx, handle);
+        let images = |cx: &mut TestAppContext| -> Vec<&'static str> {
+            read(cx, handle, |view, cx| view.editor_commands(cx))
+                .into_iter()
+                .filter(|c| matches!(c, Command::Image(_)))
+                .map(|c| c.label())
+                .collect()
+        };
+        update(cx, handle, |_, _, cx| {
+            editor.update(cx, |e, cx| e.caret_to_end(cx))
+        });
+        assert!(images(cx).is_empty(), "the caret is past the image");
+        update(cx, handle, |_, _, cx| {
+            editor.update(cx, |e, cx| {
+                e.select(cerata_markdown::Selection::cursor(9), cx)
+            })
+        });
+        assert_eq!(
+            images(cx),
+            ["Edit image source", "Delete image"],
+            "a.png is missing: no Copy, no Open"
+        );
+        update(cx, handle, |view, window, cx| {
+            view.run_command(Command::Image(ImageAction::EditSource), window, cx)
+        });
+        let caret = read(cx, handle, |_, cx| {
+            editor.read(cx).state.selection().main().head
+        });
+        assert_eq!(caret, 10, "at the end of the alt text");
+        update(cx, handle, |view, window, cx| {
+            view.run_command(Command::Image(ImageAction::Delete), window, cx)
+        });
+        assert_eq!(
+            doc(cx, handle),
+            "Intro
+
+
+"
+        );
+    }
+
     /// "Insert image…" in the palette reaches the active note and inserts
     /// what the picker returns at the caret.
     #[gpui::test]

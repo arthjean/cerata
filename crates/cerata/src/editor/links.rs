@@ -170,27 +170,40 @@ impl Editor {
                     self.show_notice(format!("File not found: {}", file_name(&path)), cx);
                     return;
                 }
-                let detail = local.display().to_string();
-                let (level, message) = match super::menu::openable(&local) {
-                    Some(_) => (PromptLevel::Info, "Open this file in its default app?"),
-                    None if local.is_file() => (
-                        PromptLevel::Warning,
-                        "This file may run a program. Open it anyway?",
-                    ),
-                    None => {
-                        self.show_notice(format!("Can't open {}", file_name(&path)), cx);
-                        return;
-                    }
-                };
-                let answer = window.prompt(level, message, Some(&detail), &["Open", "Cancel"], cx);
-                cx.spawn(async move |_, cx| {
-                    if answer.await == Ok(0) {
-                        cx.update(|cx| cx.open_with_system(&local));
-                    }
-                })
-                .detach();
+                self.confirm_open(local, window, cx);
             }
         }
+    }
+
+    /// An existing local file opens in its default app after a
+    /// confirmation naming it (FR-14), a stronger one for anything the OS
+    /// may run.
+    pub(super) fn confirm_open(
+        &mut self,
+        local: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let detail = local.display().to_string();
+        let (level, message) = match super::menu::openable(&local) {
+            Some(_) => (PromptLevel::Info, "Open this file in its default app?"),
+            None if local.is_file() => (
+                PromptLevel::Warning,
+                "This file may run a program. Open it anyway?",
+            ),
+            None => {
+                let name = to_slash(&local);
+                self.show_notice(format!("Can't open {}", file_name(&name)), cx);
+                return;
+            }
+        };
+        let answer = window.prompt(level, message, Some(&detail), &["Open", "Cancel"], cx);
+        cx.spawn(async move |_, cx| {
+            if answer.await == Ok(0) {
+                cx.update(|cx| cx.open_with_system(&local));
+            }
+        })
+        .detach();
     }
 
     /// A wiki link: the note it names opens; none, and a notice says so
