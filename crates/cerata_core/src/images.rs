@@ -457,9 +457,14 @@ impl NoteContext {
                 format!("{base} {n}.{ext}")
             };
             let key = name.to_lowercase();
-            if !taken.contains(&key) && std::fs::symlink_metadata(assets.join(&name)).is_err() {
+            if !taken.contains(&key) {
+                if std::fs::symlink_metadata(assets.join(&name)).is_err() {
+                    taken.insert(key);
+                    return name;
+                }
+                // Taken on disk: on a case-sensitive file system, a later
+                // `SHOT.png` of the gesture must not land beside `shot.png`.
                 taken.insert(key);
-                return name;
             }
             n += 1;
         }
@@ -725,7 +730,16 @@ mod tests {
     #[test]
     fn a_reserved_or_empty_name_is_copied_under_a_safe_name() {
         let ws = Workspace::new();
-        let reserved = ws.outside_file("nul.png", &png(3, 2));
+        // Before Windows 11, `nul.png` still names the NUL device unless the
+        // path is verbatim (`\\?\`), so the source is written and read that way.
+        let reserved = ws.outside.path().join("nul.png");
+        #[cfg(windows)]
+        let reserved = {
+            let mut verbatim = std::ffi::OsString::from(r"\\?\");
+            verbatim.push(reserved.as_os_str());
+            PathBuf::from(verbatim)
+        };
+        std::fs::write(&reserved, png(3, 2)).unwrap();
         let empty = ws.outside_file("....png", &png(3, 2));
         let plan = ws.plan(vec![
             ImportSource::File(reserved),
