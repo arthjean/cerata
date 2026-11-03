@@ -2,11 +2,13 @@
 //!
 //! Ported from Writer `commands/startup.rs` (`get_startup_state`) and
 //! `commands/workspace.rs:603-684` (`build_restore_bundle`): one call returns
-//! the settings, the recents, the root listing, the session and the active
-//! file, so the first frame can render without further round trips.
+//! the settings, the libraries, the recent files, the root listing, the
+//! session and the active file, so the first frame can render without
+//! further round trips.
 
-use crate::fs::{DirEntry, FileContent, WorkspaceFs};
+use crate::fs::{DirEntry, FileContent, FsError, WorkspaceFs};
 use crate::ignore::WorkspaceIgnore;
+use crate::library::{Library, LibraryNotice, LibraryRegistry, Marker, read_marker};
 use crate::open_target::OpenTarget;
 use crate::paths;
 use crate::pins::PinStore;
@@ -14,12 +16,14 @@ use crate::recents::{RecentEntry, RecentsStore};
 use crate::session::{SessionData, SessionStore};
 use crate::settings::{ConfigValue, ConfigWarning, Settings, SettingsError};
 use crate::watcher::WatchEnvelope;
-use crate::workspace::{WindowRegistry, WindowState, WorkspaceInfo, open_workspace};
+use crate::workspace::{
+    WindowRegistry, WindowState, WorkspaceInfo, canonicalize_workspace_root, open_workspace,
+};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::Sender;
 
-/// Setting that reopens the last workspace at launch (default on).
+/// Setting that reopens the last library at launch (default on).
 pub const RESTORE_WORKSPACE_KEY: &str = "window.restore-workspace";
 
 #[derive(Debug, thiserror::Error)]
@@ -38,6 +42,7 @@ pub struct CoreApp {
     pub sessions: SessionStore,
     pub recents: RecentsStore,
     pub pins: PinStore,
+    pub libraries: LibraryRegistry,
 }
 
 impl CoreApp {
@@ -46,6 +51,7 @@ impl CoreApp {
             sessions: SessionStore::new(&data_dir),
             pins: PinStore::new(&data_dir),
             recents: RecentsStore::new(&data_dir),
+            libraries: LibraryRegistry::new(&data_dir),
             windows: WindowRegistry::new(),
             config_dir,
             data_dir,
@@ -65,18 +71,36 @@ impl CoreApp {
         Ok((self.windows.create(settings), warnings))
     }
 
-    /// Opens a workspace in `window` and records it in the recents.
+    /// Opens the folder `path` in `window` as a library: identified by its
+    /// marker (written when missing) and recorded in the registry. The
+    /// notice tells of a move, a copy or a folder Cerata cannot write to.
     pub fn open_workspace(
         &self,
         window: &Arc<WindowState>,
         path: &Path,
         events: Sender<WatchEnvelope>,
-    ) -> Result<WorkspaceInfo, crate::fs::FsError> {
-        let info = open_workspace(window, path, events)?;
-        if let Err(error) = self.recents.record_workspace(&info.root) {
-            log::warn!("recent workspaces not updated: {error}");
-        }
-        Ok(info)
+    ) -> Result<(WorkspaceInfo, Option<LibraryNotice>), FsError> {
+        let root = canonicalize_workspace_root(path)?;
+        let (id, notice) = match self.libraries.resolve(&root) {
+            Ok(opened) => (opened.library.id, opened.notice),
+            // An unreadable registry still opens a marked library.
+            Err(error) => match read_marker(&root) {
+                Marker::Id(id) => {
+                    log::warn!("library registry unavailable: {error}");
+                    (id, None)
+                }
+                _ => {
+                    return Err(FsError::Io {
+                        path: root,
+                        source: std::io::Error::other(format!(
+                            "the library registry is unavailable: {error}"
+                        )),
+                    });
+                }
+            },
+        };
+        let info = open_workspace(window, &root, &id, events)?;
+        Ok((info, notice))
     }
 }
 
@@ -85,9 +109,12 @@ impl CoreApp {
 pub struct StartupBundle {
     pub settings: Vec<(&'static str, ConfigValue)>,
     pub settings_warnings: Vec<ConfigWarning>,
-    pub recent_workspaces: Vec<String>,
+    /// The registry, most recently opened first.
+    pub libraries: Vec<Library>,
     pub recent_files: Vec<RecentEntry>,
     pub workspace: Option<WorkspaceInfo>,
+    /// What opening the library told (moved, copy, read-only).
+    pub library_notice: Option<LibraryNotice>,
     /// Root listing, before indexing completes (titles come later).
     pub entries: Vec<DirEntry>,
     pub session: Option<SessionData>,
@@ -98,7 +125,7 @@ pub struct StartupBundle {
 }
 
 /// The startup call. `target` comes from argv or the OS; without one, the
-/// most recent workspace that still exists is restored when
+/// most recently opened library that still exists is restored when
 /// `window.restore-workspace` is on. Failures of optional parts (recents,
 /// session, active file) are logged and leave that part empty.
 pub fn startup(
@@ -107,8 +134,8 @@ pub fn startup(
     events: Sender<WatchEnvelope>,
 ) -> Result<(Arc<WindowState>, StartupBundle), StartupError> {
     let (window, settings_warnings) = app.create_window()?;
-    let recent_workspaces = app.recents.workspaces().unwrap_or_else(|error| {
-        log::warn!("recent workspaces unavailable: {error}");
+    let libraries = app.libraries.list().unwrap_or_else(|error| {
+        log::warn!("libraries unavailable: {error}");
         Vec::new()
     });
     let recent_files = app.recents.files().unwrap_or_else(|error| {
@@ -124,19 +151,20 @@ pub fn startup(
     let workspace_path = match &target {
         Some(OpenTarget::Workspace(root)) => Some(root.clone()),
         Some(OpenTarget::File(_)) => None,
-        None if restore => recent_workspaces
+        None if restore => libraries
             .iter()
-            .map(PathBuf::from)
-            .find(|root| root.is_dir()),
+            .find(|library| library.exists())
+            .map(|library| library.path.clone()),
         None => None,
     };
 
     let mut bundle = StartupBundle {
         settings: Vec::new(),
         settings_warnings,
-        recent_workspaces,
+        libraries,
         recent_files,
         workspace: None,
+        library_notice: None,
         entries: Vec::new(),
         session: None,
         active_file: None,
@@ -158,7 +186,8 @@ pub fn startup(
 
     if let Some(root) = workspace_path {
         match app.open_workspace(&window, &root, events) {
-            Ok(info) => {
+            Ok((info, notice)) => {
+                bundle.library_notice = notice;
                 if let Some(runtime) = window.runtime() {
                     let ignore = WorkspaceIgnore::bootstrap(&runtime.root);
                     bundle.entries = runtime
@@ -168,7 +197,7 @@ pub fn startup(
                             log::warn!("cannot list {}: {error}", runtime.root.display());
                             Vec::new()
                         });
-                    bundle.session = app.sessions.load(&info.root).unwrap_or_else(|error| {
+                    bundle.session = app.sessions.load(&info.library()).unwrap_or_else(|error| {
                         log::warn!("session unavailable: {error}");
                         None
                     });
@@ -179,6 +208,10 @@ pub fn startup(
                         .and_then(|path| runtime.fs.read_file(&path).ok());
                 }
                 bundle.workspace = Some(info);
+                // The opening changed the order.
+                if let Ok(libraries) = app.libraries.list() {
+                    bundle.libraries = libraries;
+                }
             }
             Err(error) => log::warn!("cannot open workspace {}: {error}", root.display()),
         }
@@ -192,6 +225,7 @@ pub fn startup(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::library::is_library_id;
     use crate::session::{SerializedLocation, SessionTab};
     use std::sync::mpsc;
     use tempfile::TempDir;
@@ -230,7 +264,7 @@ mod tests {
     }
 
     #[test]
-    fn one_call_returns_settings_recents_listing_session_and_active_file() {
+    fn one_call_returns_settings_libraries_listing_session_and_active_file() {
         let env = env();
         let root = TempDir::new().unwrap();
         let canonical = dunce::canonicalize(root.path()).unwrap();
@@ -240,10 +274,11 @@ mod tests {
             .recents
             .record_file(&canonical.join("a.md"))
             .unwrap();
+        let library = env.app.libraries.resolve(&canonical).unwrap().library;
         env.app
             .sessions
             .save(
-                &canonical,
+                &library.key(),
                 SessionData {
                     tabs: vec![file_tab(&canonical.join("b.md"))],
                     active_index: Some(0),
@@ -266,24 +301,71 @@ mod tests {
                 .any(|(key, _)| *key == "editor.font-size")
         );
         assert_eq!(bundle.recent_files.len(), 1);
-        assert_eq!(bundle.workspace.as_ref().unwrap().root, canonical);
+        let info = bundle.workspace.as_ref().unwrap();
+        assert_eq!(info.root, canonical);
+        assert_eq!(info.library_id, library.id);
+        assert_eq!(bundle.library_notice, None);
+        // `.cerata/` is hidden from the listing.
         let names: Vec<_> = bundle.entries.iter().map(|e| e.name.as_str()).collect();
         assert_eq!(names, ["a.md", "b.md"]);
         assert_eq!(bundle.session.as_ref().unwrap().tabs.len(), 1);
         assert_eq!(bundle.active_file.as_ref().unwrap().content, "# B body");
         assert_eq!(window.snapshot().unwrap().root, canonical);
-        // The workspace is now the most recent one.
+        assert_eq!(window.runtime().unwrap().library_id, library.id);
+        assert_eq!(bundle.libraries[0].path, canonical);
+    }
+
+    #[test]
+    fn opening_a_folder_registers_it_as_a_library() {
+        let env = env();
+        let root = TempDir::new().unwrap();
+        let (sender, _events) = mpsc::channel();
+        let (_window, bundle) = startup(
+            &env.app,
+            Some(OpenTarget::Workspace(root.path().to_path_buf())),
+            sender,
+        )
+        .unwrap();
+        let info = bundle.workspace.unwrap();
+        assert!(is_library_id(&info.library_id));
+        assert_eq!(read_marker(&info.root), Marker::Id(info.library_id.clone()));
+        assert_eq!(env.app.libraries.list().unwrap()[0].id, info.library_id);
+    }
+
+    #[test]
+    fn without_target_the_most_recent_existing_library_is_restored() {
+        let env = env();
+        let older = TempDir::new().unwrap();
+        let newer = TempDir::new().unwrap();
+        let gone = TempDir::new().unwrap();
+        for dir in [&older, &newer, &gone] {
+            env.app
+                .libraries
+                .resolve(&dunce::canonicalize(dir.path()).unwrap())
+                .unwrap();
+            // `last_opened_at` has a resolution of one second.
+            std::thread::sleep(std::time::Duration::from_millis(1100));
+        }
+        let gone_path = gone.path().to_path_buf();
+        drop(gone);
+        assert!(!gone_path.exists());
+        let (sender, _events) = mpsc::channel();
+        let (_window, bundle) = startup(&env.app, None, sender).unwrap();
         assert_eq!(
-            env.app.recents.workspaces().unwrap()[0],
-            canonical.display().to_string()
+            bundle.workspace.unwrap().root,
+            dunce::canonicalize(newer.path()).unwrap()
         );
     }
 
     #[test]
-    fn without_target_the_last_workspace_is_restored() {
+    fn the_recent_workspaces_of_an_older_version_are_restored_after_migration() {
         let env = env();
         let root = TempDir::new().unwrap();
-        env.app.recents.record_workspace(root.path()).unwrap();
+        std::fs::write(
+            env.app.data_dir.join("recent_workspaces.json"),
+            serde_json::to_string(&[root.path().display().to_string()]).unwrap(),
+        )
+        .unwrap();
         let (sender, _events) = mpsc::channel();
         let (_window, bundle) = startup(&env.app, None, sender).unwrap();
         assert_eq!(
@@ -301,10 +383,14 @@ mod tests {
         )
         .unwrap();
         let root = TempDir::new().unwrap();
-        env.app.recents.record_workspace(root.path()).unwrap();
+        env.app
+            .libraries
+            .resolve(&dunce::canonicalize(root.path()).unwrap())
+            .unwrap();
         let (sender, _events) = mpsc::channel();
         let (_window, bundle) = startup(&env.app, None, sender).unwrap();
         assert!(bundle.workspace.is_none());
+        assert_eq!(bundle.libraries.len(), 1);
     }
 
     #[test]
@@ -321,6 +407,9 @@ mod tests {
         assert!(bundle.workspace.is_none());
         assert_eq!(bundle.standalone_file.unwrap().content, "solo");
         assert_eq!(window.standalone_file(), Some(file));
+        // A file opened on its own makes no library of its folder.
+        assert!(env.app.libraries.list().unwrap().is_empty());
+        assert!(!dir.path().join(".cerata").exists());
     }
 
     #[test]
@@ -337,6 +426,34 @@ mod tests {
         .unwrap();
         assert!(bundle.workspace.is_some());
         assert!(bundle.session.is_none());
-        assert!(env.app.data_dir.join("sessions.json.corrupt").exists());
+        let aside = std::fs::read_dir(&env.app.data_dir)
+            .unwrap()
+            .flatten()
+            .any(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .starts_with("sessions.json.corrupt-")
+            });
+        assert!(aside);
+    }
+
+    /// US-074: an unreadable sessions file opens the library without
+    /// restored tabs and is left as it is.
+    #[test]
+    fn unreadable_sessions_file_opens_the_library_without_tabs() {
+        let env = env();
+        let sessions = env.app.data_dir.join("sessions.json");
+        std::fs::create_dir(&sessions).unwrap();
+        let root = TempDir::new().unwrap();
+        let (sender, _events) = mpsc::channel();
+        let (_window, bundle) = startup(
+            &env.app,
+            Some(OpenTarget::Workspace(root.path().to_path_buf())),
+            sender,
+        )
+        .unwrap();
+        assert!(bundle.workspace.is_some());
+        assert!(bundle.session.is_none());
+        assert!(sessions.is_dir());
     }
 }

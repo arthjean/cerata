@@ -1,7 +1,9 @@
 //! The command palette (`command-palette/index.tsx`, `use-fuzzy-search.ts`):
 //! the window's commands filtered by substring, files from the index 50 ms
 //! after typing stops (20 results, matched characters highlighted), the
-//! global recents in a compact window, and a create-note intent.
+//! global recents in a compact window, a create-note intent, and the
+//! library switcher (US-080): the registry's libraries, then the actions of
+//! one of them (Tab, or Enter on a library that is not found).
 
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -9,6 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use cerata_core::index::SearchResult;
+use cerata_core::library::Library;
 use cerata_core::workspace::WorkspaceRuntime;
 use gpui::{
     App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable, FontWeight,
@@ -38,6 +41,41 @@ pub fn bindings() -> Vec<KeyBinding> {
 pub enum Intent {
     Search,
     CreateFile,
+    Libraries,
+}
+
+/// What can be done with one library from the switcher.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LibraryAction {
+    Open,
+    SetDefault,
+    Remove,
+    Locate,
+}
+
+impl LibraryAction {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Open => "Open",
+            Self::SetDefault => "Set as Default",
+            Self::Remove => "Remove from List",
+            Self::Locate => "Locate\u{2026}",
+        }
+    }
+
+    /// The actions of `library`: a library that is not found can only be
+    /// located or removed.
+    pub fn for_library(library: &Library) -> Vec<Self> {
+        if !library.exists() {
+            return vec![Self::Locate, Self::Remove];
+        }
+        let mut actions = vec![Self::Open];
+        if !library.is_default {
+            actions.push(Self::SetDefault);
+        }
+        actions.push(Self::Remove);
+        actions
+    }
 }
 
 /// A command the palette offers (Writer's list, in order).
@@ -49,6 +87,8 @@ pub enum Command {
     CloseTab,
     CloseAllTabs,
     OpenWorkspace,
+    /// The registry's libraries (US-080).
+    SwitchLibrary,
     CloseWorkspace,
     ToggleTheme,
     ZoomIn,
@@ -69,13 +109,14 @@ pub enum Command {
 }
 
 impl Command {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::ToggleSidebar,
         Self::NewFile,
         Self::OpenInCompactWindow,
         Self::CloseTab,
         Self::CloseAllTabs,
         Self::OpenWorkspace,
+        Self::SwitchLibrary,
         Self::CloseWorkspace,
         Self::ToggleTheme,
         Self::ZoomIn,
@@ -92,6 +133,7 @@ impl Command {
             Self::CloseTab => "Close Current Tab",
             Self::CloseAllTabs => "Close All Tabs",
             Self::OpenWorkspace => "Open Workspace",
+            Self::SwitchLibrary => "Switch Library\u{2026}",
             Self::CloseWorkspace => "Close Workspace",
             Self::ToggleTheme => "Toggle Dark Mode",
             Self::ZoomIn => "Zoom In",
@@ -127,6 +169,7 @@ impl Command {
             Self::Settings => !a.compact,
             Self::Editor(_) | Self::InsertImage | Self::ImageWidth(_) | Self::Image(_) => true,
             Self::OpenWorkspace
+            | Self::SwitchLibrary
             | Self::ToggleTheme
             | Self::ZoomIn
             | Self::ZoomOut
@@ -174,6 +217,9 @@ pub enum Choice {
     File(PathBuf),
     Recent(PathBuf),
     Create(String),
+    /// A library of the switcher, by id: opened when chosen.
+    Library(String),
+    LibraryAction(String, LibraryAction),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -196,6 +242,10 @@ pub struct Palette {
     runtime: Option<Arc<WorkspaceRuntime>>,
     compact: bool,
     recents: Vec<RecentFile>,
+    /// The switcher's libraries, most recently opened first.
+    pub libraries: Vec<Library>,
+    /// The library whose actions are listed instead of the libraries.
+    pub library_menu: Option<String>,
     pub files: Vec<SearchResult>,
     pub selected: usize,
     search_task: Option<Task<()>>,
@@ -224,6 +274,7 @@ impl Palette {
         let placeholder = match intent {
             Intent::Search => "Search...",
             Intent::CreateFile => "Create a new note...",
+            Intent::Libraries => "Find a library...",
         };
         let field = cx.new(|cx| TextField::new(placeholder, cx));
         let events =
@@ -233,6 +284,11 @@ impl Palette {
                 |this, _, event: &FieldEvent, _, cx| match event {
                     FieldEvent::Changed => this.query_changed(cx),
                     FieldEvent::Submit { .. } => this.choose_selected(cx),
+                    FieldEvent::Escape if this.library_menu.is_some() => {
+                        this.library_menu = None;
+                        this.selected = 0;
+                        cx.notify();
+                    }
                     FieldEvent::Escape => cx.emit(PaletteEvent::Dismissed),
                 },
             );
@@ -245,6 +301,8 @@ impl Palette {
             runtime,
             compact,
             recents,
+            libraries: Vec::new(),
+            library_menu: None,
             files: Vec::new(),
             selected: 0,
             search_task: None,
@@ -303,6 +361,9 @@ impl Palette {
                 .into_iter()
                 .collect();
         }
+        if self.intent == Intent::Libraries {
+            return self.library_choices(&query);
+        }
         let mut choices: Vec<Choice> = if query.trim().is_empty() {
             self.available
                 .iter()
@@ -344,7 +405,59 @@ impl Palette {
         cx.notify();
     }
 
+    fn library(&self, id: &str) -> Option<&Library> {
+        self.libraries.iter().find(|library| library.id == id)
+    }
+
+    /// The libraries whose name or path holds `query` (ignoring case), or
+    /// the actions of the library whose menu is open.
+    fn library_choices(&self, query: &str) -> Vec<Choice> {
+        if let Some(id) = &self.library_menu {
+            return self
+                .library(id)
+                .map(LibraryAction::for_library)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|action| Choice::LibraryAction(id.clone(), action))
+                .collect();
+        }
+        let query = query.trim().to_lowercase();
+        self.libraries
+            .iter()
+            .filter(|library| {
+                library.name.to_lowercase().contains(&query)
+                    || library
+                        .path
+                        .to_string_lossy()
+                        .to_lowercase()
+                        .contains(&query)
+            })
+            .map(|library| Choice::Library(library.id.clone()))
+            .collect()
+    }
+
+    /// Lists the actions of the selected library (Tab in the switcher).
+    pub fn open_library_menu(&mut self, cx: &mut Context<Self>) {
+        if self.intent != Intent::Libraries || self.library_menu.is_some() {
+            return;
+        }
+        if let Some(Choice::Library(id)) = self.choices(cx).get(self.selected).cloned() {
+            self.library_menu = Some(id);
+            self.selected = 0;
+            cx.notify();
+        }
+    }
+
+    /// A library that is not found is not opened: its actions show.
     pub fn choose(&mut self, choice: Choice, cx: &mut Context<Self>) {
+        if let Choice::Library(id) = &choice
+            && self.library(id).is_some_and(|library| !library.exists())
+        {
+            self.library_menu = Some(id.clone());
+            self.selected = 0;
+            cx.notify();
+            return;
+        }
         cx.emit(PaletteEvent::Chosen(choice));
     }
 
@@ -354,13 +467,17 @@ impl Palette {
         }
     }
 
-    fn heading(&self, query: &str) -> &'static str {
-        match self.intent {
+    fn heading(&self, query: &str) -> SharedString {
+        if let Some(library) = self.library_menu.as_deref().and_then(|id| self.library(id)) {
+            return library.name.clone().into();
+        }
+        SharedString::from(match self.intent {
             Intent::CreateFile => "Create note",
+            Intent::Libraries => "Libraries",
             Intent::Search if query.trim().is_empty() => "Suggested",
             Intent::Search if self.searches_files() && self.indexing() => "Results (indexing...)",
             Intent::Search => "Results",
-        }
+        })
     }
 
     /// The text under the list when it says nothing else.
@@ -368,6 +485,9 @@ impl Palette {
         let query = self.query(cx);
         if self.intent == Intent::CreateFile && query.trim().is_empty() {
             return Some("Type a note name to create it.");
+        }
+        if self.intent == Intent::Libraries && self.libraries.is_empty() {
+            return Some("No libraries yet. Open a folder to add one.");
         }
         if !self.choices(cx).is_empty() {
             return None;
@@ -380,9 +500,18 @@ impl Palette {
     }
 
     /// Without a workspace the palette offers commands only, and says so.
+    /// The switcher names its keys.
     pub fn no_workspace_hint(&self) -> Option<&'static str> {
-        (self.intent == Intent::Search && self.runtime.is_none() && !self.compact)
-            .then_some("Open a folder to search its files.")
+        match self.intent {
+            Intent::Libraries if self.library_menu.is_some() => Some("Escape to go back"),
+            Intent::Libraries if !self.libraries.is_empty() => {
+                Some("Enter to open, Tab for more actions")
+            }
+            Intent::Search if self.runtime.is_none() && !self.compact => {
+                Some("Open a folder to search its files.")
+            }
+            _ => None,
+        }
     }
 
     fn label_of(&self, choice: &Choice) -> (SharedString, Option<StyledText>) {
@@ -417,6 +546,20 @@ impl Palette {
                 (label.into(), Some(StyledText::new(parent)))
             }
             Choice::Create(name) => (format!("Create: {name}").into(), None),
+            Choice::Library(id) => match self.library(id) {
+                Some(library) => {
+                    let mut detail = cerata_core::paths::display_path(&library.path);
+                    if library.is_default {
+                        detail.push_str(" \u{b7} Default");
+                    }
+                    if !library.exists() {
+                        detail.push_str(" \u{b7} Not found");
+                    }
+                    (library.name.clone().into(), Some(StyledText::new(detail)))
+                }
+                None => (id.clone().into(), None),
+            },
+            Choice::LibraryAction(_, action) => (action.label().into(), None),
         }
     }
 }
@@ -496,7 +639,10 @@ impl Render for Palette {
             .aria_label("Command palette")
             // Tab stays in the palette (a modal) instead of reaching the
             // controls behind it.
-            .on_action(|_: &crate::a11y::FocusNext, _, cx| cx.stop_propagation())
+            .on_action(cx.listener(|this, _: &crate::a11y::FocusNext, _, cx| {
+                cx.stop_propagation();
+                this.open_library_menu(cx);
+            }))
             .on_action(|_: &crate::a11y::FocusPrevious, _, cx| cx.stop_propagation())
             .key_context("Palette")
             .track_focus(&self.focus_handle)
@@ -550,6 +696,7 @@ mod tests {
                 "Close Current Tab",
                 "Close All Tabs",
                 "Open Workspace",
+                "Switch Library\u{2026}",
                 "Close Workspace",
                 "Toggle Dark Mode",
                 "Zoom In",
@@ -584,6 +731,7 @@ mod tests {
             labels(&available),
             [
                 "Open Workspace",
+                "Switch Library\u{2026}",
                 "Toggle Dark Mode",
                 "Zoom In",
                 "Zoom Out",

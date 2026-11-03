@@ -1261,3 +1261,63 @@ fn a_note_dragged_over_a_taken_folder_points_its_links_back(cx: &mut TestAppCont
         Some("Images stay in \"foo-assets\": \"foo-assets\" already exists")
     );
 }
+
+/// Renames `from` to `to`, retrying while Windows still holds a handle
+/// from the closed workspace (its watcher drops on another thread).
+fn rename_folder(from: &Path, to: &Path) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while let Err(error) = std::fs::rename(from, to) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "rename failed: {error}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}
+
+/// US-077: pins and tabs are keyed by library id with relative paths, so a
+/// library moved outside Cerata gets both back when reopened at its new
+/// place, and the window says it moved.
+#[gpui::test]
+fn a_moved_library_keeps_its_pins_and_tabs(cx: &mut TestAppContext) {
+    let env = setup(cx);
+    let note = env.file("vault/dir/n.md", "# N");
+    let vault = env.root().join("vault");
+    let (handle, sidebar) = open_at(cx, &vault);
+    wait_for_index(cx, &sidebar);
+    sidebar.update(cx, |s, cx| s.toggle_pin(&note, cx));
+    handle
+        .update(cx, |view, window, cx| {
+            view.open_file(&note, window, cx);
+            view.close_workspace(window, cx);
+        })
+        .unwrap();
+    cx.run_until_parked();
+
+    let moved = env.root().join("moved");
+    rename_folder(&vault, &moved);
+    handle
+        .update(cx, |view, window, cx| {
+            view.open_workspace(&moved, None, window, cx).unwrap();
+        })
+        .unwrap();
+    cx.run_until_parked();
+
+    let moved_note = moved.join("dir").join("n.md");
+    let sidebar = cx
+        .update(|cx| handle.read_with(cx, |view, _| view.sidebar.clone()))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        sidebar.read_with(cx, |s, _| s.pinned.clone()),
+        std::slice::from_ref(&moved_note)
+    );
+    let active = cx
+        .update(|cx| handle.read_with(cx, |view, _| view.tabs.active_path().map(Path::to_path_buf)))
+        .unwrap();
+    assert_eq!(active, Some(moved_note));
+    assert_eq!(
+        shell_notice(cx, handle).as_deref(),
+        Some("Library moved: Cerata updated its location")
+    );
+}

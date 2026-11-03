@@ -528,7 +528,7 @@ mod tests {
 
     fn open(window: &Arc<WindowState>, root: &Path) -> WorkspaceSnapshot {
         let (sender, _events) = mpsc::channel();
-        open_workspace(window, root, sender).unwrap();
+        open_workspace(window, root, "0123456789abcdef0123456789abcdef", sender).unwrap();
         window.snapshot().unwrap()
     }
 

@@ -14,6 +14,7 @@ use tempfile::TempDir;
 use super::*;
 use crate::app;
 use crate::documents::Conflict;
+use crate::shell::libraries;
 use crate::single_instance::LaunchRequest;
 use crate::tabs::Location;
 
@@ -63,6 +64,11 @@ fn setup(cx: &mut TestAppContext) -> Env {
         _data: data,
         dir: TempDir::new().unwrap(),
     }
+}
+
+/// The library key of `root`, registering it as opening it would.
+fn key_of(cx: &App, root: &Path) -> cerata_core::library::LibraryKey {
+    app::core(cx).libraries.resolve(root).unwrap().library.key()
 }
 
 fn launch(cx: &mut TestAppContext, cwd: &Path, args: &[&str]) {
@@ -273,8 +279,12 @@ fn the_first_frame_already_shows_the_session_file(cx: &mut TestAppContext) {
     let file = env.file("vault/a.md", "# Restored");
     let mut tabs = Tabs::new();
     tabs.open(&file);
-    cx.update(|cx| app::core(cx).sessions.save(&root, tabs.to_session()))
-        .unwrap();
+    cx.update(|cx| {
+        app::core(cx)
+            .sessions
+            .save(&key_of(cx, &root), tabs.to_session())
+    })
+    .unwrap();
     let handle = cx
         .update(|cx| app::open_window(cx, Some(OpenTarget::Workspace(root)), None))
         .unwrap();
@@ -386,7 +396,7 @@ fn the_session_is_saved_500_ms_after_a_tab_change(cx: &mut TestAppContext) {
     let a = env.file("a.md", "a");
     let handle = workspace(cx, &env);
     let saved = |cx: &mut TestAppContext| {
-        cx.update(|cx| app::core(cx).sessions.load(&env.root()))
+        cx.update(|cx| app::core(cx).sessions.load(&key_of(cx, &env.root())))
             .unwrap()
             .map(|s| s.tabs.len())
     };
@@ -412,8 +422,12 @@ fn a_deleted_session_file_loses_its_tab(cx: &mut TestAppContext) {
     tabs.open(&a);
     tabs.open_in_new_tab(&b);
     tabs.activate(0);
-    cx.update(|cx| app::core(cx).sessions.save(&env.root(), tabs.to_session()))
-        .unwrap();
+    cx.update(|cx| {
+        app::core(cx)
+            .sessions
+            .save(&key_of(cx, &env.root()), tabs.to_session())
+    })
+    .unwrap();
     std::fs::remove_file(&b).unwrap();
     let handle = workspace(cx, &env);
     let locations: Vec<Location> = read(cx, handle, |view, _| {
@@ -434,8 +448,12 @@ fn the_other_restored_tabs_load_after_the_active_one(cx: &mut TestAppContext) {
     let mut tabs = Tabs::new();
     tabs.open(&a);
     tabs.open_in_new_tab(&b);
-    cx.update(|cx| app::core(cx).sessions.save(&env.root(), tabs.to_session()))
-        .unwrap();
+    cx.update(|cx| {
+        app::core(cx)
+            .sessions
+            .save(&key_of(cx, &env.root()), tabs.to_session())
+    })
+    .unwrap();
     let root = env.root();
     let handle = cx
         .update(|cx| app::open_window(cx, Some(OpenTarget::Workspace(root)), None))
@@ -1320,44 +1338,323 @@ fn without_a_workspace_the_palette_offers_commands_and_says_why(cx: &mut TestApp
     assert!(list.iter().all(|c| matches!(c, Choice::Command(_))));
 }
 
+/// US-079 (amends US-028): "Open Folder…" opens a library in this window,
+/// "Open File…" opens a file outside every library in a compact window
+/// without registering its folder, and a file inside a library in it.
 #[gpui::test]
-fn the_welcome_screen_opens_a_folder_or_a_file_in_its_folder(cx: &mut TestAppContext) {
+fn the_welcome_screen_opens_a_folder_or_a_file_without_making_it_a_library(
+    cx: &mut TestAppContext,
+) {
     let env = setup(cx);
-    let note = env.file("notes/note.md", "note");
+    no_restore(&env);
+    env.file("notes/note.md", "note");
+    let note = env.root().join("notes").join("note.md");
     let other = env.folder("other");
+    env.file("other/inside.md", "inside");
+    let inside = other.join("inside.md");
     let handle = cx.update(|cx| app::open_window(cx, None, None)).unwrap();
     cx.run_until_parked();
     let mut vcx = VisualTestContext::from_window(handle.into(), cx);
     vcx.run_until_parked();
-    assert!(vcx.debug_bounds("welcome-add-folder").is_some());
-    assert!(vcx.debug_bounds("welcome-open-file").is_some());
+    for id in ["welcome-create", "welcome-add-folder", "welcome-open-file"] {
+        assert!(vcx.debug_bounds(id).is_some(), "{id}");
+    }
 
-    // "Add Folder" once the folder is picked: it opens in this window.
+    // "Open Folder…" once the folder is picked: it opens in this window.
     cx.update(|cx| super::commands::open_picked_folder(cx, other.clone(), Some(handle)));
     cx.run_until_parked();
-    let root = |cx: &mut TestAppContext| {
-        read(cx, handle, |view, _| {
+    let root = |cx: &mut TestAppContext, handle| {
+        read(cx, handle, |view: &WindowView, _| {
             view.workspace_root().map(Path::to_path_buf)
         })
     };
-    assert_eq!(root(cx), Some(other));
+    assert_eq!(root(cx, handle), Some(other.clone()));
     assert_eq!(windows(cx).len(), 1);
 
-    // "Open File" from the welcome screen: its folder, then the file.
+    // "Open File…" from a window without a library, on a file in a library
+    // that another window shows: that window gets the file.
+    let rootless = cx.update(|cx| app::open_window(cx, None, None)).unwrap();
+    cx.run_until_parked();
+    cx.update(|cx| libraries::open_picked_file(cx, inside.clone(), Some(rootless)));
+    cx.run_until_parked();
+    assert_eq!(windows(cx).len(), 2);
+    let active = |cx: &mut TestAppContext, handle| {
+        read(cx, handle, |view: &WindowView, _| {
+            view.tabs.active_path().map(Path::to_path_buf)
+        })
+    };
+    assert_eq!(active(cx, handle), Some(inside.clone()));
+    assert_eq!(root(cx, rootless), None);
+
+    // Once that window lets the library go, the file opens in it here.
     update(cx, handle, |view, window, cx| {
         view.close_workspace(window, cx)
     });
+    cx.update(|cx| libraries::open_picked_file(cx, inside.clone(), Some(rootless)));
+    cx.run_until_parked();
+    assert_eq!(root(cx, rootless), Some(other.clone()));
+    assert_eq!(active(cx, rootless), Some(inside));
+
+    // A file outside every library: a compact window, its folder untouched.
     assert!(matches!(
         read(cx, handle, |view, cx| view.page(cx)),
         Page::Welcome
     ));
-    cx.update(|cx| super::commands::open_picked_file(cx, note.clone(), Some(handle)));
+    cx.update(|cx| libraries::open_picked_file(cx, note.clone(), Some(handle)));
     cx.run_until_parked();
-    assert_eq!(root(cx), note.parent().map(Path::to_path_buf));
-    let active = read(cx, handle, |view, _| {
-        view.tabs.active_path().map(Path::to_path_buf)
+    assert_eq!(read(cx, handle, |view, _| view.chrome), Chrome::Compact);
+    assert_eq!(active(cx, handle), Some(note.clone()));
+    assert_eq!(root(cx, handle), None);
+    let folder = note.parent().unwrap().to_path_buf();
+    assert!(!folder.join(".cerata").exists());
+    let registered = cx.update(|cx| app::core(cx).libraries.containing(&note).unwrap());
+    assert_eq!(registered, None);
+}
+
+/// New windows open on the welcome screen instead of the last library.
+fn no_restore(env: &Env) {
+    std::fs::write(
+        env._config.path().join("config"),
+        "window.restore-workspace = false
+",
+    )
+    .unwrap();
+}
+
+fn welcome_window(cx: &mut TestAppContext) -> WindowHandle<WindowView> {
+    let handle = cx.update(|cx| app::open_window(cx, None, None)).unwrap();
+    cx.run_until_parked();
+    assert!(matches!(
+        read(cx, handle, |view, cx| view.page(cx)),
+        Page::Welcome
+    ));
+    handle
+}
+
+fn click(cx: &mut TestAppContext, handle: WindowHandle<WindowView>, id: &'static str) {
+    let mut vcx = VisualTestContext::from_window(handle.into(), cx);
+    vcx.run_until_parked();
+    let bounds = vcx.debug_bounds(id).unwrap_or_else(|| panic!("{id} shown"));
+    vcx.simulate_click(bounds.center(), gpui::Modifiers::none());
+    vcx.run_until_parked();
+}
+
+fn welcome_problem(cx: &mut TestAppContext, handle: WindowHandle<WindowView>) -> Option<String> {
+    read(cx, handle, |view, _| {
+        view.welcome.problem.as_ref().map(|p| p.message())
+    })
+}
+
+/// US-078: on a first launch, "Create" makes `{location}/Cerata` the
+/// default library and opens it in the window, in one click.
+#[gpui::test]
+fn first_launch_creates_the_default_library_in_one_click(cx: &mut TestAppContext) {
+    let env = setup(cx);
+    let handle = welcome_window(cx);
+    let name = read(cx, handle, |view, cx| view.welcome_name(cx));
+    assert_eq!(name, "Cerata");
+    let parent = env.root();
+    update(cx, handle, |view, _, cx| {
+        view.set_library_location(parent.clone(), cx)
     });
-    assert_eq!(active, Some(note));
+    click(cx, handle, "welcome-create");
+
+    let library = parent.join("Cerata");
+    assert_eq!(
+        read(cx, handle, |view, _| view
+            .workspace_root()
+            .map(Path::to_path_buf)),
+        Some(library.clone())
+    );
+    let default = cx
+        .update(|cx| app::core(cx).libraries.default_library())
+        .unwrap()
+        .expect("a default library");
+    assert_eq!(default.path, library);
+    assert_eq!(default.name, "Cerata");
+    assert!(cerata_core::paths::library_marker_path(&library).is_file());
+
+    // The next launch restores the most recently opened library.
+    let first = cx.update(|cx| app::core(cx).libraries.list().unwrap()[0].path.clone());
+    assert_eq!(first, library);
+}
+
+/// US-078: a folder already at the place, invalid names and failures.
+#[gpui::test]
+fn the_create_form_validates_and_refuses_without_writing(cx: &mut TestAppContext) {
+    let env = setup(cx);
+    no_restore(&env);
+    let parent = env.root();
+    env.file("Cerata/mine.md", "x");
+    let handle = welcome_window(cx);
+    update(cx, handle, |view, _, cx| {
+        view.set_library_location(parent.clone(), cx)
+    });
+
+    // A non-empty folder without a marker: nothing is created, "Open"
+    // takes it. Enter in the name field submits the form.
+    update(cx, handle, |view, window, cx| {
+        let focus = view.welcome.name.read(cx).focus_handle.clone();
+        window.focus(&focus, cx);
+    });
+    keys(cx, handle, "enter");
+    assert_eq!(
+        welcome_problem(cx, handle).as_deref(),
+        Some("A folder named Cerata already exists here. Open it as a library?")
+    );
+    assert!(!parent.join("Cerata").join(".cerata").exists());
+    let none = cx.update(|cx| app::core(cx).libraries.list().unwrap());
+    assert!(none.is_empty());
+    click(cx, handle, "welcome-adopt");
+    assert_eq!(
+        read(cx, handle, |view, _| view
+            .workspace_root()
+            .map(Path::to_path_buf)),
+        Some(parent.join("Cerata"))
+    );
+    let default = cx.update(|cx| app::core(cx).libraries.default_library().unwrap());
+    assert_eq!(default.map(|l| l.path), Some(parent.join("Cerata")));
+
+    // An invalid name keeps "Create" inactive, with the reason under it.
+    let other = welcome_window(cx);
+    update(cx, other, |view, _, cx| {
+        view.set_library_location(parent.clone(), cx);
+        view.welcome
+            .name
+            .update(cx, |field, cx| field.set_text("a/b", cx));
+    });
+    let (can, problem) = read(cx, other, |view, cx| {
+        (view.can_create_library(cx), view.welcome_name_problem(cx))
+    });
+    assert!(!can);
+    assert_eq!(problem.as_deref(), Some("The name contains '/'"));
+    click(cx, other, "welcome-create");
+    assert!(read(cx, other, |view, _| view.workspace.is_none()));
+    assert!(!parent.join("a").exists());
+
+    // A creation error: nothing is recorded, the OS error is shown.
+    let missing = parent.join("no-such-folder");
+    update(cx, other, |view, _, cx| {
+        view.set_library_location(missing.clone(), cx);
+        view.welcome
+            .name
+            .update(cx, |field, cx| field.set_text("Notes", cx));
+    });
+    click(cx, other, "welcome-create");
+    let problem = welcome_problem(cx, other).unwrap();
+    assert!(
+        problem.starts_with("Couldn't create the library: ")
+            && problem.ends_with(". Choose another location or name."),
+        "{problem}"
+    );
+    let count = cx.update(|cx| app::core(cx).libraries.list().unwrap().len());
+    assert_eq!(count, 1);
+}
+
+/// US-078: the cloud warning, the "Not found" mark with its actions, and
+/// the list cap; Tab leaves the name field for the next control.
+#[gpui::test]
+fn the_welcome_list_marks_missing_libraries_and_warns_about_sync(cx: &mut TestAppContext) {
+    let env = setup(cx);
+    std::fs::write(
+        env._config.path().join("config"),
+        "workspace.max-recent-workspaces = 2\nwindow.restore-workspace = false\n",
+    )
+    .unwrap();
+    let kept = env.folder("kept");
+    let gone = env.folder("gone");
+    let third = env.folder("third");
+    cx.update(|cx| {
+        let registry = &app::core(cx).libraries;
+        for root in [&third, &kept, &gone] {
+            // Same second or not, the order is gone, kept, third.
+            registry.resolve(root).unwrap();
+        }
+    });
+    std::fs::remove_dir_all(&gone).unwrap();
+    let handle = welcome_window(cx);
+    let listed = read(cx, handle, |view, _| {
+        view.listed_libraries()
+            .iter()
+            .map(|l| (l.name.clone(), l.exists()))
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(listed, [("gone".into(), false), ("kept".into(), true)]);
+    let mut vcx = VisualTestContext::from_window(handle.into(), cx);
+    vcx.run_until_parked();
+    assert!(vcx.debug_bounds("welcome-locate").is_some());
+    assert!(vcx.debug_bounds("welcome-remove").is_some());
+    click(cx, handle, "welcome-remove");
+    let names: Vec<String> = cx.update(|cx| {
+        app::core(cx)
+            .libraries
+            .list()
+            .unwrap()
+            .into_iter()
+            .map(|l| l.name)
+            .collect()
+    });
+    assert_eq!(names, ["kept", "third"]);
+
+    let synced = env.folder("Sync");
+    std::fs::create_dir_all(synced.join(".stfolder")).unwrap();
+    update(cx, handle, |view, _, cx| {
+        view.set_library_location(synced.clone(), cx)
+    });
+    let provider = read(cx, handle, |view, _| view.welcome.synced_by.clone());
+    assert_eq!(provider.as_deref(), Some("Syncthing"));
+    assert!(read(cx, handle, |view, cx| view.can_create_library(cx)));
+
+    let focused = |cx: &mut TestAppContext| {
+        update(cx, handle, |view, window, cx| {
+            view.welcome.name.read(cx).focus_handle.is_focused(window)
+        })
+    };
+    update(cx, handle, |view, window, cx| {
+        let focus = view.welcome.name.read(cx).focus_handle.clone();
+        window.focus(&focus, cx);
+    });
+    assert!(focused(cx));
+    keys(cx, handle, "tab");
+    assert!(!focused(cx), "Tab moves on to the next control");
+}
+
+/// The actions of a library that is not found sit under its name and
+/// path instead of squeezing them to about 100 px (found in the EP-016
+/// review), and a list taller than the window keeps the heading on
+/// screen. The heading above the scroll origin was seen in the real app
+/// only: this headless layout did not reproduce it.
+#[gpui::test]
+fn missing_library_actions_sit_under_the_text_of_a_long_list(cx: &mut TestAppContext) {
+    let env = setup(cx);
+    no_restore(&env);
+    cx.update(|cx| {
+        let registry = &app::core(cx).libraries;
+        for ix in 0..10 {
+            let root = env.folder(&format!("a library with a rather long name {ix}"));
+            registry.resolve(&root).unwrap();
+            std::fs::remove_dir_all(&root).unwrap();
+        }
+    });
+    let handle = welcome_window(cx);
+    let mut vcx = VisualTestContext::from_window(handle.into(), cx);
+    vcx.run_until_parked();
+    let title = vcx.debug_bounds("welcome-title").expect("the heading");
+    let locate = vcx.debug_bounds("welcome-locate").expect("a Locate button");
+    let viewport = vcx.update(|window, _| window.viewport_size());
+    assert!(
+        locate.bottom() > viewport.height,
+        "the list must overflow the window for this test: {locate:?} in {viewport:?}"
+    );
+    assert!(
+        title.top() >= px(0.0),
+        "the heading is above the scroll origin: {title:?}"
+    );
+    assert_eq!(
+        locate.left(),
+        title.left(),
+        "Locate goes under the name, at the start of the column"
+    );
 }
 
 #[gpui::test]
@@ -2024,7 +2321,7 @@ fn closing_the_workspace_tells_the_core_then_clears_the_window(cx: &mut TestAppC
         view.close_workspace(window, cx)
     });
     let saved = cx
-        .update(|cx| app::core(cx).sessions.load(&env.root()))
+        .update(|cx| app::core(cx).sessions.load(&key_of(cx, &env.root())))
         .unwrap()
         .map(|s| s.tabs.len());
     assert_eq!(saved, Some(1), "the session was saved before the tabs went");
@@ -2706,4 +3003,277 @@ mod images {
         let editor = editor(cx, handle);
         assert!(cx.update(|cx| editor.read(cx).notice.is_none()));
     }
+}
+
+// ---- EP-016: Ctrl+N without a library (US-079), the switcher (US-080) ----
+
+fn new_note_key(cx: &mut TestAppContext, handle: WindowHandle<WindowView>) {
+    focus_shell(cx, handle);
+    keys(cx, handle, secondary!("n"));
+}
+
+/// US-079: Ctrl+N in a window without a library, in its three cases.
+#[gpui::test]
+fn ctrl_n_without_a_library_goes_to_the_default_one(cx: &mut TestAppContext) {
+    use crate::palette::Intent;
+    let env = setup(cx);
+    no_restore(&env);
+
+    // No default library: the form's Name field takes the focus.
+    let handle = welcome_window(cx);
+    new_note_key(cx, handle);
+    let focused = update(cx, handle, |view, window, cx| {
+        view.welcome.name.read(cx).focus_handle.is_focused(window)
+    });
+    assert!(focused);
+    assert!(read(cx, handle, |view, _| view.workspace.is_none()));
+
+    // A default library: it opens here, with "Create New File" at its root.
+    let parent = env.root();
+    let library = cx
+        .update(|cx| app::core(cx).libraries.create(&parent, "Notes"))
+        .unwrap();
+    new_note_key(cx, handle);
+    assert_eq!(
+        read(cx, handle, |view, _| view
+            .workspace_root()
+            .map(Path::to_path_buf)),
+        Some(library.path.clone())
+    );
+    assert_eq!(palette_intent(cx, handle), Some(Intent::CreateFile));
+
+    // A default library that is gone: nothing is created, the notice says
+    // so with "Locate…" and "Remove from List".
+    update(cx, handle, |view, window, cx| {
+        view.close_palette(window, cx);
+        view.close_workspace(window, cx);
+    });
+    let moved = parent.join("Moved");
+    rename_folder(&library.path, &moved);
+    new_note_key(cx, handle);
+    assert!(read(cx, handle, |view, _| view.workspace.is_none()));
+    assert!(!library.path.exists());
+    assert_eq!(
+        read(cx, handle, |view, _| view
+            .notice
+            .as_ref()
+            .map(|n| n.to_string())),
+        Some(libraries::DEFAULT_NOT_FOUND.to_owned())
+    );
+    let actions = read(cx, handle, |view, _| view.current_notice_actions().to_vec());
+    assert_eq!(
+        actions,
+        [
+            libraries::NoticeAction::Locate(library.id.clone()),
+            libraries::NoticeAction::Remove(library.id.clone()),
+        ]
+    );
+    let mut vcx = VisualTestContext::from_window(handle.into(), cx);
+    vcx.run_until_parked();
+    assert!(vcx.debug_bounds("window-notice-action").is_some());
+}
+
+/// Renames `from` to `to`, retrying while Windows still holds a handle of
+/// a closed library (its watcher drops on another thread).
+fn rename_folder(from: &Path, to: &Path) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while let Err(error) = std::fs::rename(from, to) {
+        assert!(Instant::now() < deadline, "rename failed: {error}");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+fn palette_choose(
+    cx: &mut TestAppContext,
+    handle: WindowHandle<WindowView>,
+    choice: crate::palette::Choice,
+) {
+    update(cx, handle, |view, _, cx| {
+        let palette = view.palette.clone().expect("palette open");
+        palette.update(cx, |palette, cx| palette.choose(choice, cx));
+    });
+}
+
+/// US-080: "Switch Library…" lists the registry, opens by the routing,
+/// offers its actions with Tab, and a library that is not found is
+/// located, or a wrong folder refused.
+#[gpui::test]
+fn switch_library_opens_sets_default_removes_and_locates(cx: &mut TestAppContext) {
+    use crate::palette::{Choice, Command, Intent, LibraryAction};
+    let env = setup(cx);
+    no_restore(&env);
+    let a = env.folder("Alpha");
+    let b = env.folder("Beta");
+    let (lib_a, lib_b) = cx.update(|cx| {
+        let registry = &app::core(cx).libraries;
+        (
+            registry.resolve(&a).unwrap().library,
+            registry.resolve(&b).unwrap().library,
+        )
+    });
+    let first = cx
+        .update(|cx| app::open_window(cx, Some(OpenTarget::Workspace(a.clone())), None))
+        .unwrap();
+    cx.run_until_parked();
+
+    // The command lists every library, filtered by typing.
+    update(cx, first, |view, window, cx| {
+        view.run_command(Command::SwitchLibrary, window, cx)
+    });
+    assert_eq!(palette_intent(cx, first), Some(Intent::Libraries));
+    let listed = choices(cx, first);
+    assert_eq!(listed.len(), 2);
+    assert!(listed.contains(&Choice::Library(lib_b.id.clone())));
+    let mut vcx = VisualTestContext::from_window(first.into(), cx);
+    vcx.simulate_input("bet");
+    vcx.run_until_parked();
+    assert_eq!(choices(cx, first), [Choice::Library(lib_b.id.clone())]);
+
+    // Tab lists its actions; "Set as Default" makes it the default.
+    keys(cx, first, "tab");
+    assert_eq!(
+        choices(cx, first),
+        [
+            Choice::LibraryAction(lib_b.id.clone(), LibraryAction::Open),
+            Choice::LibraryAction(lib_b.id.clone(), LibraryAction::SetDefault),
+            Choice::LibraryAction(lib_b.id.clone(), LibraryAction::Remove),
+        ]
+    );
+    keys(cx, first, "down");
+    keys(cx, first, "enter");
+    let default = cx.update(|cx| app::core(cx).libraries.default_library().unwrap());
+    assert_eq!(default.map(|l| l.id), Some(lib_b.id.clone()));
+
+    // Choosing it opens a new window (this one shows Alpha); choosing
+    // Alpha from there brings the first window forward.
+    update(cx, first, |view, window, cx| {
+        view.open_palette(Intent::Libraries, window, cx)
+    });
+    let mut vcx = VisualTestContext::from_window(first.into(), cx);
+    vcx.simulate_input("beta");
+    vcx.run_until_parked();
+    keys(cx, first, "enter");
+    assert_eq!(windows(cx).len(), 2);
+    let second = windows(cx)[1];
+    assert_eq!(
+        read(cx, second, |view, _| view
+            .workspace_root()
+            .map(Path::to_path_buf)),
+        Some(b.clone())
+    );
+    update(cx, second, |view, window, cx| {
+        view.open_palette(Intent::Libraries, window, cx)
+    });
+    palette_choose(cx, second, Choice::Library(lib_a.id.clone()));
+    assert_eq!(windows(cx).len(), 2, "Alpha's window is revealed");
+
+    // "Remove from List" forgets it and touches no file.
+    update(cx, second, |view, window, cx| {
+        view.open_palette(Intent::Libraries, window, cx)
+    });
+    palette_choose(
+        cx,
+        second,
+        Choice::LibraryAction(lib_a.id.clone(), LibraryAction::Remove),
+    );
+    let ids: Vec<String> = cx.update(|cx| {
+        app::core(cx)
+            .libraries
+            .list()
+            .unwrap()
+            .into_iter()
+            .map(|l| l.id)
+            .collect()
+    });
+    assert_eq!(ids, std::slice::from_ref(&lib_b.id));
+    assert!(cerata_core::paths::library_marker_path(&a).is_file());
+
+    // A library that is not found: choosing it shows "Locate…" and
+    // "Remove from List" instead of opening it.
+    let gamma = env.folder("Gamma");
+    let lib_c = cx.update(|cx| app::core(cx).libraries.resolve(&gamma).unwrap().library);
+    let moved = env.root().join("Gamma moved");
+    rename_folder(&gamma, &moved);
+    update(cx, second, |view, window, cx| {
+        view.open_palette(Intent::Libraries, window, cx)
+    });
+    palette_choose(cx, second, Choice::Library(lib_c.id.clone()));
+    assert_eq!(
+        choices(cx, second),
+        [
+            Choice::LibraryAction(lib_c.id.clone(), LibraryAction::Locate),
+            Choice::LibraryAction(lib_c.id.clone(), LibraryAction::Remove),
+        ]
+    );
+    assert_eq!(windows(cx).len(), 2);
+    keys(cx, second, "escape");
+    assert_eq!(choices(cx, second).len(), 2, "Escape goes back to the list");
+    keys(cx, second, "escape");
+    assert!(read(cx, second, |view, _| view.palette.is_none()));
+
+    // "Locate…" on the wrong folder: nothing changes, and the notice
+    // offers to open it as a new library.
+    cx.update(|cx| libraries::located(cx, &lib_c.id, b.clone(), Some(second)));
+    cx.run_until_parked();
+    assert_eq!(
+        read(cx, second, |view, _| view
+            .notice
+            .as_ref()
+            .map(|n| n.to_string())),
+        Some("This folder isn't Gamma. Open it as a new library instead?".to_owned())
+    );
+    assert_eq!(
+        read(cx, second, |view, _| view.current_notice_actions().to_vec()),
+        [libraries::NoticeAction::OpenAsNew(b.clone())]
+    );
+    let path_of_c = cx.update(|cx| {
+        app::core(cx)
+            .libraries
+            .get(&lib_c.id)
+            .unwrap()
+            .unwrap()
+            .path
+    });
+    assert_eq!(path_of_c, gamma);
+
+    // On the right folder: its place is updated and it opens.
+    cx.update(|cx| libraries::located(cx, &lib_c.id, moved.clone(), Some(second)));
+    cx.run_until_parked();
+    let path_of_c = cx.update(|cx| {
+        app::core(cx)
+            .libraries
+            .get(&lib_c.id)
+            .unwrap()
+            .unwrap()
+            .path
+    });
+    assert_eq!(path_of_c, moved);
+    let opened = windows(cx).into_iter().any(|handle| {
+        read(cx, handle, |view, _| {
+            view.workspace_root().map(Path::to_path_buf)
+        }) == Some(moved.clone())
+    });
+    assert!(opened);
+}
+
+/// Escape out of the palette on a page without an editor gives the focus
+/// back to the shell: the shortcuts work again (found in the EP-016 run).
+#[gpui::test]
+fn dismissing_the_palette_on_a_new_tab_keeps_the_shortcuts(cx: &mut TestAppContext) {
+    use crate::palette::Intent;
+    let env = setup(cx);
+    let handle = workspace(cx, &env);
+    focus_shell(cx, handle);
+    keys(cx, handle, secondary!("p"));
+    keys(cx, handle, "escape");
+    assert_eq!(palette_intent(cx, handle), None);
+    keys(cx, handle, secondary!("p"));
+    assert_eq!(palette_intent(cx, handle), Some(Intent::Search));
+    update(cx, handle, |view, window, cx| {
+        view.close_palette(window, cx);
+        view.open_palette(Intent::Libraries, window, cx);
+    });
+    keys(cx, handle, "escape");
+    keys(cx, handle, secondary!("p"));
+    assert_eq!(palette_intent(cx, handle), Some(Intent::Search));
 }

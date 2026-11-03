@@ -982,6 +982,7 @@ dependencies = [
  "cerata_markdown",
  "dirs",
  "dunce",
+ "getrandom 0.3.4",
  "ignore",
  "image",
  "log",

@@ -60,8 +60,16 @@ impl WindowView {
         } else {
             Vec::new()
         };
-        let palette =
-            cx.new(|cx| Palette::new(intent, available, runtime, compact, recents, window, cx));
+        if intent == Intent::Libraries {
+            self.refresh_libraries(cx);
+        }
+        let libraries = self.welcome.libraries.clone();
+        let palette = cx.new(|cx| {
+            let mut palette =
+                Palette::new(intent, available, runtime, compact, recents, window, cx);
+            palette.libraries = libraries;
+            palette
+        });
         self._palette_events = Some(cx.subscribe_in(
             &palette,
             window,
@@ -82,6 +90,10 @@ impl WindowView {
             self._palette_events = None;
             self.active_editor = None;
             self.sync_active(window, cx);
+            // Without an editor, `sync_active` changes nothing: the focus
+            // would stay on the dropped palette field and no shortcut
+            // would reach the shell.
+            self.focus_page(window, cx);
             cx.notify();
         }
     }
@@ -92,6 +104,8 @@ impl WindowView {
             Choice::File(path) => self.open_file(&path, window, cx),
             Choice::Recent(path) => self.open_elsewhere(OpenRequest::File(path), window, cx),
             Choice::Create(name) => self.create_note(&name, window, cx),
+            Choice::Library(id) => self.open_library(&id, window, cx),
+            Choice::LibraryAction(id, action) => self.run_library_action(&id, action, window, cx),
         }
     }
 
@@ -132,6 +146,7 @@ impl WindowView {
             }
             Command::CloseAllTabs => self.close_all_tabs(window, cx),
             Command::OpenWorkspace => self.pick_workspace(window, cx),
+            Command::SwitchLibrary => self.open_palette(Intent::Libraries, window, cx),
             Command::CloseWorkspace => self.close_workspace(window, cx),
             Command::ToggleTheme => self.cycle_theme(cx),
             Command::ZoomIn => self.set_zoom(zoom::zoom_in(Some(self.zoom())), cx),
@@ -250,8 +265,8 @@ impl WindowView {
         .detach();
     }
 
-    /// The welcome screen's "Open File": its folder opens as the workspace,
-    /// then the file.
+    /// The welcome screen's "Open File…": see
+    /// [`super::libraries::open_picked_file`].
     pub fn pick_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: true,
@@ -267,13 +282,13 @@ impl WindowView {
             let Some(file) = paths.into_iter().next() else {
                 return;
             };
-            cx.update(|cx| open_picked_file(cx, file, origin));
+            cx.update(|cx| super::libraries::open_picked_file(cx, file, origin));
         })
         .detach();
     }
 
     /// "Close Workspace": the session is saved and the window shows the
-    /// welcome screen.
+    /// welcome screen, with the libraries read again.
     pub fn close_workspace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(root) = self.workspace_root().map(Path::to_path_buf) else {
             return;
@@ -286,6 +301,7 @@ impl WindowView {
             self.forget_doc(&path);
         }
         self.tabs = crate::tabs::Tabs::new();
+        self.refresh_libraries(cx);
         self.sync_sidebar(cx);
         self.tabs_changed(window, cx);
     }
@@ -359,24 +375,4 @@ pub fn open_picked_folder(
     origin: Option<gpui::WindowHandle<WindowView>>,
 ) {
     crate::app::open(cx, OpenRequest::Workspace { root, file: None }, origin);
-}
-
-/// "Open File" once a file is picked: its folder opens as the workspace,
-/// then the file (`welcome/index.tsx:15-21`).
-pub fn open_picked_file(
-    cx: &mut gpui::App,
-    file: PathBuf,
-    origin: Option<gpui::WindowHandle<WindowView>>,
-) {
-    let Some(root) = file.parent().map(Path::to_path_buf) else {
-        return;
-    };
-    crate::app::open(
-        cx,
-        OpenRequest::Workspace {
-            root,
-            file: Some(file),
-        },
-        origin,
-    );
 }

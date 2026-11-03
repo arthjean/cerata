@@ -1,17 +1,22 @@
-//! Pinned files of each workspace, in `pins.json` of the app data folder.
+//! Pinned files of each library, in `pins.json` of the app data folder.
 //!
 //! Writer kept them in a webview preference
-//! (`workspace:<root>:sidebar-pinned-files`, `workspace-store.ts:343-421`);
-//! Cerata writes nothing in a workspace besides `.cerata/config`, so they
-//! live next to the sessions, keyed the same way. On load they are
-//! normalized as in Writer: inside the root only, without duplicates.
+//! (`workspace:<root>:sidebar-pinned-files`, `workspace-store.ts:343-421`).
+//! ADR 0009 lets Cerata write only notes, their `{stem}-assets/` folders,
+//! `.cerata/config` and `.cerata/id` in a library, so pins live next to
+//! the sessions, keyed the same way: by library id, with paths relative to
+//! the root (`/` separators), converted from an absolute key on first use
+//! (US-077). On load they are normalized as in Writer: inside the root
+//! only, without duplicates.
 
 use crate::json_store::{JsonStore, StoreError};
-use crate::session::session_key;
+use crate::library::LibraryKey;
+use crate::session::{legacy_key, to_absolute, to_relative};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-type Pins = BTreeMap<String, Vec<PathBuf>>;
+/// Library id (or, before migration, absolute root) to stored paths.
+type Pins = BTreeMap<String, Vec<String>>;
 
 #[derive(Debug, Clone)]
 pub struct PinStore {
@@ -25,18 +30,22 @@ impl PinStore {
         }
     }
 
-    /// Pinned files of `root`, most recently pinned first.
-    pub fn load(&self, root: &Path) -> Result<Vec<PathBuf>, StoreError> {
+    /// Pinned files of `library`, most recently pinned first.
+    pub fn load(&self, library: &LibraryKey) -> Result<Vec<PathBuf>, StoreError> {
         let pins: Pins = self.store.load()?;
-        Ok(normalize(
-            root,
-            pins.get(&session_key(root)).cloned().unwrap_or_default(),
+        if !pins.contains_key(&library.id) && pins.contains_key(&legacy_key(&library.root)) {
+            return self.edit(library, |_| {});
+        }
+        Ok(absolute(
+            &library.root,
+            pins.get(&library.id).cloned().unwrap_or_default(),
         ))
     }
 
     /// Pins `path` (first) or unpins it. Returns the new list.
-    pub fn toggle(&self, root: &Path, path: &Path) -> Result<Vec<PathBuf>, StoreError> {
-        self.edit(root, |pins| {
+    pub fn toggle(&self, library: &LibraryKey, path: &Path) -> Result<Vec<PathBuf>, StoreError> {
+        let root = &library.root;
+        self.edit(library, |pins| {
             if let Some(ix) = pins.iter().position(|p| p == path) {
                 pins.remove(ix);
             } else if path.starts_with(root) && path != root {
@@ -48,11 +57,11 @@ impl PinStore {
     /// A file or folder moved: pins at `old` or under it follow.
     pub fn rewrite_prefix(
         &self,
-        root: &Path,
+        library: &LibraryKey,
         old: &Path,
         new: &Path,
     ) -> Result<Vec<PathBuf>, StoreError> {
-        self.edit(root, |pins| {
+        self.edit(library, |pins| {
             for pin in pins.iter_mut() {
                 if let Ok(rest) = pin.strip_prefix(old) {
                     *pin = if rest.as_os_str().is_empty() {
@@ -66,28 +75,62 @@ impl PinStore {
     }
 
     /// A file or folder is gone: its pins and those under it are dropped.
-    pub fn remove_prefix(&self, root: &Path, prefix: &Path) -> Result<Vec<PathBuf>, StoreError> {
-        self.edit(root, |pins| pins.retain(|pin| !pin.starts_with(prefix)))
+    pub fn remove_prefix(
+        &self,
+        library: &LibraryKey,
+        prefix: &Path,
+    ) -> Result<Vec<PathBuf>, StoreError> {
+        self.edit(library, |pins| pins.retain(|pin| !pin.starts_with(prefix)))
     }
 
     fn edit(
         &self,
-        root: &Path,
+        library: &LibraryKey,
         f: impl FnOnce(&mut Vec<PathBuf>),
     ) -> Result<Vec<PathBuf>, StoreError> {
-        let key = session_key(root);
+        let root = &library.root;
         let mut result = Vec::new();
         self.store.update(|pins: &mut Pins| {
-            let mut list = normalize(root, pins.remove(&key).unwrap_or_default());
+            let legacy = pins.remove(&legacy_key(root));
+            let stored = match (pins.remove(&library.id), legacy) {
+                (Some(stored), _) => stored,
+                (None, Some(legacy)) => {
+                    log::info!("pins of {} moved to library {}", root.display(), library.id);
+                    legacy
+                        .iter()
+                        .filter_map(|path| to_relative(root, Path::new(path)))
+                        .collect()
+                }
+                (None, None) => Vec::new(),
+            };
+            let mut list = absolute(root, stored);
             f(&mut list);
             list = normalize(root, list);
-            if !list.is_empty() {
-                pins.insert(key.clone(), list.clone());
+            let relative: Vec<String> = list
+                .iter()
+                .filter_map(|path| to_relative(root, path))
+                .collect();
+            if !relative.is_empty() {
+                pins.insert(library.id.clone(), relative);
             }
             result = list;
         })?;
         Ok(result)
     }
+}
+
+fn absolute(root: &Path, stored: Vec<String>) -> Vec<PathBuf> {
+    let paths = stored
+        .iter()
+        .filter_map(|relative| {
+            let path = to_absolute(root, relative);
+            if path.is_none() {
+                log::warn!("pins: {relative:?} is not a path inside the library, rejected");
+            }
+            path
+        })
+        .collect();
+    normalize(root, paths)
 }
 
 fn normalize(root: &Path, pins: Vec<PathBuf>) -> Vec<PathBuf> {
@@ -105,25 +148,31 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
+    fn key(root: &Path, id: char) -> LibraryKey {
+        LibraryKey {
+            id: id.to_string().repeat(32),
+            root: dunce::canonicalize(root).unwrap(),
+        }
+    }
+
     #[test]
-    fn pins_are_prepended_toggled_and_kept_per_workspace() {
+    fn pins_are_prepended_toggled_and_kept_per_library() {
         let data = TempDir::new().unwrap();
         let root = TempDir::new().unwrap();
         let other = TempDir::new().unwrap();
         let store = PinStore::new(data.path());
-        let a = root.path().join("a.md");
-        let b = root.path().join("b.md");
-        store.toggle(root.path(), &a).unwrap();
-        assert_eq!(
-            store.toggle(root.path(), &b).unwrap(),
-            [b.clone(), a.clone()]
-        );
-        assert_eq!(
-            store.toggle(root.path(), &a).unwrap(),
-            std::slice::from_ref(&b)
-        );
-        assert!(store.load(other.path()).unwrap().is_empty());
-        assert_eq!(store.load(root.path()).unwrap(), [b]);
+        let lib = key(root.path(), 'a');
+        let a = lib.root.join("a.md");
+        let b = lib.root.join("b.md");
+        store.toggle(&lib, &a).unwrap();
+        assert_eq!(store.toggle(&lib, &b).unwrap(), [b.clone(), a.clone()]);
+        assert_eq!(store.toggle(&lib, &a).unwrap(), std::slice::from_ref(&b));
+        assert!(store.load(&key(other.path(), 'b')).unwrap().is_empty());
+        assert_eq!(store.load(&lib).unwrap(), [b]);
+        let json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(data.path().join("pins.json")).unwrap())
+                .unwrap();
+        assert_eq!(json[&lib.id], serde_json::json!(["b.md"]));
     }
 
     #[test]
@@ -131,13 +180,14 @@ mod tests {
         let data = TempDir::new().unwrap();
         let root = TempDir::new().unwrap();
         let store = PinStore::new(data.path());
+        let lib = key(root.path(), 'a');
         assert!(
             store
-                .toggle(root.path(), Path::new("/elsewhere/x.md"))
+                .toggle(&lib, Path::new("/elsewhere/x.md"))
                 .unwrap()
                 .is_empty()
         );
-        assert!(store.toggle(root.path(), root.path()).unwrap().is_empty());
+        assert!(store.toggle(&lib, &lib.root).unwrap().is_empty());
     }
 
     #[test]
@@ -145,18 +195,63 @@ mod tests {
         let data = TempDir::new().unwrap();
         let root = TempDir::new().unwrap();
         let store = PinStore::new(data.path());
-        let r = root.path();
-        store.toggle(r, &r.join("dir/a.md")).unwrap();
-        store.toggle(r, &r.join("dir-b/c.md")).unwrap();
+        let lib = key(root.path(), 'a');
+        let r = lib.root.clone();
+        store.toggle(&lib, &r.join("dir/a.md")).unwrap();
+        store.toggle(&lib, &r.join("dir-b/c.md")).unwrap();
         assert_eq!(
             store
-                .rewrite_prefix(r, &r.join("dir"), &r.join("moved"))
+                .rewrite_prefix(&lib, &r.join("dir"), &r.join("moved"))
                 .unwrap(),
             [r.join("dir-b/c.md"), r.join("moved/a.md")]
         );
         assert_eq!(
-            store.remove_prefix(r, &r.join("moved")).unwrap(),
+            store.remove_prefix(&lib, &r.join("moved")).unwrap(),
             [r.join("dir-b/c.md")]
         );
+    }
+
+    #[test]
+    fn a_moved_library_keeps_its_pins() {
+        let data = TempDir::new().unwrap();
+        let one = TempDir::new().unwrap();
+        let two = TempDir::new().unwrap();
+        let store = PinStore::new(data.path());
+        let before = key(one.path(), 'a');
+        store.toggle(&before, &before.root.join("n.md")).unwrap();
+        let after = LibraryKey {
+            id: before.id.clone(),
+            root: dunce::canonicalize(two.path()).unwrap(),
+        };
+        assert_eq!(store.load(&after).unwrap(), [after.root.join("n.md")]);
+    }
+
+    #[test]
+    fn absolute_pins_are_migrated_and_escaping_entries_rejected() {
+        let data = TempDir::new().unwrap();
+        let root = TempDir::new().unwrap();
+        let elsewhere = TempDir::new().unwrap();
+        let lib = key(root.path(), 'a');
+        let inside = lib.root.join("x.md").to_string_lossy().into_owned();
+        let outside = elsewhere.path().join("y.md").to_string_lossy().into_owned();
+        let json = serde_json::json!({
+            legacy_key(&lib.root): [inside, outside],
+            "/other/root": ["/other/root/z.md"],
+            "b".repeat(32): ["../escape.md", "ok.md"]
+        });
+        std::fs::write(data.path().join("pins.json"), json.to_string()).unwrap();
+        let store = PinStore::new(data.path());
+        assert_eq!(store.load(&lib).unwrap(), [lib.root.join("x.md")]);
+        let saved: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(data.path().join("pins.json")).unwrap())
+                .unwrap();
+        assert_eq!(saved[&lib.id], serde_json::json!(["x.md"]));
+        assert!(saved.get(legacy_key(&lib.root)).is_none());
+        assert!(saved.get("/other/root").is_some());
+        let other = LibraryKey {
+            id: "b".repeat(32),
+            root: lib.root.clone(),
+        };
+        assert_eq!(store.load(&other).unwrap(), [lib.root.join("ok.md")]);
     }
 }

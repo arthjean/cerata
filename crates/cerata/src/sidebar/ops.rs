@@ -515,8 +515,8 @@ impl Sidebar {
         for dir in &reopened {
             self.load_dir(dir, cx);
         }
-        if let Some(root) = self.root().map(Path::to_path_buf) {
-            match crate::app::core(cx).pins.rewrite_prefix(&root, old, new) {
+        if let Some(library) = self.library() {
+            match crate::app::core(cx).pins.rewrite_prefix(&library, old, new) {
                 Ok(pins) => self.pinned = pins,
                 Err(error) => log::warn!("pins not updated: {error}"),
             }
@@ -536,8 +536,8 @@ impl Sidebar {
     /// The window deleted `path`: its pins go, its folder is re-read.
     pub fn removed(&mut self, path: &Path, cx: &mut Context<Self>) {
         self.expanded.retain(|dir| !dir.starts_with(path));
-        if let Some(root) = self.root().map(Path::to_path_buf) {
-            match crate::app::core(cx).pins.remove_prefix(&root, path) {
+        if let Some(library) = self.library() {
+            match crate::app::core(cx).pins.remove_prefix(&library, path) {
                 Ok(pins) => self.pinned = pins,
                 Err(error) => log::warn!("pins not updated: {error}"),
             }

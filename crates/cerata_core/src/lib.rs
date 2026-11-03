@@ -1,18 +1,20 @@
 //! Cerata core: everything Cerata does with files, without a window.
 //!
 //! Workspace files, ignore rules, the file index and search, the watcher,
-//! settings, sessions and recents. This crate must never depend on GPUI
+//! settings, libraries, sessions and recents. This crate must never depend on GPUI
 //! (checked in CI by `scripts/check-core-deps.sh`).
 
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
 pub mod cli;
+pub mod cloud;
 pub mod epoch;
 pub mod fs;
 pub mod ignore;
 pub mod images;
 pub mod index;
 pub mod json_store;
+pub mod library;
 pub mod links;
 pub mod markdown;
 pub mod open_target;

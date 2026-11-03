@@ -1,9 +1,9 @@
-//! Recent files (30) and recent workspaces (10), app-wide.
+//! Recent files (30), app-wide.
 //!
 //! Ported from Writer `commands/recents.rs` (recent files, atomic, with the
-//! migration from a plain path list) and `commands/workspace.rs:699-744`
-//! (recent workspaces, which Writer wrote without lock or atomicity, defect
-//! 6). Both now go through [`JsonStore`].
+//! migration from a plain path list), through [`JsonStore`]. Writer's
+//! recent workspaces (`commands/workspace.rs:699-744`) became the library
+//! registry ([`crate::library`]), which migrates `recent_workspaces.json`.
 
 use crate::json_store::{JsonStore, StoreError};
 use crate::markdown::is_markdown_path;
@@ -12,7 +12,6 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const MAX_RECENT_FILES: usize = 30;
-pub const MAX_RECENT_WORKSPACES: usize = 10;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RecentEntry {
@@ -25,7 +24,6 @@ pub struct RecentEntry {
 #[derive(Debug, Clone)]
 pub struct RecentsStore {
     files: JsonStore,
-    workspaces: JsonStore,
 }
 
 fn migrate_paths(data: &str) -> Option<Vec<RecentEntry>> {
@@ -55,7 +53,6 @@ impl RecentsStore {
     pub fn new(data_dir: &Path) -> Self {
         Self {
             files: JsonStore::new(data_dir.join("recent_files.json")),
-            workspaces: JsonStore::new(data_dir.join("recent_workspaces.json")),
         }
     }
 
@@ -86,26 +83,6 @@ impl RecentsStore {
             .update_with(migrate_paths, |recents: &mut Vec<RecentEntry>| {
                 recents.retain(|entry| entry.path != path);
             })
-    }
-
-    /// Most recent first.
-    pub fn workspaces(&self) -> Result<Vec<String>, StoreError> {
-        self.workspaces.load()
-    }
-
-    pub fn record_workspace(&self, root: &Path) -> Result<(), StoreError> {
-        let root = canonical_string(root);
-        self.workspaces.update(|recents: &mut Vec<String>| {
-            recents.retain(|existing| *existing != root);
-            recents.insert(0, root);
-            recents.truncate(MAX_RECENT_WORKSPACES);
-        })
-    }
-
-    pub fn remove_workspace(&self, root: &str) -> Result<(), StoreError> {
-        self.workspaces.update(|recents: &mut Vec<String>| {
-            recents.retain(|existing| existing != root);
-        })
     }
 
     /// Paths of the recent files that still exist.
@@ -233,39 +210,5 @@ mod tests {
         store.record_file(&a).unwrap();
         store.remove_file(&canonical_string(&a)).unwrap();
         assert!(store.files().unwrap().is_empty());
-    }
-
-    #[test]
-    fn recent_workspaces_cap_at_ten_most_recent_first() {
-        let data = TempDir::new().unwrap();
-        let roots: Vec<TempDir> = (0..12).map(|_| TempDir::new().unwrap()).collect();
-        let store = RecentsStore::new(data.path());
-        for root in &roots {
-            store.record_workspace(root.path()).unwrap();
-        }
-        store.record_workspace(roots[5].path()).unwrap();
-        let recents = store.workspaces().unwrap();
-        assert_eq!(recents.len(), MAX_RECENT_WORKSPACES);
-        assert_eq!(recents[0], canonical_string(roots[5].path()));
-        assert_eq!(recents[1], canonical_string(roots[11].path()));
-    }
-
-    /// Ports Writer `stores.test.ts:881`: removing a recent workspace drops
-    /// only that entry and keeps the order of the others.
-    #[test]
-    fn removing_a_recent_workspace_keeps_the_others_in_order() {
-        let data = TempDir::new().unwrap();
-        let roots: Vec<TempDir> = (0..3).map(|_| TempDir::new().unwrap()).collect();
-        let store = RecentsStore::new(data.path());
-        for root in roots.iter().rev() {
-            store.record_workspace(root.path()).unwrap();
-        }
-        let [a, b, c] = [0, 1, 2].map(|ix| canonical_string(roots[ix].path()));
-        assert_eq!(
-            store.workspaces().unwrap(),
-            [a.clone(), b.clone(), c.clone()]
-        );
-        store.remove_workspace(&b).unwrap();
-        assert_eq!(store.workspaces().unwrap(), [a, c]);
     }
 }

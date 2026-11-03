@@ -5,6 +5,7 @@ mod banner;
 mod commands;
 mod compact;
 pub mod frame;
+pub mod libraries;
 mod pages;
 mod sidebar_footer;
 mod status_bar;
@@ -244,6 +245,10 @@ pub struct WindowView {
     pending_undos: HashMap<PathBuf, Vec<Undo>>,
     active_editor: Option<EntityId>,
     pub notice: Option<SharedString>,
+    /// The buttons of a notice, with the text they belong to (EP-016).
+    pub notice_actions: Option<(SharedString, Vec<libraries::NoticeAction>)>,
+    /// The welcome screen's form and library list (US-078).
+    pub welcome: libraries::Welcome,
     /// Duplicates still copying (US-073), by id.
     duplicating: Vec<u64>,
     next_duplicate: u64,
@@ -315,6 +320,7 @@ impl WindowView {
         let sidebar_filter =
             cx.new(|cx| crate::editor::text_field::TextField::new("Search", cx).bare(15.0));
         let sidebar_filter_events = cx.subscribe_in(&sidebar_filter, window, Self::on_filter_event);
+        let welcome = libraries::Welcome::new(window, cx);
         let this = cx.weak_entity();
         // Returning `true` would let `DefWindowProc` destroy the HWND before
         // GPUI drops the window, whose teardown then calls Win32 on a dead
@@ -342,6 +348,8 @@ impl WindowView {
             pending_undos: HashMap::new(),
             active_editor: None,
             notice: None,
+            notice_actions: None,
+            welcome,
             duplicating: Vec::new(),
             next_duplicate: 0,
             session_task: None,
@@ -846,6 +854,7 @@ impl WindowView {
         cx: &mut Context<Self>,
     ) {
         self.read_sidebar_settings();
+        self.welcome.libraries = bundle.libraries;
         if let Some(file) = bundle.standalone_file {
             self.chrome = Chrome::Compact;
             self.start_saver(cx);
@@ -854,6 +863,9 @@ impl WindowView {
             self.tabs.replace_all(&path);
         } else if let Some(info) = bundle.workspace {
             self.workspace = Some(info);
+            if let Some(notice) = bundle.library_notice {
+                self.notice = Some(notice.to_string().into());
+            }
             self.start_saver(cx);
             let restore = restore_session && self.restores_open_files();
             if let (true, Some(session)) = (restore, bundle.session.as_ref()) {
@@ -1469,13 +1481,13 @@ impl WindowView {
 
     pub fn save_session_now(&mut self) {
         self.session_task = None;
-        let Some(root) = self.workspace_root() else {
+        let Some(library) = self.workspace.as_ref().map(WorkspaceInfo::library) else {
             return;
         };
         if self.chrome == Chrome::Compact || !self.restores_open_files() {
             return;
         }
-        if let Err(error) = self.sessions.save(root, self.tabs.to_session()) {
+        if let Err(error) = self.sessions.save(&library, self.tabs.to_session()) {
             log::warn!("session not saved: {error}");
         }
     }
@@ -1493,7 +1505,7 @@ impl WindowView {
     ) -> anyhow::Result<()> {
         let core = crate::app::core(cx);
         self.flush_saves();
-        let info = core.open_workspace(&self.core, root, crate::app::events(cx))?;
+        let (info, notice) = core.open_workspace(&self.core, root, crate::app::events(cx))?;
         self.chrome = Chrome::Workspace;
         self.workspace = Some(info.clone());
         self.docs = Documents::default();
@@ -1502,7 +1514,7 @@ impl WindowView {
         self.start_saver(cx);
         self.sync_sidebar(cx);
         let session = if file.is_none() && self.restores_open_files() {
-            core.sessions.load(&info.root).unwrap_or_else(|error| {
+            core.sessions.load(&info.library()).unwrap_or_else(|error| {
                 log::warn!("session unavailable: {error}");
                 None
             })
@@ -1523,6 +1535,9 @@ impl WindowView {
         match file {
             Some(file) => self.open_file(file, window, cx),
             None => self.tabs_changed(window, cx),
+        }
+        if let Some(notice) = notice {
+            self.show_notice(notice.to_string(), cx);
         }
         Ok(())
     }
@@ -1904,6 +1919,8 @@ impl Render for WindowView {
             .on_action(cx.listener(|this, _: &NewNote, window, cx| {
                 if this.has_root() {
                     this.open_palette(crate::palette::Intent::CreateFile, window, cx);
+                } else if this.needs_a_library() {
+                    this.new_note_without_library(window, cx);
                 }
             }))
             .on_action(cx.listener(|this, _: &ZoomIn, _, cx| {
@@ -1999,7 +2016,7 @@ impl Render for WindowView {
             let editing = matches!(page, Page::Editor(_));
             content = match comparing {
                 Some(compare) => content.child(compare),
-                None => content.child(pages::render(page, cx)),
+                None => content.child(pages::render(page, self, cx)),
             };
             main = main.child(content);
             if editing && self.chrome == Chrome::Workspace {
@@ -2063,7 +2080,11 @@ impl Render for WindowView {
         };
         let root = root
             .child(body)
-            .children(pages::notice(self.notice.clone(), cx))
+            .children(pages::notice(
+                self.notice.clone(),
+                self.current_notice_actions().to_vec(),
+                cx,
+            ))
             .children(compact::overlay(self, cx))
             .children(
                 self.tab_menu

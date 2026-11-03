@@ -1,15 +1,22 @@
-//! Per-workspace sessions (open tabs with their back and forward history).
+//! Per-library sessions (open tabs with their back and forward history).
 //!
 //! Ported from Writer `commands/workspace.rs:851-918` and `lib/session.ts`.
-//! The file layout is Writer's: `{root: {tabs: [{location, back, forward}],
-//! active_index}}`. Fixes: written atomically under a process lock, keyed
-//! by the canonical root with trailing separators of either kind removed
-//! (Writer trimmed only `/`, defect 5), and a corrupt file is set aside.
+//! Writer's layout was `{root: {tabs: [{location, back, forward}],
+//! active_index}}`. Cerata keys it by library id instead (US-077), and a
+//! file tab's `path` is stored relative to the root with `/` separators,
+//! so a session survives a move and means the same on every machine. The
+//! file is written atomically under a process lock, and a corrupt file is
+//! set aside.
+//!
+//! An entry under an absolute root (Writer's key, or Cerata's before
+//! libraries) is converted the first time its library is read: paths in
+//! the root become relative, the others are dropped and logged.
 
 use crate::json_store::{JsonStore, StoreError};
+use crate::library::LibraryKey;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 /// A tab location, kept opaque except for its kind (`file`, ...), as the
 /// shell owns its other fields.
@@ -50,6 +57,79 @@ impl SessionData {
             .and_then(|path| path.as_str())
             .map(PathBuf::from)
     }
+
+    /// Every location rewritten by `map` (file locations only; others are
+    /// kept). A tab whose own location maps to `None` is dropped, as is a
+    /// history entry; the active index follows its tab.
+    fn map_paths(&self, map: impl Fn(&str) -> Option<String>) -> Self {
+        let convert = |location: &SerializedLocation| -> Option<SerializedLocation> {
+            if location.kind != "file" {
+                return Some(location.clone());
+            }
+            let path = location.payload.get("path")?.as_str()?;
+            let mut converted = location.clone();
+            converted
+                .payload
+                .insert("path".into(), serde_json::Value::String(map(path)?));
+            Some(converted)
+        };
+        let mut tabs = Vec::new();
+        let mut active_index = None;
+        for (ix, tab) in self.tabs.iter().enumerate() {
+            let Some(location) = convert(&tab.location) else {
+                continue;
+            };
+            if Some(ix) == self.active_index {
+                active_index = Some(tabs.len());
+            }
+            tabs.push(SessionTab {
+                location,
+                back: tab.back.iter().filter_map(convert).collect(),
+                forward: tab.forward.iter().filter_map(convert).collect(),
+            });
+        }
+        Self { tabs, active_index }
+    }
+}
+
+/// `path` relative to `root` with `/` separators; `None` outside the root
+/// or for the root itself.
+pub fn to_relative(root: &Path, path: &Path) -> Option<String> {
+    let rest = path.strip_prefix(root).ok()?;
+    let parts: Vec<String> = rest
+        .components()
+        .map(|component| match component {
+            Component::Normal(part) => Some(part.to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .collect::<Option<_>>()?;
+    (!parts.is_empty()).then(|| parts.join("/"))
+}
+
+/// `root` joined with a stored relative path. `None` when the entry is not
+/// a plain relative path: absolute, empty, or with `.` or `..` components
+/// (a hand-edited `../x.md` never leaves the root).
+pub fn to_absolute(root: &Path, relative: &str) -> Option<PathBuf> {
+    // `\` is a separator on Windows only; elsewhere it may be in a name.
+    let separators: &[char] = if cfg!(windows) { &['/', '\\'] } else { &['/'] };
+    if relative.is_empty() || relative.starts_with(separators) {
+        return None;
+    }
+    let mut path = root.to_path_buf();
+    for part in relative.split(separators) {
+        if part.is_empty() || part == "." || part == ".." {
+            return None;
+        }
+        let component = Path::new(part);
+        if !matches!(
+            component.components().collect::<Vec<_>>().as_slice(),
+            [Component::Normal(_)]
+        ) {
+            return None;
+        }
+        path.push(part);
+    }
+    Some(path)
 }
 
 type Sessions = BTreeMap<String, SessionData>;
@@ -67,26 +147,77 @@ impl SessionStore {
         }
     }
 
-    pub fn load(&self, root: &Path) -> Result<Option<SessionData>, StoreError> {
-        let sessions: Sessions = self.store.load()?;
-        Ok(sessions.get(&session_key(root)).cloned())
+    /// The session of `library`, with absolute paths. Entries that escape
+    /// the root are rejected.
+    pub fn load(&self, library: &LibraryKey) -> Result<Option<SessionData>, StoreError> {
+        let mut sessions: Sessions = self.store.load()?;
+        if !sessions.contains_key(&library.id) && sessions.contains_key(&legacy_key(&library.root))
+        {
+            sessions = self.store.update(|sessions: &mut Sessions| {
+                migrate(sessions, library);
+                sessions.clone()
+            })?;
+        }
+        Ok(sessions
+            .get(&library.id)
+            .map(|session| absolute(session, &library.root)))
     }
 
-    /// Saves the session of `root`; an empty session removes the entry.
-    pub fn save(&self, root: &Path, session: SessionData) -> Result<(), StoreError> {
-        let key = session_key(root);
+    /// Saves the session of `library` (absolute paths, stored relative); an
+    /// empty session removes the entry.
+    pub fn save(&self, library: &LibraryKey, session: SessionData) -> Result<(), StoreError> {
+        let session = relative(&session, &library.root);
         self.store.update(|sessions: &mut Sessions| {
+            migrate(sessions, library);
             if session.tabs.is_empty() && session.active_index.is_none() {
-                sessions.remove(&key);
+                sessions.remove(&library.id);
             } else {
-                sessions.insert(key, session);
+                sessions.insert(library.id.clone(), session);
             }
         })
     }
 }
 
-/// Canonical root without trailing `/` or `\`.
-pub fn session_key(root: &Path) -> String {
+fn absolute(session: &SessionData, root: &Path) -> SessionData {
+    session.map_paths(|stored| match to_absolute(root, stored) {
+        Some(path) => Some(path.to_string_lossy().into_owned()),
+        None => {
+            log::warn!("session: {stored:?} is not a path inside the library, rejected");
+            None
+        }
+    })
+}
+
+fn relative(session: &SessionData, root: &Path) -> SessionData {
+    session.map_paths(|path| {
+        let relative = to_relative(root, Path::new(path));
+        if relative.is_none() {
+            log::info!("session: {path} is outside {}, dropped", root.display());
+        }
+        relative
+    })
+}
+
+/// Moves the entry under the library's absolute root, if any, to its id.
+fn migrate(sessions: &mut Sessions, library: &LibraryKey) {
+    let Some(legacy) = sessions.remove(&legacy_key(&library.root)) else {
+        return;
+    };
+    if sessions.contains_key(&library.id) {
+        return;
+    }
+    let converted = relative(&legacy, &library.root);
+    log::info!(
+        "session of {} moved to library {}",
+        library.root.display(),
+        library.id
+    );
+    sessions.insert(library.id.clone(), converted);
+}
+
+/// The key Writer and Cerata before libraries used: the canonical root
+/// without trailing `/` or `\` (Writer trimmed only `/`, defect 5).
+pub fn legacy_key(root: &Path) -> String {
     let canonical = dunce::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
     let text = canonical.to_string_lossy();
     let trimmed = text.trim_end_matches(['/', '\\']);
@@ -102,77 +233,214 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn file_tab(path: &str) -> SessionTab {
+    fn file_location(path: &str) -> SerializedLocation {
         let mut payload = serde_json::Map::new();
         payload.insert("path".into(), serde_json::Value::String(path.into()));
+        SerializedLocation {
+            kind: "file".into(),
+            payload,
+        }
+    }
+
+    fn file_tab(path: &str) -> SessionTab {
         SessionTab {
-            location: SerializedLocation {
-                kind: "file".into(),
-                payload,
-            },
+            location: file_location(path),
             back: Vec::new(),
             forward: Vec::new(),
         }
     }
 
+    fn library(root: &Path) -> LibraryKey {
+        LibraryKey {
+            id: "0123456789abcdef0123456789abcdef".into(),
+            root: dunce::canonicalize(root).unwrap(),
+        }
+    }
+
+    fn abs(key: &LibraryKey, rel: &str) -> String {
+        rel.split('/')
+            .fold(key.root.clone(), |path, part| path.join(part))
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    fn stored(data: &Path) -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(data.join("sessions.json")).unwrap()).unwrap()
+    }
+
     #[test]
-    fn sessions_round_trip_per_workspace_and_empty_removes() {
+    fn sessions_round_trip_with_relative_paths_and_empty_removes() {
         let data = TempDir::new().unwrap();
         let workspace = TempDir::new().unwrap();
+        let key = library(workspace.path());
         let store = SessionStore::new(data.path());
+        let mut tab = file_tab(&abs(&key, "b.md"));
+        tab.back.push(file_location(&abs(&key, "dir/a.md")));
         let session = SessionData {
-            tabs: vec![file_tab("a.md"), file_tab("b.md")],
+            tabs: vec![file_tab(&abs(&key, "a.md")), tab],
             active_index: Some(1),
         };
-        store.save(workspace.path(), session.clone()).unwrap();
-        assert_eq!(store.load(workspace.path()).unwrap(), Some(session.clone()));
-        assert_eq!(session.active_file(), Some(PathBuf::from("b.md")));
+        store.save(&key, session.clone()).unwrap();
+        let json = stored(data.path());
+        assert_eq!(json[&key.id]["tabs"][1]["location"]["path"], "b.md");
+        assert_eq!(json[&key.id]["tabs"][1]["location"]["kind"], "file");
+        assert_eq!(json[&key.id]["tabs"][1]["back"][0]["path"], "dir/a.md");
+        assert_eq!(store.load(&key).unwrap(), Some(session.clone()));
+        assert_eq!(
+            session.active_file(),
+            Some(PathBuf::from(abs(&key, "b.md")))
+        );
+        store.save(&key, SessionData::default()).unwrap();
+        assert_eq!(store.load(&key).unwrap(), None);
+    }
+
+    #[test]
+    fn a_moved_library_finds_its_session_at_the_new_root() {
+        let data = TempDir::new().unwrap();
+        let one = TempDir::new().unwrap();
+        let two = TempDir::new().unwrap();
+        let store = SessionStore::new(data.path());
+        let before = library(one.path());
         store
-            .save(workspace.path(), SessionData::default())
+            .save(
+                &before,
+                SessionData {
+                    tabs: vec![file_tab(&abs(&before, "n.md"))],
+                    active_index: Some(0),
+                },
+            )
             .unwrap();
-        assert_eq!(store.load(workspace.path()).unwrap(), None);
+        let after = LibraryKey {
+            id: before.id.clone(),
+            root: dunce::canonicalize(two.path()).unwrap(),
+        };
+        assert_eq!(
+            store.load(&after).unwrap().unwrap().active_file(),
+            Some(after.root.join("n.md"))
+        );
     }
 
     #[test]
-    fn trailing_separators_of_both_kinds_share_one_key() {
+    fn other_kinds_are_kept_and_paths_outside_the_root_dropped_on_save() {
+        let data = TempDir::new().unwrap();
         let workspace = TempDir::new().unwrap();
-        let plain = session_key(workspace.path());
-        let slash = format!("{}/", workspace.path().display());
-        let backslash = format!("{}\\", workspace.path().display());
-        assert_eq!(session_key(Path::new(&slash)), plain);
-        if cfg!(windows) {
-            assert_eq!(session_key(Path::new(&backslash)), plain);
-        }
-        assert!(!plain.ends_with(['/', '\\']));
+        let other = TempDir::new().unwrap();
+        let key = library(workspace.path());
+        let store = SessionStore::new(data.path());
+        let mut graph = file_tab("");
+        graph.location = SerializedLocation {
+            kind: "graph".into(),
+            payload: serde_json::Map::new(),
+        };
+        let outside = other.path().join("x.md").to_string_lossy().into_owned();
+        store
+            .save(
+                &key,
+                SessionData {
+                    tabs: vec![graph.clone(), file_tab(&outside)],
+                    active_index: Some(0),
+                },
+            )
+            .unwrap();
+        let loaded = store.load(&key).unwrap().unwrap();
+        assert_eq!(loaded.tabs, [graph]);
+        assert_eq!(loaded.active_index, Some(0));
     }
 
     #[test]
-    fn corrupt_sessions_file_is_renamed_and_an_empty_session_is_used() {
+    fn an_absolute_key_is_migrated_on_first_read() {
+        let data = TempDir::new().unwrap();
+        let workspace = TempDir::new().unwrap();
+        let elsewhere = TempDir::new().unwrap();
+        let key = library(workspace.path());
+        let outside = elsewhere.path().join("x.md").to_string_lossy().into_owned();
+        let json = serde_json::json!({
+            legacy_key(&key.root): {
+                "tabs": [
+                    {"location": {"kind": "file", "path": outside}},
+                    {"location": {"kind": "file", "path": abs(&key, "x.md"), "scrollTop": 12},
+                     "back": [{"kind": "file", "path": outside}]}
+                ],
+                "active_index": 1
+            },
+            "/unrelated/root": {"tabs": [], "active_index": null}
+        });
+        std::fs::write(data.path().join("sessions.json"), json.to_string()).unwrap();
+        let session = SessionStore::new(data.path()).load(&key).unwrap().unwrap();
+        assert_eq!(session.tabs.len(), 1);
+        assert!(session.tabs[0].back.is_empty());
+        assert_eq!(session.active_index, Some(0));
+        assert_eq!(session.active_file(), Some(key.root.join("x.md")));
+        assert_eq!(session.tabs[0].location.payload["scrollTop"], 12);
+        let json = stored(data.path());
+        assert!(json.get(legacy_key(&key.root)).is_none());
+        assert_eq!(json[&key.id]["tabs"][0]["location"]["path"], "x.md");
+        assert!(json.get("/unrelated/root").is_some(), "{json}");
+    }
+
+    #[test]
+    fn hand_edited_paths_that_leave_the_root_are_rejected() {
+        let data = TempDir::new().unwrap();
+        let workspace = TempDir::new().unwrap();
+        let key = library(workspace.path());
+        let json = serde_json::json!({
+            &key.id: {
+                "tabs": [
+                    {"location": {"kind": "file", "path": "../x.md"}},
+                    {"location": {"kind": "file", "path": "a/../../y.md"}},
+                    {"location": {"kind": "file", "path": "/etc/z.md"}},
+                    {"location": {"kind": "file", "path": "ok/n.md"}}
+                ],
+                "active_index": 3
+            }
+        });
+        std::fs::write(data.path().join("sessions.json"), json.to_string()).unwrap();
+        let session = SessionStore::new(data.path()).load(&key).unwrap().unwrap();
+        assert_eq!(session.tabs.len(), 1);
+        assert_eq!(
+            session.active_file(),
+            Some(key.root.join("ok").join("n.md"))
+        );
+    }
+
+    #[test]
+    fn relative_round_trip_and_rejections() {
+        let root = Path::new(if cfg!(windows) { r"C:\notes" } else { "/notes" });
+        let inside = root.join("a").join("b.md");
+        assert_eq!(to_relative(root, &inside).as_deref(), Some("a/b.md"));
+        assert_eq!(to_absolute(root, "a/b.md"), Some(inside));
+        assert_eq!(to_relative(root, root), None);
+        assert_eq!(to_relative(root, Path::new("/elsewhere/x.md")), None);
+        for bad in ["", "../x.md", "a/../x.md", "./x.md", "/x.md", "a//b.md"] {
+            assert_eq!(to_absolute(root, bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn corrupt_sessions_file_is_set_aside_and_an_empty_session_is_used() {
         let data = TempDir::new().unwrap();
         let workspace = TempDir::new().unwrap();
         std::fs::write(data.path().join("sessions.json"), "[[[").unwrap();
         let store = SessionStore::new(data.path());
-        assert_eq!(store.load(workspace.path()).unwrap(), None);
-        assert!(data.path().join("sessions.json.corrupt").exists());
+        assert_eq!(store.load(&library(workspace.path())).unwrap(), None);
+        let aside = std::fs::read_dir(data.path()).unwrap().flatten().any(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .starts_with("sessions.json.corrupt-")
+        });
+        assert!(aside);
     }
 
     #[test]
-    fn writer_session_format_is_read_as_is() {
-        let data = TempDir::new().unwrap();
+    fn legacy_keys_trim_separators_of_both_kinds() {
         let workspace = TempDir::new().unwrap();
-        let key = session_key(workspace.path());
-        let json = serde_json::json!({
-            key.clone(): {
-                "tabs": [{"location": {"kind": "file", "path": "x.md", "scrollTop": 12}}],
-                "active_index": 0
-            }
-        });
-        std::fs::write(data.path().join("sessions.json"), json.to_string()).unwrap();
-        let session = SessionStore::new(data.path())
-            .load(workspace.path())
-            .unwrap()
-            .unwrap();
-        assert_eq!(session.active_file(), Some(PathBuf::from("x.md")));
-        assert_eq!(session.tabs[0].location.payload["scrollTop"], 12);
+        let plain = legacy_key(workspace.path());
+        let slash = format!("{}/", workspace.path().display());
+        let backslash = format!("{}\\", workspace.path().display());
+        assert_eq!(legacy_key(Path::new(&slash)), plain);
+        if cfg!(windows) {
+            assert_eq!(legacy_key(Path::new(&backslash)), plain);
+        }
+        assert!(!plain.ends_with(['/', '\\']));
     }
 }

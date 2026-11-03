@@ -123,6 +123,13 @@ impl Hosts for Registry<'_> {
     }
 }
 
+/// The window showing (or about to show) library `root`.
+pub fn workspace_window(cx: &App, root: &Path) -> Option<WindowHandle<WindowView>> {
+    let state = cx.global::<Cerata>();
+    let id = state.core.windows.find_by_workspace(root)?;
+    state.windows.get(&id).copied()
+}
+
 /// Opens a new window on `target` (the core startup call: settings,
 /// session, first file), then `file` in it. The window is created once
 /// everything its first frame shows is read, so it never flashes empty.

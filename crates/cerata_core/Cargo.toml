@@ -21,6 +21,8 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 trash = "5"
+# Library ids (ADR 0009, US-076): 16 bytes from the OS.
+getrandom = "0.3"
 
 [dev-dependencies]
 tempfile.workspace = true

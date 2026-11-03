@@ -196,6 +196,11 @@ impl Sidebar {
         self.runtime.as_ref().map(|runtime| runtime.root.as_path())
     }
 
+    /// The key of the library shown, for its pins.
+    pub fn library(&self) -> Option<cerata_core::library::LibraryKey> {
+        self.runtime.as_ref().map(|runtime| runtime.library())
+    }
+
     pub fn window_state(&self) -> &Arc<WindowState> {
         &self.window
     }
@@ -258,10 +263,10 @@ impl Sidebar {
         self.recents_visible = RECENTS_PAGE;
         self.reset_filter();
         self.tasks.clear();
-        self.pinned = match self.root() {
-            Some(root) => crate::app::core(cx)
+        self.pinned = match self.library() {
+            Some(library) => crate::app::core(cx)
                 .pins
-                .load(root)
+                .load(&library)
                 .unwrap_or_else(|error| {
                     log::warn!("pinned files unavailable: {error}");
                     Vec::new()
@@ -575,10 +580,10 @@ impl Sidebar {
     }
 
     pub fn toggle_pin(&mut self, path: &Path, cx: &mut Context<Self>) {
-        let Some(root) = self.root().map(Path::to_path_buf) else {
+        let Some(library) = self.library() else {
             return;
         };
-        match crate::app::core(cx).pins.toggle(&root, path) {
+        match crate::app::core(cx).pins.toggle(&library, path) {
             Ok(pins) => self.pinned = pins,
             Err(error) => {
                 cx.emit(SidebarEvent::Notice(format!("Failed to pin: {error}")));

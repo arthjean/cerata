@@ -12,6 +12,7 @@ use crate::epoch::{EpochCounter, EpochToken};
 use crate::fs::{FsError, WorkspaceFs};
 use crate::ignore::WorkspaceIgnore;
 use crate::index::{IndexReport, LiveIndex, spawn_index};
+use crate::library::LibraryKey;
 use crate::open_target::OpenTarget;
 use crate::self_writes::SelfWriteLog;
 use crate::settings::Settings;
@@ -33,6 +34,8 @@ pub struct WorkspaceSnapshot {
 /// Everything that lives exactly as long as one open workspace.
 pub struct WorkspaceRuntime {
     pub root: PathBuf,
+    /// The library's id (ADR 0009), the key of its sessions and pins.
+    pub library_id: String,
     pub token: EpochToken,
     pub fs: WorkspaceFs,
     pub index: Arc<Mutex<LiveIndex>>,
@@ -47,6 +50,13 @@ impl WorkspaceRuntime {
         WorkspaceSnapshot {
             root: self.root.clone(),
             epoch: self.token.epoch(),
+        }
+    }
+
+    pub fn library(&self) -> LibraryKey {
+        LibraryKey {
+            id: self.library_id.clone(),
+            root: self.root.clone(),
         }
     }
 
@@ -255,6 +265,17 @@ pub struct WorkspaceInfo {
     pub root: PathBuf,
     pub name: String,
     pub epoch: u64,
+    /// The library's id; `{root, epoch}` stays the runtime identity.
+    pub library_id: String,
+}
+
+impl WorkspaceInfo {
+    pub fn library(&self) -> LibraryKey {
+        LibraryKey {
+            id: self.library_id.clone(),
+            root: self.root.clone(),
+        }
+    }
 }
 
 /// Canonical form of an existing folder.
@@ -268,7 +289,8 @@ pub fn canonicalize_workspace_root(path: &Path) -> Result<PathBuf, FsError> {
     })
 }
 
-/// Opens `path` as the workspace of `window`.
+/// Opens `path` as the workspace of `window`, as library `library_id`
+/// (resolved by [`crate::library::LibraryRegistry::resolve`]).
 ///
 /// Synchronously: canonicalizes the root, starts a new epoch, installs a
 /// bootstrap ignore matcher and the workspace settings layer. In the
@@ -278,6 +300,7 @@ pub fn canonicalize_workspace_root(path: &Path) -> Result<PathBuf, FsError> {
 pub fn open_workspace(
     window: &Arc<WindowState>,
     path: &Path,
+    library_id: &str,
     events: Sender<WatchEnvelope>,
 ) -> Result<WorkspaceInfo, FsError> {
     let root = canonicalize_workspace_root(path)?;
@@ -285,6 +308,7 @@ pub fn open_workspace(
     let runtime = window.transition(|token| {
         Arc::new(WorkspaceRuntime {
             root: root.clone(),
+            library_id: library_id.to_owned(),
             token,
             fs,
             index: Arc::new(Mutex::new(LiveIndex::new(&root))),
@@ -359,6 +383,7 @@ pub fn open_workspace(
         root,
         name,
         epoch: runtime.token.epoch(),
+        library_id: library_id.to_owned(),
     })
 }
 
@@ -368,6 +393,8 @@ mod tests {
     use std::sync::mpsc;
     use std::time::Duration;
     use tempfile::TempDir;
+
+    const TEST_LIBRARY: &str = "0123456789abcdef0123456789abcdef";
 
     fn settings() -> (TempDir, Settings) {
         let dir = TempDir::new().unwrap();
@@ -418,7 +445,7 @@ mod tests {
         let other = registry.create(settings);
         let root = TempDir::new().unwrap();
         let (sender, _events) = mpsc::channel();
-        let info = open_workspace(&other, root.path(), sender).unwrap();
+        let info = open_workspace(&other, root.path(), TEST_LIBRARY, sender).unwrap();
         assert_eq!(registry.find_by_workspace(&info.root), Some(other.id()));
         assert_eq!(registry.find_by_workspace(Path::new("/elsewhere")), None);
     }
@@ -457,18 +484,18 @@ mod tests {
         let a = TempDir::new().unwrap();
         let b = TempDir::new().unwrap();
         let (sender, _events) = mpsc::channel();
-        open_workspace(&window, a.path(), sender.clone()).unwrap();
+        open_workspace(&window, a.path(), TEST_LIBRARY, sender.clone()).unwrap();
         let captured = window.snapshot().unwrap();
         assert_eq!(
             window.with_snapshot(&captured, || "published"),
             Some("published")
         );
 
-        open_workspace(&window, b.path(), sender.clone()).unwrap();
+        open_workspace(&window, b.path(), TEST_LIBRARY, sender.clone()).unwrap();
         assert_eq!(window.with_snapshot(&captured, || ()), None);
         // Back to A: same root, new epoch. A result captured during the first
         // visit must still be rejected.
-        open_workspace(&window, a.path(), sender).unwrap();
+        open_workspace(&window, a.path(), TEST_LIBRARY, sender).unwrap();
         assert_eq!(window.snapshot().unwrap().root, captured.root);
         assert_eq!(window.with_snapshot(&captured, || ()), None);
     }
@@ -480,7 +507,7 @@ mod tests {
         let window = WindowRegistry::new().create(settings);
         let a = TempDir::new().unwrap();
         let (sender, _events) = mpsc::channel();
-        open_workspace(&window, a.path(), sender).unwrap();
+        open_workspace(&window, a.path(), TEST_LIBRARY, sender).unwrap();
         let captured = window.snapshot().unwrap();
         let published = window.with_snapshot(&captured, || window.runtime.try_write().is_none());
         assert_eq!(published, Some(true));
@@ -494,10 +521,10 @@ mod tests {
         let a = TempDir::new().unwrap();
         let b = TempDir::new().unwrap();
         let (sender, _events) = mpsc::channel();
-        open_workspace(&window, a.path(), sender.clone()).unwrap();
+        open_workspace(&window, a.path(), TEST_LIBRARY, sender.clone()).unwrap();
         let captured = window.snapshot().unwrap();
         let stale = window.runtime().unwrap();
-        open_workspace(&window, b.path(), sender).unwrap();
+        open_workspace(&window, b.path(), TEST_LIBRARY, sender).unwrap();
         let created = window.with_snapshot(&captured, || {
             stale
                 .fs
@@ -515,7 +542,7 @@ mod tests {
         let a = TempDir::new().unwrap();
         let b = TempDir::new().unwrap();
         let (sender, _events) = mpsc::channel();
-        let info = open_workspace(&window, a.path(), sender.clone()).unwrap();
+        let info = open_workspace(&window, a.path(), TEST_LIBRARY, sender.clone()).unwrap();
         let captured = window.snapshot().unwrap();
         let closed = window.runtime().unwrap();
         assert!(!window.clear_workspace_if_current(Path::new("/not/it")));
@@ -526,7 +553,7 @@ mod tests {
         assert!(settings.workspace_path().is_none());
         assert_eq!(window.with_snapshot(&captured, || ()), None);
 
-        let other = open_workspace(&window, b.path(), sender).unwrap();
+        let other = open_workspace(&window, b.path(), TEST_LIBRARY, sender).unwrap();
         assert!(!window.clear_workspace_if_current(&info.root));
         assert_eq!(window.snapshot().map(|s| s.root), Some(other.root));
     }
@@ -562,7 +589,7 @@ mod tests {
         )
         .unwrap();
         let (sender, events) = mpsc::channel();
-        let info = open_workspace(&window, root.path(), sender).unwrap();
+        let info = open_workspace(&window, root.path(), TEST_LIBRARY, sender).unwrap();
         // The workspace layer is installed synchronously.
         assert_eq!(
             settings.get("editor.font-size").and_then(|v| v.as_f64()),

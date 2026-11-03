@@ -73,6 +73,56 @@ pub(crate) fn atomic_write_with(
     result
 }
 
+/// Atomically creates `path` holding `bytes`, failing with `AlreadyExists`
+/// instead of replacing anything there: the bytes go to a synced temporary
+/// file that is hard-linked to `path` (a link never replaces its target).
+/// Where hard links are unsupported (FAT, some network shares), falls back
+/// to an exclusive create followed by the write. Either way no temporary
+/// file remains.
+pub fn atomic_create(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let dir = path
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent"))?;
+    let temp = temp_path(dir, path);
+    let linked = (|| {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        fs::hard_link(&temp, path)
+    })();
+    let _ = fs::remove_file(&temp);
+    match linked {
+        Ok(()) => {
+            sync_dir(dir);
+            Ok(())
+        }
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Err(error),
+        Err(error) if fs::symlink_metadata(path).is_ok() => Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!("{} exists ({error})", path.display()),
+        )),
+        Err(link_error) => {
+            let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
+            let written = file.write_all(bytes).and_then(|()| file.sync_all());
+            if let Err(error) = written {
+                drop(file);
+                let _ = fs::remove_file(path);
+                return Err(error);
+            }
+            log::debug!(
+                "{}: created without a hard link ({link_error})",
+                path.display()
+            );
+            sync_dir(dir);
+            Ok(())
+        }
+    }
+}
+
 /// The file actually written: the final target of a symlink chain, or `path`.
 fn resolve_write_target(path: &Path) -> io::Result<PathBuf> {
     match fs::symlink_metadata(path) {
@@ -142,6 +192,17 @@ mod tests {
             .map(|e| e.file_name().to_string_lossy().into_owned())
             .filter(|name| name.ends_with(".cerata-tmp"))
             .collect()
+    }
+
+    #[test]
+    fn atomic_create_never_replaces_and_leaves_no_temp_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("id");
+        atomic_create(&path, b"first\n").unwrap();
+        let error = atomic_create(&path, b"second\n").unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(&path).unwrap(), b"first\n");
+        assert!(leftovers(dir.path()).is_empty());
     }
 
     #[test]

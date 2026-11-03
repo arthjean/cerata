@@ -46,7 +46,7 @@ pub enum FsError {
 }
 
 impl FsError {
-    fn io(path: &Path, source: io::Error) -> Self {
+    pub(crate) fn io(path: &Path, source: io::Error) -> Self {
         match source.kind() {
             io::ErrorKind::NotFound => Self::NotFound(path.to_path_buf()),
             io::ErrorKind::AlreadyExists => Self::AlreadyExists(path.to_path_buf()),
@@ -239,11 +239,13 @@ impl WorkspaceFs {
     /// imported image): an existing entry is refused, never replaced.
     pub fn write_new_bytes(&self, path: &Path, bytes: &[u8]) -> Result<u64, FsError> {
         let path = self.confine_new(path)?;
-        if fs::symlink_metadata(&path).is_ok() {
-            return Err(FsError::AlreadyExists(path));
+        match atomic::atomic_create(&path, bytes) {
+            Ok(()) => Ok(modified_time(&path)),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                Err(FsError::AlreadyExists(path))
+            }
+            Err(error) => Err(FsError::io(&path, error)),
         }
-        atomic::atomic_write(&path, bytes).map_err(|e| FsError::io(&path, e))?;
-        Ok(modified_time(&path))
     }
 
     /// Makes sure the folder `path` exists (an assets folder): created
