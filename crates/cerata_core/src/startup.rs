@@ -17,7 +17,8 @@ use crate::session::{SessionData, SessionStore};
 use crate::settings::{ConfigValue, ConfigWarning, Settings, SettingsError};
 use crate::watcher::WatchEnvelope;
 use crate::workspace::{
-    WindowRegistry, WindowState, WorkspaceInfo, canonicalize_workspace_root, open_workspace,
+    OpenOptions, WindowRegistry, WindowState, WorkspaceInfo, canonicalize_workspace_root,
+    open_workspace_with,
 };
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -38,6 +39,8 @@ pub enum StartupError {
 pub struct CoreApp {
     pub config_dir: PathBuf,
     pub data_dir: PathBuf,
+    /// Local, never roaming: the library stores (ADR 0009).
+    pub local_data_dir: PathBuf,
     pub windows: WindowRegistry,
     pub sessions: SessionStore,
     pub recents: RecentsStore,
@@ -54,15 +57,23 @@ impl CoreApp {
             libraries: LibraryRegistry::new(&data_dir),
             windows: WindowRegistry::new(),
             config_dir,
+            local_data_dir: data_dir.clone(),
             data_dir,
         }
+    }
+
+    /// The library stores go under `dir` instead of the data directory.
+    pub fn with_local_data_dir(mut self, dir: PathBuf) -> Self {
+        self.local_data_dir = dir;
+        self
     }
 
     /// Services on the OS config and data directories for Cerata.
     pub fn open_default() -> Result<Self, StartupError> {
         let config_dir = paths::global_config_dir().ok_or(SettingsError::NoConfigDir)?;
         let data_dir = paths::data_dir().ok_or(StartupError::NoDataDir)?;
-        Ok(Self::new(config_dir, data_dir))
+        let local_data_dir = paths::local_data_dir().unwrap_or_else(|| data_dir.clone());
+        Ok(Self::new(config_dir, data_dir).with_local_data_dir(local_data_dir))
     }
 
     /// A new window with its own settings handle on the global config.
@@ -99,7 +110,11 @@ impl CoreApp {
                 }
             },
         };
-        let info = open_workspace(window, &root, &id, events)?;
+        let options = OpenOptions {
+            store_root: Some(self.local_data_dir.clone()),
+            files: None,
+        };
+        let info = open_workspace_with(window, &root, &id, events, options)?;
         Ok((info, notice))
     }
 }

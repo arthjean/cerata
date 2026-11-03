@@ -934,7 +934,30 @@ fn a_huge_folder_shows_before_its_titles_then_fills_them_in(cx: &mut TestAppCont
     let root = env.root();
     let runtime = sidebar.read_with(cx, |s, _| s.runtime().unwrap().clone());
 
-    // Past a chunk of unknown titles, the read leaves them for later...
+    // Once the library's first pass read the notes, every title comes from
+    // the index (US-083): nothing is left to read.
+    assert!(
+        runtime
+            .reconciler
+            .wait_for_passes(1, std::time::Duration::from_secs(20))
+    );
+    let (entries, untitled) = read_listing(&runtime, &root, &HashMap::new()).unwrap();
+    assert!(untitled.is_empty());
+    assert!(entries.iter().all(|entry| entry.title.is_some()));
+
+    // Before the index knows the contents (a library without a store, the
+    // first pass still reading), past a chunk of unknown titles the read
+    // leaves them for later...
+    {
+        let mut index = runtime.index.lock();
+        let paths: Vec<_> = index.files().map(|file| file.path.clone()).collect();
+        for path in paths {
+            if let Some(file) = index.get_mut(&path) {
+                file.hash = None;
+                file.title = None;
+            }
+        }
+    }
     let (entries, untitled) = read_listing(&runtime, &root, &HashMap::new()).unwrap();
     assert_eq!(untitled.len(), count);
     assert!(entries.iter().all(|entry| entry.title.is_none()));

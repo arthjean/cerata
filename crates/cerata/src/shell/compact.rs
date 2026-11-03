@@ -19,10 +19,13 @@ use crate::routing::OpenRequest;
 pub const PICKER_MAX_HEIGHT: f32 = 420.0;
 
 impl WindowView {
-    /// The header's label: the file's title, else "Choose file".
+    /// The header's label: the file's title, else "Choose file". Drawn
+    /// every frame: the title comes from the open document's text, never
+    /// from a read of the file (US-083).
     pub fn compact_title(&self) -> String {
         match self.tabs.active_path() {
-            Some(path) => cerata_core::fs::titles::extract_title(path)
+            Some(path) => self
+                .known_title(path)
                 .unwrap_or_else(|| crate::sidebar::tree::stem(&file_name(path)).to_owned()),
             None => "Choose file".into(),
         }
@@ -35,7 +38,9 @@ impl WindowView {
             self.close_recents_picker(window, cx);
             return;
         }
-        self.recents_picker = Some(self.global_recents(self.tabs.active_path(), cx));
+        let recents = self.global_recents(self.tabs.active_path(), cx);
+        self.refresh_recent_titles(&recents, cx);
+        self.recents_picker = Some(recents);
         window.focus(&self.picker_focus, cx);
         cx.notify();
     }

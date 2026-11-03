@@ -10,15 +10,23 @@
 
 use crate::fs::text::{SaveOptions, TextFormat, encode, prepare_for_save};
 use crate::fs::{FsError, WorkspaceFs};
-use crate::self_writes::SelfWriteLog;
+use crate::index::modified_ns;
+use crate::self_writes::{SelfWriteLog, WrittenFile};
 use parking_lot::{Condvar, Mutex};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// Minimum delay between two writes of the same file (Writer `THROTTLE_MS`).
 pub const SAVE_THROTTLE: Duration = Duration::from_secs(1);
+
+/// A file modified this recently is read before an autosave even when its
+/// size and modified time are those of Cerata's last write: on a file
+/// system with coarse times, another write in the same instant looks the
+/// same (US-086).
+pub const DISK_SETTLE: Duration = Duration::from_secs(2);
 
 /// Text of an open document with unsaved changes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,6 +75,10 @@ struct Shared {
     options: Mutex<SaveOptions>,
     self_writes: Option<Arc<SelfWriteLog>>,
     throttle: Duration,
+    /// Wall clock of the settle check, moved forward by tests.
+    clock: fn() -> SystemTime,
+    /// Files read to check the disk before an autosave.
+    disk_reads: AtomicUsize,
 }
 
 /// Background autosave for one workspace. Dropping it stops the timer
@@ -92,6 +104,17 @@ impl AutoSaver {
         self_writes: Option<Arc<SelfWriteLog>>,
         throttle: Duration,
     ) -> std::io::Result<Self> {
+        Self::spawn_with(fs, target, options, self_writes, throttle, SystemTime::now)
+    }
+
+    pub(crate) fn spawn_with(
+        fs: WorkspaceFs,
+        target: Arc<dyn SaveTarget>,
+        options: SaveOptions,
+        self_writes: Option<Arc<SelfWriteLog>>,
+        throttle: Duration,
+        clock: fn() -> SystemTime,
+    ) -> std::io::Result<Self> {
         let shared = Arc::new(Shared {
             controllers: Mutex::new(HashMap::new()),
             wake: Condvar::new(),
@@ -101,6 +124,8 @@ impl AutoSaver {
             options: Mutex::new(options),
             self_writes,
             throttle,
+            clock,
+            disk_reads: AtomicUsize::new(0),
         });
         let timer = shared.clone();
         std::thread::Builder::new()
@@ -142,6 +167,11 @@ impl AutoSaver {
     /// Applies new `files.*` settings to the next writes.
     pub fn set_options(&self, options: SaveOptions) {
         *self.shared.options.lock() = options;
+    }
+
+    /// Files read so far to check the disk before an autosave.
+    pub fn disk_reads(&self) -> usize {
+        self.shared.disk_reads.load(Ordering::SeqCst)
     }
 
     /// Writes every pending save now, throttle ignored, and waits for the
@@ -281,12 +311,26 @@ fn run_timer(shared: &Arc<Shared>) {
 }
 
 /// Whether the disk no longer holds the text the target last read or
-/// wrote. A read error other than a missing file lets the write go on and
-/// report it.
+/// wrote. When the file's size and modified time are still those read
+/// right after Cerata's last write, and it was not modified within
+/// [`DISK_SETTLE`], it is not read (US-086). A read error other than a
+/// missing file lets the write go on and report it.
 fn disk_moved(shared: &Shared, path: &Path) -> bool {
     let Some(expected) = shared.target.expected_disk(path) else {
         return false;
     };
+    if let Some(last) = shared
+        .self_writes
+        .as_ref()
+        .and_then(|log| log.last_write(path))
+    {
+        match std::fs::metadata(path) {
+            Ok(metadata) if !needs_read(&last, &metadata, (shared.clock)()) => return false,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return true,
+            _ => {}
+        }
+    }
+    shared.disk_reads.fetch_add(1, Ordering::SeqCst);
     match shared.fs.read_file(path) {
         Ok(file) => file.content != expected,
         Err(FsError::NotFound(_)) => true,
@@ -294,10 +338,26 @@ fn disk_moved(shared: &Shared, path: &Path) -> bool {
     }
 }
 
+/// `true` unless the file still has the size and modified time of the last
+/// write and that time is at least [`DISK_SETTLE`] before `now`.
+fn needs_read(last: &WrittenFile, metadata: &std::fs::Metadata, now: SystemTime) -> bool {
+    let modified = modified_ns(metadata);
+    let now_ns = now.duration_since(UNIX_EPOCH).map_or(0, |since| {
+        u64::try_from(since.as_nanos()).unwrap_or(u64::MAX)
+    });
+    let settle_ns = u64::try_from(DISK_SETTLE.as_nanos()).unwrap_or(u64::MAX);
+    metadata.len() != last.size
+        || modified != last.modified_ns
+        || now_ns.saturating_sub(modified) < settle_ns
+}
+
 /// Writes the dirty text of `path`. With `check`, a disk that changed since
 /// the target last read or wrote it is reported instead of overwritten.
 fn perform_save(shared: &Shared, path: PathBuf, check: bool) {
     let mut follow_up = false;
+    // A move of Cerata's waits for this write and its result, or happens
+    // before the disk check, which then sees the file gone.
+    let gate = shared.self_writes.as_ref().map(|log| log.write_gate());
     if let Some(snapshot) = shared.target.dirty_snapshot(&path) {
         if check && disk_moved(shared, &path) {
             shared.target.save_conflicted(&path, snapshot.revision);
@@ -307,10 +367,18 @@ fn perform_save(shared: &Shared, path: PathBuf, check: bool) {
         let options = *shared.options.lock();
         let disk_text = prepare_for_save(&snapshot.text, options);
         let bytes = encode(&disk_text, snapshot.format);
-        if let Some(log) = &shared.self_writes {
-            log.record(&path, &bytes);
+        let recorded = shared
+            .self_writes
+            .as_ref()
+            .map(|log| (log, log.record(&path, &bytes)));
+        let written = shared.fs.write_bytes(&path, &bytes);
+        if let Some((log, hash)) = recorded {
+            match &written {
+                Ok(_) => log.written(&path, hash, &bytes),
+                Err(_) => log.abandoned(&path, hash),
+            }
         }
-        match shared.fs.write_bytes(&path, &bytes) {
+        match written {
             Ok(modified_at) => {
                 shared
                     .target
@@ -326,6 +394,7 @@ fn perform_save(shared: &Shared, path: PathBuf, check: bool) {
             }
         }
     }
+    drop(gate);
     finish_save(shared, &path, follow_up);
 }
 
@@ -607,6 +676,119 @@ mod tests {
         #[allow(clippy::permissions_set_readonly_false)]
         permissions.set_readonly(false);
         std::fs::set_permissions(&path, permissions).unwrap();
+    }
+
+    fn saver_with_log(
+        clock: fn() -> SystemTime,
+    ) -> (
+        TempDir,
+        PathBuf,
+        Arc<FakeEditor>,
+        AutoSaver,
+        mpsc::Receiver<u64>,
+    ) {
+        let dir = TempDir::new().unwrap();
+        let path = dunce::canonicalize(dir.path()).unwrap().join("test.md");
+        std::fs::write(&path, "initial").unwrap();
+        let editor = Arc::new(FakeEditor::default());
+        let (sender, receiver) = mpsc::channel();
+        *editor.saved_events.lock() = Some(sender);
+        editor.doc.lock().expected = Some("initial".into());
+        let saver = AutoSaver::spawn_with(
+            WorkspaceFs::new(dir.path()).unwrap(),
+            editor.clone(),
+            SaveOptions {
+                trim_trailing_whitespace: false,
+                insert_final_newline: false,
+            },
+            Some(Arc::new(SelfWriteLog::new())),
+            THROTTLE,
+            clock,
+        )
+        .unwrap();
+        (dir, path, editor, saver, receiver)
+    }
+
+    fn settled_clock() -> SystemTime {
+        SystemTime::now() + DISK_SETTLE + Duration::from_secs(1)
+    }
+
+    /// US-086: the disk is not read again before an autosave while it has
+    /// the size and time Cerata's last write left.
+    #[test]
+    fn a_one_megabyte_note_saves_without_reading_the_disk_again() {
+        let (_dir, path, editor, saver, saved) = saver_with_log(settled_clock);
+        let big: String = "0123456789abcdef\n".repeat(65_536);
+        editor.edit(&big);
+        saver.schedule(&path);
+        assert_eq!(saved.recv_timeout(WAIT).unwrap(), 1);
+        // The first save checked the text it had read.
+        assert_eq!(saver.disk_reads(), 1);
+        editor.doc.lock().expected = Some(big.clone());
+        let bigger = format!("{big}one more line\n");
+        editor.edit(&bigger);
+        saver.schedule(&path);
+        assert_eq!(saved.recv_timeout(WAIT).unwrap(), 2);
+        assert_eq!(saver.disk_reads(), 1, "the 1 MB note was read again");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), bigger);
+    }
+
+    /// US-086: same size, same modified time, but too recent to trust: the
+    /// disk is read and the outside change is found.
+    #[test]
+    fn an_outside_change_of_the_same_size_and_time_is_still_detected() {
+        let (_dir, path, editor, saver, saved) = saver_with_log(SystemTime::now);
+        editor.edit("aaaa");
+        saver.schedule(&path);
+        assert_eq!(saved.recv_timeout(WAIT).unwrap(), 1);
+        editor.doc.lock().expected = Some("aaaa".into());
+        let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+        std::fs::write(&path, "bbbb").unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+        let reads = saver.disk_reads();
+        editor.edit("cccc");
+        saver.schedule(&path);
+        assert_eq!(saved.recv_timeout(WAIT).unwrap(), CONFLICT);
+        assert_eq!(saver.disk_reads(), reads + 1);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "bbbb");
+    }
+
+    /// A move of Cerata's holds the write gate: no autosave is written
+    /// meanwhile, so none recreates the path the move empties.
+    #[test]
+    fn no_autosave_is_written_while_a_move_holds_the_gate() {
+        let dir = TempDir::new().unwrap();
+        let path = dunce::canonicalize(dir.path()).unwrap().join("test.md");
+        std::fs::write(&path, "initial").unwrap();
+        let editor = Arc::new(FakeEditor::default());
+        let (sender, saved) = mpsc::channel();
+        *editor.saved_events.lock() = Some(sender);
+        editor.doc.lock().expected = Some("initial".into());
+        let log = Arc::new(SelfWriteLog::new());
+        let saver = AutoSaver::spawn_with_throttle(
+            WorkspaceFs::new(dir.path()).unwrap(),
+            editor.clone(),
+            SaveOptions {
+                trim_trailing_whitespace: false,
+                insert_final_newline: false,
+            },
+            Some(log.clone()),
+            THROTTLE,
+        )
+        .unwrap();
+        let gate = log.write_gate();
+        editor.edit("edited");
+        saver.schedule(&path);
+        assert!(saved.recv_timeout(Duration::from_millis(300)).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "initial");
+        drop(gate);
+        assert_eq!(saved.recv_timeout(WAIT).unwrap(), 1);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "edited");
     }
 
     #[test]

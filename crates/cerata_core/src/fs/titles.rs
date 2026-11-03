@@ -31,10 +31,17 @@ pub fn extract_title(path: &Path) -> Option<String> {
     let mut file = std::fs::File::open(path).ok()?;
     let mut buf = vec![0u8; TITLE_PROBE_BYTES];
     let read = file.read(&mut buf).ok()?;
-    let text = match std::str::from_utf8(&buf[..read]) {
+    title_from_bytes(&buf[..read])
+}
+
+/// [`extract_title`] on bytes already read: only the first 4 KB count,
+/// so a title found from a whole file is the one the sidebar finds.
+pub fn title_from_bytes(bytes: &[u8]) -> Option<String> {
+    let probe = &bytes[..bytes.len().min(TITLE_PROBE_BYTES)];
+    let text = match std::str::from_utf8(probe) {
         Ok(text) => text,
         // The 4 KB cut may split a character: keep the valid prefix.
-        Err(error) => std::str::from_utf8(&buf[..error.valid_up_to()]).ok()?,
+        Err(error) => std::str::from_utf8(&probe[..error.valid_up_to()]).ok()?,
     };
     title_from_text(text.strip_prefix('\u{feff}').unwrap_or(text))
 }

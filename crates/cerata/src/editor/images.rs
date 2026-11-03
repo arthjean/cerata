@@ -21,6 +21,7 @@ pub use cerata_core::images::natural_size;
 use cerata_core::images::{
     ImageKind, ImportSource, MAX_PIXELS, MAX_SVG_BYTES, is_svg, svg_is_self_contained,
 };
+use cerata_core::workspace::NameIndex;
 
 use super::layout::ImageBox;
 use super::theme;
@@ -227,6 +228,8 @@ enum Entry {
 pub struct LoadJob {
     pub url: String,
     pub source: Source,
+    /// The library's file names, which find an embed without a walk.
+    pub names: Option<NameIndex>,
 }
 
 /// A job's url, with the image's natural size and what to draw, if it loaded.
@@ -252,17 +255,25 @@ fn local_loaded(path: PathBuf) -> Option<((f32, f32), Loaded)> {
 
 /// The file an image embed shows, found as Writer finds it
 /// (`cerata_core::links::resolve_wiki_image`) and kept inside `confine`.
+/// A lookup by name uses the library's name table once it lists every
+/// file (US-087); before that, `walk` searches the folder.
 fn embed_path(
     target: &str,
     workspace: Option<&Path>,
     note_dir: Option<&Path>,
     confine: Option<&Path>,
+    names: Option<&NameIndex>,
+    walk: &dyn Fn(&Path, &str) -> Option<PathBuf>,
 ) -> Option<PathBuf> {
     let slash = |p: &Path| p.to_string_lossy().replace('\\', "/");
     let (root, dir) = (workspace.map(slash), note_dir.map(slash));
     let exists = |p: &str| Path::new(p).is_file();
     let find = |root: &str, name: &str| {
-        cerata_core::index::find_file_by_name(Path::new(root), name).map(|p| slash(&p))
+        let found = match names.and_then(|names| names.find(name)) {
+            Some(found) => found,
+            None => walk(Path::new(root), name),
+        };
+        found.map(|p| slash(&p))
     };
     let found = cerata_core::links::resolve_wiki_image(
         target,
@@ -292,6 +303,8 @@ impl LoadJob {
                 workspace.as_deref(),
                 note_dir.as_deref(),
                 confine.as_deref(),
+                self.names.as_ref(),
+                &cerata_core::index::find_file_by_name,
             )
             .and_then(local_loaded),
             Source::Remote(url) => fetch(&url).and_then(bytes_loaded),
@@ -349,6 +362,8 @@ pub struct ImageHost {
     root: Option<PathBuf>,
     /// The workspace root, where image embeds are also looked for.
     workspace: Option<PathBuf>,
+    /// The workspace's file names, for embeds.
+    names: Option<NameIndex>,
     entries: HashMap<String, Entry>,
     /// Height per (destination, display width): what the line reserves
     /// before the image is measured again (Writer's `imageHeightCache`).
@@ -372,6 +387,11 @@ impl ImageHost {
         self.root = std::fs::canonicalize(root).ok();
         self.workspace = Some(root.to_path_buf());
         self.entries.clear();
+    }
+
+    /// Embeds are found through the library's name table (US-087).
+    pub fn set_names(&mut self, names: NameIndex) {
+        self.names = Some(names);
     }
 
     /// An existing file inside the root, symlinks resolved.
@@ -479,6 +499,7 @@ impl ImageHost {
                     job = Some(LoadJob {
                         url: url.to_owned(),
                         source,
+                        names: self.names.clone(),
                     });
                     Entry::Pending
                 }
@@ -747,8 +768,139 @@ mod tests {
         let job = LoadJob {
             url: "x".into(),
             source: Source::Data(br#"<svg width="100000" height="100000"></svg>"#.to_vec()),
+            names: None,
         };
         assert!(job.run().1.is_none());
+    }
+
+    /// A library with images in nested folders, its live index complete.
+    /// Returns the folder as opened, its canonical form (where found files
+    /// are reported) and the name table.
+    fn embed_library() -> (tempfile::TempDir, PathBuf, PathBuf, NameIndex) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        let mut png = Vec::new();
+        image::RgbaImage::new(2, 2)
+            .write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        for i in 0..140 {
+            let folder = root
+                .join(format!("area-{}", i % 7))
+                .join(format!("t{}", i % 5));
+            std::fs::create_dir_all(&folder).unwrap();
+            std::fs::write(folder.join(format!("Pic{i}.png")), &png).unwrap();
+        }
+        std::fs::create_dir_all(root.join("deep").join("er")).unwrap();
+        std::fs::write(root.join("deep").join("er").join("same.png"), &png).unwrap();
+        std::fs::write(root.join("deep").join("same.png"), &png).unwrap();
+        std::fs::write(root.join("note.md"), "# Note").unwrap();
+        let token = cerata_core::epoch::EpochCounter::new().token();
+        let index = cerata_core::index::index_workspace_with_global(&root, None, &token).unwrap();
+        let names = NameIndex::from_index(cerata_core::index::LiveIndex::from_index(&index));
+        let real = std::fs::canonicalize(&root).unwrap();
+        (dir, root, real, names)
+    }
+
+    /// US-087: 140 embeds resolve from the name table, without one walk.
+    #[test]
+    fn embeds_resolve_by_name_without_walking_the_library() {
+        let (_dir, root, real, names) = embed_library();
+        let walks = std::cell::Cell::new(0);
+        let walk = |root: &Path, name: &str| {
+            walks.set(walks.get() + 1);
+            cerata_core::index::find_file_by_name(root, name)
+        };
+        for i in 0..140 {
+            let found = embed_path(
+                &format!("pic{i}.png"),
+                Some(&root),
+                Some(&root),
+                Some(&real),
+                Some(&names),
+                &walk,
+            );
+            let expected = real
+                .join(format!("area-{}", i % 7))
+                .join(format!("t{}", i % 5))
+                .join(format!("Pic{i}.png"));
+            assert_eq!(found.as_deref(), Some(expected.as_path()), "pic{i}.png");
+        }
+        assert_eq!(walks.get(), 0, "an embed walked the library");
+        // Duplicates: the fewest components win, as Obsidian decides.
+        let same = embed_path(
+            "same.png",
+            Some(&root),
+            Some(&root),
+            Some(&real),
+            Some(&names),
+            &walk,
+        );
+        assert_eq!(same, Some(real.join("deep").join("same.png")));
+        assert_eq!(
+            embed_path(
+                "missing.png",
+                Some(&root),
+                Some(&root),
+                Some(&real),
+                Some(&names),
+                &walk
+            ),
+            None
+        );
+        assert_eq!(walks.get(), 0);
+    }
+
+    /// US-087: before the index lists every file, the walk still finds it.
+    #[test]
+    fn an_embed_walks_the_library_until_the_index_is_ready() {
+        let (_dir, root, real, _) = embed_library();
+        let empty = NameIndex::from_index(cerata_core::index::LiveIndex::new(&root));
+        let walks = std::cell::Cell::new(0);
+        let walk = |root: &Path, name: &str| {
+            walks.set(walks.get() + 1);
+            cerata_core::index::find_file_by_name(root, name)
+        };
+        let found = embed_path(
+            "pic3.png",
+            Some(&root),
+            Some(&root),
+            Some(&real),
+            Some(&empty),
+            &walk,
+        );
+        assert_eq!(found, Some(real.join("area-3").join("t3").join("Pic3.png")));
+        assert_eq!(walks.get(), 1);
+    }
+
+    /// US-087: an image renamed outside Cerata resolves by its new name
+    /// only, once the watcher or a reconciliation saw it.
+    #[test]
+    fn a_renamed_image_resolves_by_its_new_name_only() {
+        let (_dir, root, real, names) = embed_library();
+        let old = root.join("area-0").join("t0").join("Pic0.png");
+        let new = root.join("area-0").join("t0").join("Renamed.png");
+        std::fs::rename(&old, &new).unwrap();
+        names.update(|index| {
+            index.remove_subtree(&old);
+            index.add_other(&new);
+        });
+        let walk = |_: &Path, _: &str| -> Option<PathBuf> { panic!("no walk once ready") };
+        let find = |name: &str| {
+            embed_path(
+                name,
+                Some(&root),
+                Some(&root),
+                Some(&real),
+                Some(&names),
+                &walk,
+            )
+        };
+        assert_eq!(find("pic0.png"), None);
+        assert_eq!(
+            find("renamed.png"),
+            Some(real.join("area-0").join("t0").join("Renamed.png"))
+        );
+        let _ = new;
     }
 
     #[test]

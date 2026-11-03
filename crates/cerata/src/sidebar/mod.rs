@@ -311,6 +311,7 @@ impl Sidebar {
             *slot += 1;
             *slot
         };
+        let shown = runtime.clone();
         let task = cx.spawn(async move |this, cx| {
             let read_dir = dir.clone();
             let result = cx
@@ -337,6 +338,12 @@ impl Sidebar {
                     this.listings.insert(dir.clone(), listing);
                 }
                 this.rebuild_rows();
+                // The tree shows the index's titles: the library's first
+                // reconciliation starts now, after that frame (US-084),
+                // not while the folder is still being read for it.
+                if is_root && shown.index_ready.load(std::sync::atomic::Ordering::SeqCst) {
+                    shown.request_reconcile(cerata_core::reconcile::ReconcileTrigger::FirstRender);
+                }
                 this.finish_reveal(cx);
                 cx.notify();
                 Some(untitled)
@@ -533,7 +540,7 @@ impl Sidebar {
             let (entries, recents, more) = cx
                 .background_executor()
                 .spawn(async move {
-                    let entries = with_titles(runtime.fs.file_entries(&wanted));
+                    let entries = with_titles(&runtime, runtime.fs.file_entries(&wanted));
                     let (recents, more) = load_recents(&runtime, &excluded, recents_visible);
                     (entries, recents, more)
                 })
@@ -686,9 +693,11 @@ fn known_titles(listing: Option<&Listing>) -> HashMap<PathBuf, (u64, String)> {
     }
 }
 
-/// One folder's entries. Titles come from `known` while the file is
-/// unchanged and settled, else are read here when at most [`TITLE_CHUNK`] are missing;
-/// otherwise the paths still to read are returned.
+/// One folder's entries. Titles come from the library's index (its store,
+/// US-083) for a note whose content it knows, else from `known` while the
+/// file is unchanged and settled, else are read here when at most
+/// [`TITLE_CHUNK`] are missing; otherwise the paths still to read are
+/// returned.
 fn read_listing(
     runtime: &WorkspaceRuntime,
     dir: &Path,
@@ -710,7 +719,12 @@ fn read_listing(
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |now| now.as_secs().saturating_sub(2));
     let mut untitled = Vec::new();
+    let mut read = runtime.index.lock().titles_in(dir);
     for entry in entries.iter_mut().filter(|entry| entry.is_markdown) {
+        if let Some(title) = read.remove(&entry.name) {
+            entry.title = title;
+            continue;
+        }
         match known.get(&entry.path) {
             Some((modified_at, title))
                 if *modified_at == entry.modified_at && *modified_at < settled =>
@@ -732,13 +746,25 @@ fn read_listing(
     Ok((entries, untitled))
 }
 
-fn with_titles(mut entries: Vec<DirEntry>) -> Vec<DirEntry> {
+/// Titles of `entries` from the index, read from the file (off the UI
+/// thread) only for a note whose content the index does not know yet.
+fn with_titles(runtime: &WorkspaceRuntime, mut entries: Vec<DirEntry>) -> Vec<DirEntry> {
     for entry in &mut entries {
         if entry.is_markdown && entry.title.is_none() {
-            entry.title = extract_title(&entry.path);
+            entry.title = known_or_read_title(runtime, &entry.path);
         }
     }
     entries
+}
+
+fn known_or_read_title(runtime: &WorkspaceRuntime, path: &Path) -> Option<String> {
+    let known = runtime
+        .index
+        .lock()
+        .get(path)
+        .filter(|file| file.hash.is_some())
+        .map(|file| file.title.clone());
+    known.unwrap_or_else(|| extract_title(path))
 }
 
 /// Recents for `visible` rows, pinned files left out: pages of 100 are
@@ -778,7 +804,10 @@ fn load_recents(
             is_markdown: true,
             modified_at: file.modified_at,
             created_at: cerata_core::fs::created_time(&file.path),
-            title: extract_title(&file.path),
+            title: match file.hash {
+                Some(_) => file.title,
+                None => extract_title(&file.path),
+            },
             path: file.path,
         })
         .collect();

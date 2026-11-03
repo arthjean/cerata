@@ -10,12 +10,18 @@
 
 use crate::epoch::{EpochCounter, EpochToken};
 use crate::fs::{FsError, WorkspaceFs};
-use crate::ignore::WorkspaceIgnore;
-use crate::index::{IndexReport, LiveIndex, spawn_index};
+use crate::ignore::{WorkspaceIgnore, global_gitignore_path};
+use crate::index::{IndexedFile, LiveIndex};
 use crate::library::LibraryKey;
+use crate::markdown::is_markdown_path;
 use crate::open_target::OpenTarget;
-use crate::self_writes::SelfWriteLog;
+use crate::reconcile::{
+    FileAccess, OsFiles, ReconcileContext, ReconcileTrigger, Reconciler, note_content, note_record,
+    path_from_relative,
+};
+use crate::self_writes::{SelfWriteLog, WriteSink};
 use crate::settings::Settings;
+use crate::store::{NoteChange, Store, StoreOpen, StoredNote, library_store_dir};
 use crate::watcher::{WatchContext, WatchEnvelope, WatchEvent, WorkspaceWatcher};
 use parking_lot::{Mutex, RwLock};
 use std::collections::{HashMap, VecDeque};
@@ -42,6 +48,10 @@ pub struct WorkspaceRuntime {
     pub ignore: Arc<RwLock<Arc<WorkspaceIgnore>>>,
     pub self_writes: Arc<SelfWriteLog>,
     pub index_ready: Arc<AtomicBool>,
+    /// The library's store once opened; `None` before or without one.
+    pub store: Arc<RwLock<Option<Store>>>,
+    /// The passes that catch up with changes the watcher missed.
+    pub reconciler: Reconciler,
     watcher: Arc<Mutex<Option<WorkspaceWatcher>>>,
 }
 
@@ -63,6 +73,47 @@ impl WorkspaceRuntime {
     /// `true` once the watcher runs (it starts after the first index).
     pub fn is_watching(&self) -> bool {
         self.watcher.lock().is_some()
+    }
+
+    /// Asks for a reconciliation pass (see [`Reconciler::request`]).
+    pub fn request_reconcile(&self, trigger: ReconcileTrigger) -> bool {
+        self.reconciler.request(trigger)
+    }
+
+    /// Lookups by file name for embeds (US-087).
+    pub fn names(&self) -> NameIndex {
+        NameIndex {
+            index: self.index.clone(),
+        }
+    }
+}
+
+/// Finds files by name in a library's live index.
+#[derive(Clone)]
+pub struct NameIndex {
+    index: Arc<Mutex<LiveIndex>>,
+}
+
+impl NameIndex {
+    /// A name table over `index` alone (tests, tools).
+    pub fn from_index(index: LiveIndex) -> Self {
+        Self {
+            index: Arc::new(Mutex::new(index)),
+        }
+    }
+
+    /// Changes the index behind the table.
+    pub fn update(&self, change: impl FnOnce(&mut LiveIndex)) {
+        change(&mut self.index.lock());
+    }
+
+    /// `None` while the index does not know every file yet (the caller
+    /// walks the folder instead), else the file found, if any.
+    pub fn find(&self, file_name: &str) -> Option<Option<PathBuf>> {
+        let index = self.index.lock();
+        index
+            .names_complete()
+            .then(|| index.find_by_name(file_name))
     }
 }
 
@@ -179,6 +230,7 @@ impl WindowState {
 /// Watcher teardown can block (FSEvents, inotify): never on the UI thread.
 fn drop_off_thread(runtime: Option<Arc<WorkspaceRuntime>>) {
     let Some(runtime) = runtime else { return };
+    runtime.reconciler.stop();
     let watcher = runtime.watcher.lock().take();
     if watcher.is_none() {
         return;
@@ -289,19 +341,43 @@ pub fn canonicalize_workspace_root(path: &Path) -> Result<PathBuf, FsError> {
     })
 }
 
-/// Opens `path` as the workspace of `window`, as library `library_id`
-/// (resolved by [`crate::library::LibraryRegistry::resolve`]).
-///
-/// Synchronously: canonicalizes the root, starts a new epoch, installs a
-/// bootstrap ignore matcher and the workspace settings layer. In the
-/// background: indexes the workspace, publishes the index if the epoch is
-/// unchanged, reports `IndexComplete`, then starts the watcher, whose events
-/// (and the index report) go to `events` tagged with `{root, epoch}`.
+/// How a library opens beyond its folder.
+#[derive(Clone, Default)]
+pub struct OpenOptions {
+    /// `local_data_dir()/cerata`, where the stores live
+    /// ([`library_store_dir`]); `None` opens the library without a store.
+    pub store_root: Option<PathBuf>,
+    /// How notes are read; the OS by default ([`OsFiles`]).
+    pub files: Option<Arc<dyn FileAccess>>,
+}
+
+/// [`open_workspace_with`] without a store.
 pub fn open_workspace(
     window: &Arc<WindowState>,
     path: &Path,
     library_id: &str,
     events: Sender<WatchEnvelope>,
+) -> Result<WorkspaceInfo, FsError> {
+    open_workspace_with(window, path, library_id, events, OpenOptions::default())
+}
+
+/// Opens `path` as the workspace of `window`, as library `library_id`
+/// (resolved by [`crate::library::LibraryRegistry::resolve`]).
+///
+/// Synchronously: canonicalizes the root, starts a new epoch, installs a
+/// bootstrap ignore matcher and the workspace settings layer. In the
+/// background (US-083, US-084): opens the library's store, publishes the
+/// index it holds (titles included) and reports `IndexComplete` before any
+/// walk, then runs the first reconciliation pass, after the first frame
+/// when the store had an index; without one, that pass is the walk that
+/// publishes the index. The watcher starts after it. Every event goes to
+/// `events` tagged with `{root, epoch}`.
+pub fn open_workspace_with(
+    window: &Arc<WindowState>,
+    path: &Path,
+    library_id: &str,
+    events: Sender<WatchEnvelope>,
+    options: OpenOptions,
 ) -> Result<WorkspaceInfo, FsError> {
     let root = canonicalize_workspace_root(path)?;
     let fs = WorkspaceFs::new(&root)?;
@@ -315,6 +391,8 @@ pub fn open_workspace(
             ignore: Arc::new(RwLock::new(Arc::new(WorkspaceIgnore::bootstrap(&root)))),
             self_writes: Arc::new(SelfWriteLog::new()),
             index_ready: Arc::new(AtomicBool::new(false)),
+            store: Arc::new(RwLock::new(None)),
+            reconciler: Reconciler::new(),
             watcher: Arc::new(Mutex::new(None)),
         })
     });
@@ -329,48 +407,9 @@ pub fn open_workspace(
 
     let job = runtime.clone();
     let settings = window.settings.clone();
-    let spawned = spawn_index(root.clone(), runtime.token.clone(), move |report| {
-        let IndexReport::Completed {
-            index,
-            file_count,
-            duration,
-            ..
-        } = report
-        else {
-            return;
-        };
-        if job.token.is_stale() {
-            return;
-        }
-        log::info!("indexed {file_count} files in {duration:?}");
-        *job.ignore.write() = index.ignore.clone();
-        *job.index.lock() = LiveIndex::from_index(&index);
-        job.index_ready.store(true, Ordering::SeqCst);
-        let _ = events.send(WatchEnvelope {
-            root: job.root.clone(),
-            epoch: job.token.epoch(),
-            event: WatchEvent::IndexComplete { file_count },
-        });
-        let reload_root = job.root.clone();
-        let ctx = WatchContext {
-            root: job.root.clone(),
-            token: job.token.clone(),
-            index: job.index.clone(),
-            ignore: job.ignore.clone(),
-            self_writes: job.self_writes.clone(),
-            reload_settings: Some(Arc::new(move || {
-                if let Err(error) = settings.load_workspace(&reload_root) {
-                    log::warn!("workspace settings not reloaded: {error}");
-                }
-            })),
-            events,
-        };
-        match WorkspaceWatcher::start(ctx) {
-            Ok(watcher) if job.token.is_current() => *job.watcher.lock() = Some(watcher),
-            Ok(_) => {}
-            Err(error) => log::warn!("file watcher not started: {error}"),
-        }
-    });
+    let spawned = std::thread::Builder::new()
+        .name("cerata-index".into())
+        .spawn(move || bootstrap(&job, settings, events, options));
     if let Err(error) = spawned {
         log::error!("could not start indexing: {error}");
     }
@@ -387,6 +426,186 @@ pub fn open_workspace(
     })
 }
 
+/// The background part of [`open_workspace_with`]; it ends when the
+/// library closes.
+fn bootstrap(
+    job: &Arc<WorkspaceRuntime>,
+    settings: Settings,
+    events: Sender<WatchEnvelope>,
+    options: OpenOptions,
+) {
+    let send = |event: WatchEvent| {
+        if job.token.is_current() {
+            let _ = events.send(WatchEnvelope {
+                root: job.root.clone(),
+                epoch: job.token.epoch(),
+                event,
+            });
+        }
+    };
+    let store = options
+        .store_root
+        .as_deref()
+        .and_then(|store_root| open_store(job, store_root, &send));
+    let mut from_store = false;
+    if let Some(store) = &store {
+        let started = std::time::Instant::now();
+        match store.live_notes() {
+            Ok(notes) if !notes.is_empty() => {
+                let live = index_from_store(&job.root, &notes);
+                let file_count = live.len();
+                if job.token.is_stale() {
+                    return;
+                }
+                *job.index.lock() = live;
+                job.index_ready.store(true, Ordering::SeqCst);
+                log::info!(
+                    "read {file_count} notes from the store in {:?}",
+                    started.elapsed()
+                );
+                send(WatchEvent::IndexComplete { file_count });
+                from_store = true;
+            }
+            Ok(_) => {}
+            Err(error) => log::warn!("library index not read from the store: {error}"),
+        }
+    }
+    *job.store.write() = store.clone();
+    job.self_writes.set_sink(write_sink(job, store.clone()));
+    let files: Arc<dyn FileAccess> = options.files.unwrap_or_else(|| Arc::new(OsFiles));
+    let ctx = ReconcileContext {
+        root: job.root.clone(),
+        token: job.token.clone(),
+        index: job.index.clone(),
+        ignore: job.ignore.clone(),
+        index_ready: job.index_ready.clone(),
+        store: store.clone(),
+        self_writes: job.self_writes.clone(),
+        files: files.clone(),
+        global_gitignore: global_gitignore_path(),
+        events: events.clone(),
+    };
+    let watcher_job = job.clone();
+    let start_watcher = Box::new(move || {
+        let reload_root = watcher_job.root.clone();
+        let reconciler = watcher_job.reconciler.clone();
+        let ctx = WatchContext {
+            root: watcher_job.root.clone(),
+            token: watcher_job.token.clone(),
+            index: watcher_job.index.clone(),
+            ignore: watcher_job.ignore.clone(),
+            self_writes: watcher_job.self_writes.clone(),
+            store,
+            files,
+            reload_settings: Some(Arc::new(move || {
+                if let Err(error) = settings.load_workspace(&reload_root) {
+                    log::warn!("workspace settings not reloaded: {error}");
+                }
+            })),
+            on_error: Some(Arc::new(move || {
+                reconciler.request(ReconcileTrigger::WatchError);
+            })),
+            events,
+        };
+        match WorkspaceWatcher::start(ctx) {
+            Ok(watcher) if watcher_job.token.is_current() => {
+                *watcher_job.watcher.lock() = Some(watcher);
+            }
+            Ok(_) => {}
+            Err(error) => log::warn!("file watcher not started: {error}"),
+        }
+    });
+    job.reconciler.run(&ctx, from_store, start_watcher);
+}
+
+/// Opens the library's store under `store_root`, telling its notice. No
+/// store inside the library itself (ADR 0009).
+fn open_store(
+    job: &WorkspaceRuntime,
+    store_root: &Path,
+    send: &dyn Fn(WatchEvent),
+) -> Option<Store> {
+    let dir = library_store_dir(store_root, &job.library_id);
+    if dir.starts_with(&job.root) {
+        log::warn!(
+            "no store for {}: its store folder would be inside it",
+            job.root.display()
+        );
+        return None;
+    }
+    match Store::open(&dir, &crate::cloud::synced_by) {
+        StoreOpen::Ready { store, notice } => {
+            if let Some(notice) = notice {
+                send(WatchEvent::Notice {
+                    message: notice.message(),
+                });
+            }
+            Some(store)
+        }
+        StoreOpen::Unavailable { notice } => {
+            if let Some(notice) = notice {
+                send(WatchEvent::Notice {
+                    message: notice.message(),
+                });
+            }
+            None
+        }
+    }
+}
+
+/// The live index the store describes: no file is opened.
+pub fn index_from_store(root: &Path, notes: &[StoredNote]) -> LiveIndex {
+    let mut files = Vec::with_capacity(notes.len());
+    for note in notes {
+        let path = path_from_relative(root, &note.record.path);
+        files.push(IndexedFile {
+            name: path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            path,
+            relative_path: note.record.path.clone(),
+            modified_at: note.record.mtime_ns / 1_000_000_000,
+            size: note.record.size,
+            modified_ns: note.record.mtime_ns,
+            hash: note.record.hash,
+            title: note.record.title.clone(),
+        });
+    }
+    LiveIndex::from_files(root, files)
+}
+
+/// Cerata's own writes of notes update the index and the store with the
+/// content written (US-086): the next pass and the next event know it.
+fn write_sink(job: &WorkspaceRuntime, store: Option<Store>) -> WriteSink {
+    let root = job.root.clone();
+    let index = job.index.clone();
+    let token = job.token.clone();
+    Arc::new(move |path, written, bytes| {
+        if !path.starts_with(&root) || !is_markdown_path(path) || token.is_stale() {
+            return;
+        }
+        let content = note_content(bytes);
+        let mut file = IndexedFile::new(&root, path, None);
+        file.size = written.size;
+        file.modified_ns = written.modified_ns;
+        file.modified_at = written.modified_ns / 1_000_000_000;
+        file.hash = Some(written.hash);
+        file.title = content.title;
+        let record = note_record(&file, false);
+        index.lock().upsert(file);
+        if let Some(store) = &store {
+            let _ = store.apply(
+                &token,
+                vec![NoteChange::Upsert {
+                    record,
+                    sketch: Some(content.sketch),
+                }],
+            );
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -400,6 +619,205 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let (settings, _) = Settings::open(dir.path()).unwrap();
         (dir, settings)
+    }
+
+    /// Reads through the disk and counts every file opened.
+    #[derive(Default)]
+    struct CountingFiles(std::sync::atomic::AtomicUsize);
+
+    impl FileAccess for CountingFiles {
+        fn is_offline(&self, _: &Path, _: &std::fs::Metadata) -> bool {
+            false
+        }
+
+        fn read(&self, path: &Path) -> std::io::Result<Vec<u8>> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            std::fs::read(path)
+        }
+    }
+
+    fn aged(path: &Path) {
+        let file = std::fs::File::options().write(true).open(path).unwrap();
+        let modified = file.metadata().unwrap().modified().unwrap();
+        file.set_modified(modified - Duration::from_secs(3600))
+            .unwrap();
+    }
+
+    /// Opens `root` with a store under `stores`, reading through `files`,
+    /// and returns the first `IndexComplete` with the runtime.
+    fn open_with_store(
+        window: &Arc<WindowState>,
+        root: &Path,
+        stores: &Path,
+        files: Arc<CountingFiles>,
+    ) -> (Arc<WorkspaceRuntime>, mpsc::Receiver<WatchEnvelope>, usize) {
+        let (sender, events) = mpsc::channel();
+        let options = OpenOptions {
+            store_root: Some(stores.to_path_buf()),
+            files: Some(files),
+        };
+        open_workspace_with(window, root, TEST_LIBRARY, sender, options).unwrap();
+        let runtime = window.runtime().unwrap();
+        loop {
+            let envelope = events.recv_timeout(Duration::from_secs(10)).unwrap();
+            if let WatchEvent::IndexComplete { file_count } = envelope.event {
+                return (runtime, events, file_count);
+            }
+        }
+    }
+
+    fn note_library() -> TempDir {
+        let root = TempDir::new().unwrap();
+        for (name, text) in [("a.md", "# Alpha\n"), ("b.md", "# Beta\n")] {
+            let path = root.path().join(name);
+            std::fs::write(&path, text).unwrap();
+            aged(&path);
+        }
+        root
+    }
+
+    /// US-083: the first open fills the store at the end of its walk; the
+    /// next one shows every title from the store before any walk, without
+    /// opening a single file, and its reconciliation opens none either.
+    #[test]
+    fn a_reopened_library_shows_its_titles_from_the_store_without_opening_a_file() {
+        let (_config, settings) = settings();
+        let window = WindowRegistry::new().create(settings);
+        let stores = TempDir::new().unwrap();
+        let library = note_library();
+        let root = dunce::canonicalize(library.path()).unwrap();
+
+        let first = Arc::new(CountingFiles::default());
+        let (runtime, _events, count) =
+            open_with_store(&window, &root, stores.path(), first.clone());
+        assert_eq!(count, 2);
+        assert!(
+            runtime
+                .reconciler
+                .wait_for_passes(1, Duration::from_secs(10))
+        );
+        assert_eq!(
+            first.0.load(Ordering::SeqCst),
+            2,
+            "the walk read each note once"
+        );
+        let store = runtime.store.read().clone().unwrap();
+        assert_eq!(
+            store.note("b.md").unwrap().unwrap().record.title.as_deref(),
+            Some("Beta")
+        );
+        assert!(store.path().starts_with(stores.path()));
+        assert!(!store.path().starts_with(&root));
+        assert!(window.clear_workspace_if_current(&root));
+
+        let again = Arc::new(CountingFiles::default());
+        let (runtime, _events, count) =
+            open_with_store(&window, &root, stores.path(), again.clone());
+        assert_eq!(count, 2);
+        // Titles are there with the index, before the first pass.
+        assert_eq!(
+            runtime.index.lock().title(&root.join("a.md")),
+            Some("Alpha")
+        );
+        assert_eq!(runtime.index.lock().title(&root.join("b.md")), Some("Beta"));
+        assert_eq!(runtime.reconciler.passes(), 0);
+        assert!(runtime.request_reconcile(ReconcileTrigger::FirstRender));
+        assert!(
+            runtime
+                .reconciler
+                .wait_for_passes(1, Duration::from_secs(10))
+        );
+        assert_eq!(again.0.load(Ordering::SeqCst), 0, "a file was opened");
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !runtime.is_watching() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "watcher never started"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    /// US-083 and US-084: a note edited while Cerata was closed shows its
+    /// stored title first, then the first reconciliation corrects it.
+    #[test]
+    fn a_title_changed_while_closed_is_corrected_by_the_first_pass() {
+        let (_config, settings) = settings();
+        let window = WindowRegistry::new().create(settings);
+        let stores = TempDir::new().unwrap();
+        let library = note_library();
+        let root = dunce::canonicalize(library.path()).unwrap();
+        let files = Arc::new(CountingFiles::default());
+        let (runtime, _events, _) = open_with_store(&window, &root, stores.path(), files.clone());
+        assert!(
+            runtime
+                .reconciler
+                .wait_for_passes(1, Duration::from_secs(10))
+        );
+        assert!(window.clear_workspace_if_current(&root));
+
+        let edited = root.join("a.md");
+        std::fs::write(&edited, "# Alpha, renamed while closed\n").unwrap();
+        aged(&edited);
+        let (runtime, events, _) = open_with_store(&window, &root, stores.path(), files);
+        assert_eq!(runtime.index.lock().title(&edited), Some("Alpha"));
+        runtime.request_reconcile(ReconcileTrigger::FirstRender);
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            let envelope = events
+                .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+                .unwrap();
+            if envelope.event
+                == (WatchEvent::FileChanged {
+                    path: edited.clone(),
+                    change: crate::watcher::FileChange::Modified,
+                })
+            {
+                break;
+            }
+        }
+        assert_eq!(
+            runtime.index.lock().title(&edited),
+            Some("Alpha, renamed while closed")
+        );
+        let store = runtime.store.read().clone().unwrap();
+        let record = store.note("a.md").unwrap().unwrap().record;
+        assert_eq!(record.title.as_deref(), Some("Alpha, renamed while closed"));
+        assert_eq!(
+            record.hash,
+            Some(crate::store::content_hash(
+                b"# Alpha, renamed while closed\n"
+            ))
+        );
+    }
+
+    /// US-086: an autosave updates the index and the store with what it
+    /// wrote, so the next pass reads nothing.
+    #[test]
+    fn a_save_records_its_content_in_the_index_and_the_store() {
+        let (_config, settings) = settings();
+        let window = WindowRegistry::new().create(settings);
+        let stores = TempDir::new().unwrap();
+        let library = note_library();
+        let root = dunce::canonicalize(library.path()).unwrap();
+        let files = Arc::new(CountingFiles::default());
+        let (runtime, _events, _) = open_with_store(&window, &root, stores.path(), files.clone());
+        assert!(
+            runtime
+                .reconciler
+                .wait_for_passes(1, Duration::from_secs(10))
+        );
+        let path = root.join("a.md");
+        let bytes = b"# Saved by Cerata\n";
+        let hash = runtime.self_writes.record(&path, bytes);
+        runtime.fs.write_bytes(&path, bytes).unwrap();
+        runtime.self_writes.written(&path, hash, bytes);
+        assert_eq!(runtime.index.lock().title(&path), Some("Saved by Cerata"));
+        let store = runtime.store.read().clone().unwrap();
+        store.sync().unwrap();
+        let record = store.note("a.md").unwrap().unwrap().record;
+        assert_eq!(record.hash, Some(hash));
+        assert_eq!(record.title.as_deref(), Some("Saved by Cerata"));
     }
 
     // Ported from Writer `commands/workspace.rs` tests.

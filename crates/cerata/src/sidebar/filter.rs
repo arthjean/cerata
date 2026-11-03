@@ -1,8 +1,9 @@
 //! The sidebar filter (Paneflow's workspace filter): while a query is set,
 //! the sidebar lists every indexed file whose label or relative path
-//! contains it, case-insensitively, instead of its sections. Titles are
-//! read in the background the first time a filter starts and dropped when
-//! it ends, so a new filter sees edited titles.
+//! contains it, case-insensitively, instead of its sections. Titles come
+//! from the library's index (its store, US-083), copied off the UI thread
+//! the first time a filter starts and dropped when it ends, so a new filter
+//! sees edited titles. No file is read for them.
 //!
 //! Each change of the matches animates as Paneflow's rail does
 //! (`SidebarRowMotion`): over 180 ms with a cubic ease-out, entering rows
@@ -15,15 +16,11 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use cerata_core::fs::DirEntry;
-use cerata_core::fs::titles::extract_title;
 use gpui::{Context, FontWeight, HighlightStyle, ScrollStrategy, StyledText};
 
 use super::Sidebar;
 use super::tree::{LabelMode, stem};
 use crate::editor::theme;
-
-/// Titles read per background chunk.
-const TITLE_CHUNK: usize = 512;
 
 /// Length of a change of the matches (Paneflow's rail rows).
 pub const MOTION: Duration = Duration::from_millis(180);
@@ -197,43 +194,32 @@ impl Sidebar {
         self.filter.results = results.into_iter().map(|(_, entry)| entry).collect();
     }
 
-    /// Reads every indexed file's title, in chunks, refiltering after each.
+    /// Copies every indexed file's known title, then refilters.
     fn load_filter_titles(&mut self, cx: &mut Context<Self>) {
         let Some(runtime) = self.runtime.clone() else {
             return;
         };
-        let paths: Vec<PathBuf> = runtime
-            .index
-            .lock()
-            .files()
-            .map(|file| file.path.clone())
-            .collect();
         let task = cx.spawn(async move |this, cx| {
-            for chunk in paths.chunks(TITLE_CHUNK) {
-                let chunk = chunk.to_vec();
-                let titles: Vec<(PathBuf, String)> = cx
-                    .background_executor()
-                    .spawn(async move {
-                        chunk
-                            .into_iter()
-                            .filter_map(|path| extract_title(&path).map(|title| (path, title)))
-                            .collect()
-                    })
-                    .await;
-                let applied = this.update(cx, |this, cx| {
-                    // The filter ended (or the workspace changed) meanwhile.
-                    if !this.filter.titles_requested {
-                        return false;
-                    }
-                    this.filter.titles.extend(titles);
-                    this.refilter(!cx.reduce_motion());
-                    cx.notify();
-                    true
-                });
-                if !matches!(applied, Ok(true)) {
+            let titles: Vec<(PathBuf, String)> = cx
+                .background_executor()
+                .spawn(async move {
+                    runtime
+                        .index
+                        .lock()
+                        .files()
+                        .filter_map(|file| Some((file.path.clone(), file.title.clone()?)))
+                        .collect()
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                // The filter ended (or the workspace changed) meanwhile.
+                if !this.filter.titles_requested {
                     return;
                 }
-            }
+                this.filter.titles.extend(titles);
+                this.refilter(!cx.reduce_motion());
+                cx.notify();
+            });
         });
         self.tasks.push(task);
     }

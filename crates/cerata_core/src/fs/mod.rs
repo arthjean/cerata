@@ -194,8 +194,9 @@ impl WorkspaceFs {
                 files.push(listed_entry(name, path, false, entry.metadata()));
             }
         }
-        dirs.sort_by_key(|entry| entry.name.to_lowercase());
-        files.sort_by_key(|entry| entry.name.to_lowercase());
+        // One lowercase key per entry, not one per comparison.
+        dirs.sort_by_cached_key(|entry| entry.name.to_lowercase());
+        files.sort_by_cached_key(|entry| entry.name.to_lowercase());
         dirs.extend(files);
         Ok(dirs)
     }

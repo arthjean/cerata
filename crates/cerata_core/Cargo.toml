@@ -23,6 +23,9 @@ thiserror.workspace = true
 trash = "5"
 # Library ids (ADR 0009, US-076): 16 bytes from the OS.
 getrandom = "0.3"
+# The library store (ADR 0009, EP-017): SQLite compiled in, content hashes.
+rusqlite = { version = "0.41.1", features = ["bundled"] }
+blake3 = "1.8.7"
 
 [dev-dependencies]
 tempfile.workspace = true

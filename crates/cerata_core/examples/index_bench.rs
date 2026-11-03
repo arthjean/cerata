@@ -7,6 +7,9 @@
 //! levels deep, plus a `.gitignore`, an ignored folder and non-Markdown
 //! files, so the walk exercises the same rules as a real vault.
 
+#[path = "support/corpus.rs"]
+mod corpus;
+
 use cerata_core::epoch::EpochCounter;
 use cerata_core::index::index_workspace;
 use std::path::Path;
@@ -19,7 +22,7 @@ fn main() -> ExitCode {
         [command, dir, count] if command == "generate" => count
             .parse()
             .map_err(|error| format!("invalid file count: {error}"))
-            .and_then(|count| generate(Path::new(dir), count).map_err(|e| e.to_string())),
+            .and_then(|count| corpus::generate(Path::new(dir), count).map_err(|e| e.to_string())),
         [command, dir, rest @ ..] if command == "index" => {
             let runs = rest.first().and_then(|r| r.parse().ok()).unwrap_or(5);
             index(Path::new(dir), runs)
@@ -33,29 +36,6 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
-}
-
-fn generate(root: &Path, count: usize) -> std::io::Result<()> {
-    std::fs::create_dir_all(root.join("ignored-build"))?;
-    std::fs::write(root.join(".gitignore"), "ignored-build/\n")?;
-    for i in 0..200 {
-        std::fs::write(root.join("ignored-build").join(format!("out-{i}.md")), "x")?;
-    }
-    for i in 0..count {
-        let dir = root
-            .join(format!("area-{:03}", i / 10_000))
-            .join(format!("topic-{:03}", (i / 100) % 100));
-        if i % 100 == 0 {
-            std::fs::create_dir_all(&dir)?;
-            std::fs::write(dir.join("attachment.png"), [0u8; 16])?;
-        }
-        std::fs::write(
-            dir.join(format!("note {i:06}.md")),
-            format!("# Note {i}\n\nBody of note {i}.\n"),
-        )?;
-    }
-    println!("generated {count} notes in {}", root.display());
-    Ok(())
 }
 
 fn index(root: &Path, runs: usize) -> Result<(), String> {

@@ -35,6 +35,12 @@ pub fn data_dir() -> Option<PathBuf> {
     dirs::data_dir().map(|dir| dir.join(APP_ID))
 }
 
+/// OS local data directory for Cerata, never the roaming one: the library
+/// stores live there (ADR 0009). `%LOCALAPPDATA%\cerata` on Windows.
+pub fn local_data_dir() -> Option<PathBuf> {
+    dirs::data_local_dir().map(|dir| dir.join(APP_ID))
+}
+
 /// `{root}/.cerata/config`.
 pub fn workspace_config_path(root: &Path) -> PathBuf {
     root.join(WORKSPACE_DIR).join(CONFIG_FILE)

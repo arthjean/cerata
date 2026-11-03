@@ -3,8 +3,13 @@
 //! Ported from Writer `watcher.rs` (`start_watcher`, event grouping,
 //! `spawn_ignore_rebuild`, membership updates) with these fixes:
 //! - echoes of Cerata's own saves are recognized by canonical path and
-//!   content fingerprint ([`SelfWriteLog`]), not by a 2 s blind window, so an
-//!   external change right after a save is still reported (defect 7);
+//!   BLAKE3 hash ([`SelfWriteLog`]), not by a 2 s blind window, so an
+//!   external change right after a save is still reported (defect 7), and
+//!   an event whose content hash is the one the index knows is no change;
+//! - a note removed and one created in the same batch with the same hash,
+//!   or a similar content, are reported as one rename (US-085);
+//! - a watch error asks for a reconciliation (US-084), which catches what
+//!   the dropped events missed;
 //! - the index is updated in place, at a cost proportional to the changed
 //!   paths ([`LiveIndex`]); Writer cloned the whole index per event;
 //! - the same ignore model and Markdown predicate as index and sidebar;
@@ -16,10 +21,12 @@
 
 use crate::epoch::EpochToken;
 use crate::ignore::{WorkspaceIgnore, is_gitignore_path};
-use crate::index::{LiveIndex, index_subtree, index_workspace, indexed_file};
+use crate::index::{IndexedFile, LiveIndex, index_subtree, index_workspace};
 use crate::markdown::is_markdown_path;
 use crate::paths::workspace_config_path;
+use crate::reconcile::{Appeared, FileAccess, Gone, match_renames, note_content, note_record};
 use crate::self_writes::SelfWriteLog;
+use crate::store::{NoteChange, Store};
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashSet;
@@ -51,6 +58,11 @@ pub enum WatchEvent {
     IndexComplete { file_count: usize },
     /// The OS watch limit was reached; only open files' folders are watched.
     WatchLimited { message: String },
+    /// A note was renamed or moved outside Cerata (same content, or
+    /// similar enough): its tabs and pins follow it.
+    Renamed { from: PathBuf, to: PathBuf },
+    /// Something to tell the user about the library (its store).
+    Notice { message: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,12 +97,25 @@ pub struct WatchContext {
     pub index: Arc<Mutex<LiveIndex>>,
     pub ignore: Arc<RwLock<Arc<WorkspaceIgnore>>>,
     pub self_writes: Arc<SelfWriteLog>,
+    /// The library's store, kept current with what the watcher sees.
+    pub store: Option<Store>,
+    /// How notes are read (and offline placeholders recognized).
+    pub files: Arc<dyn FileAccess>,
     /// Called on the watcher thread when `.cerata/config` changes.
     pub reload_settings: Option<Arc<dyn Fn() + Send + Sync>>,
+    /// Called on the watcher thread after a watch error or when watching
+    /// becomes limited: events may have been lost.
+    pub on_error: Option<Arc<dyn Fn() + Send + Sync>>,
     pub events: Sender<WatchEnvelope>,
 }
 
 impl WatchContext {
+    fn lost_events(&self) {
+        if let Some(on_error) = &self.on_error {
+            on_error();
+        }
+    }
+
     fn send(&self, event: WatchEvent) {
         if self.token.is_stale() {
             return;
@@ -156,6 +181,7 @@ impl WorkspaceWatcher {
                 ctx.send(WatchEvent::WatchLimited {
                     message: watch_limit_message(),
                 });
+                ctx.lost_events();
                 true
             }
             Err(error) => return Err(error),
@@ -278,11 +304,13 @@ struct PathChange {
 fn process_batch(ctx: &WatchContext, batch: Vec<notify::Result<Event>>) -> bool {
     let mut order: Vec<PathBuf> = Vec::new();
     let mut changes: std::collections::HashMap<PathBuf, PathChange> = Default::default();
+    let mut lost = false;
     for result in batch {
         let event = match result {
             Ok(event) => event,
             Err(error) => {
                 log::warn!("watch error: {error}");
+                lost = true;
                 continue;
             }
         };
@@ -320,6 +348,7 @@ fn process_batch(ctx: &WatchContext, batch: Vec<notify::Result<Event>>) -> bool 
     let mut dirs_changed: Vec<PathBuf> = Vec::new();
     let mut rebuild_ignore = false;
     let mut settings_changed = false;
+    let mut notes = NoteEvents::default();
 
     for path in order {
         let Some(change) = changes.get(&path) else {
@@ -348,50 +377,40 @@ fn process_batch(ctx: &WatchContext, batch: Vec<notify::Result<Event>>) -> bool 
 
         if exists && is_dir {
             if change.membership {
-                let found = index_subtree(&ctx.root, &path, &ignore);
-                let mut index = ctx.index.lock();
-                for file in found {
-                    index.upsert(file);
+                let (found, others) = index_subtree(&ctx.root, &path, &ignore);
+                for path in others {
+                    ctx.index.lock().add_other(&path);
                 }
-                drop(index);
+                for file in found {
+                    if !ctx.index.lock().contains(&file.path) {
+                        notes.seen(ctx, file, None);
+                    }
+                }
                 dirs_changed.extend(parent);
             }
             dirs_changed.push(path);
         } else if exists && is_markdown_path(&path) {
-            if ctx.self_writes.is_self_write(&path) {
-                continue;
-            }
-            let added = ctx.index.lock().upsert(indexed_file(&ctx.root, &path));
-            let change_kind = if added {
-                FileChange::Created
-            } else {
-                FileChange::Modified
-            };
-            ctx.send(WatchEvent::FileChanged {
-                path: path.clone(),
-                change: change_kind,
-            });
-            if added || change.membership {
+            let file = IndexedFile::new(&ctx.root, &path, metadata.as_ref());
+            if notes.seen(ctx, file, metadata.as_ref()) || change.membership {
                 dirs_changed.extend(parent);
             }
         } else if exists {
             // A non-Markdown file can still change a folder's visibility.
             if change.membership {
+                ctx.index.lock().add_other(&path);
                 dirs_changed.extend(parent);
             }
         } else {
             let removed = ctx.index.lock().remove_subtree(&path);
-            if removed.iter().any(|file| file.path == path) {
-                ctx.send(WatchEvent::FileChanged {
-                    path: path.clone(),
-                    change: FileChange::Removed,
-                });
+            for file in &removed {
+                notes.gone(file);
             }
             if change.membership || !removed.is_empty() {
                 dirs_changed.extend(parent);
             }
         }
     }
+    notes.finish(ctx);
 
     let mut seen = HashSet::new();
     for dir in dirs_changed {
@@ -408,7 +427,179 @@ fn process_batch(ctx: &WatchContext, batch: Vec<notify::Result<Event>>) -> bool 
     if rebuild_ignore {
         spawn_rebuild(ctx.clone());
     }
+    if lost {
+        ctx.lost_events();
+    }
     true
+}
+
+/// The Markdown changes of one batch: removals and creations are held
+/// until the batch ends, so a rename is told as one.
+#[derive(Default)]
+struct NoteEvents {
+    gone: Vec<Gone>,
+    appeared: Vec<Appeared>,
+    /// Appeared notes that could not be read: never rename candidates.
+    unread: Vec<PathBuf>,
+    changes: Vec<NoteChange>,
+}
+
+impl NoteEvents {
+    /// A Markdown file exists at `file.path`. Reads it unless it is an
+    /// offline placeholder; an echo of Cerata's own write or a content the
+    /// index already knows is no change. Returns `true` if it is new.
+    fn seen(
+        &mut self,
+        ctx: &WatchContext,
+        mut file: IndexedFile,
+        metadata: Option<&std::fs::Metadata>,
+    ) -> bool {
+        let previous = ctx.index.lock().get(&file.path).cloned();
+        let added = previous.is_none();
+        let offline = metadata.is_some_and(|metadata| ctx.files.is_offline(&file.path, metadata));
+        let content = if offline {
+            None
+        } else {
+            match ctx.files.read(&file.path) {
+                Ok(bytes) => Some(note_content(&bytes)),
+                Err(error) => {
+                    log::warn!("cannot read {}: {error}", file.path.display());
+                    None
+                }
+            }
+        };
+        let Some(content) = content else {
+            if let Some(previous) = &previous {
+                file.hash = previous.hash;
+                file.title = previous.title.clone();
+            }
+            self.changes.push(NoteChange::Upsert {
+                record: note_record(&file, offline),
+                sketch: None,
+            });
+            let path = file.path.clone();
+            ctx.index.lock().upsert(file);
+            if added {
+                self.unread.push(path);
+            } else if !offline {
+                ctx.send(WatchEvent::FileChanged {
+                    path,
+                    change: FileChange::Modified,
+                });
+            }
+            return added;
+        };
+        let known = previous.as_ref().and_then(|previous| previous.hash) == Some(content.hash);
+        let echo = ctx.self_writes.matches(&file.path, &content.hash);
+        if !known && !echo {
+            ctx.self_writes.superseded(&file.path);
+        }
+        file.hash = Some(content.hash);
+        file.title = content.title.clone();
+        self.changes.push(NoteChange::Upsert {
+            record: note_record(&file, false),
+            sketch: (!known).then(|| content.sketch.clone()),
+        });
+        let path = file.path.clone();
+        let relative_path = file.relative_path.clone();
+        ctx.index.lock().upsert(file);
+        if added {
+            self.appeared.push(Appeared {
+                path,
+                relative_path,
+                hash: content.hash,
+                sketch: content.sketch,
+            });
+        } else if !known && !echo {
+            ctx.send(WatchEvent::FileChanged {
+                path,
+                change: FileChange::Modified,
+            });
+        }
+        added
+    }
+
+    fn gone(&mut self, file: &IndexedFile) {
+        self.gone.push(Gone {
+            path: file.path.clone(),
+            relative_path: file.relative_path.clone(),
+            hash: file.hash,
+        });
+    }
+
+    /// Tells the renames, removals and creations, and updates the store.
+    fn finish(mut self, ctx: &WatchContext) {
+        let matches = if self.gone.is_empty() || self.appeared.is_empty() {
+            Default::default()
+        } else {
+            let mut wanted: Vec<String> = self
+                .gone
+                .iter()
+                .map(|gone| gone.relative_path.clone())
+                .collect();
+            wanted.sort();
+            wanted.truncate(100);
+            let sketches = ctx
+                .store
+                .as_ref()
+                .and_then(|store| store.sketches(&wanted).ok())
+                .unwrap_or_default();
+            match_renames(&self.gone, &self.appeared, &sketches)
+        };
+        let mut renamed_gone = std::collections::HashSet::new();
+        let mut renamed_appeared = std::collections::HashSet::new();
+        for (g, a) in &matches.pairs {
+            renamed_gone.insert(*g);
+            renamed_appeared.insert(*a);
+            let (from, to) = (&self.gone[*g], &self.appeared[*a]);
+            if let Some(file) = ctx.index.lock().get(&to.path).cloned() {
+                self.changes.push(NoteChange::Rename {
+                    from: from.relative_path.clone(),
+                    record: note_record(&file, false),
+                    sketch: Some(to.sketch.clone()),
+                });
+            }
+            // A rename Cerata made keeps the note's id, and the window
+            // already followed it.
+            if !ctx.self_writes.is_own_move(&from.path, &to.path) {
+                ctx.send(WatchEvent::Renamed {
+                    from: from.path.clone(),
+                    to: to.path.clone(),
+                });
+            }
+        }
+        for (g, gone) in self.gone.iter().enumerate() {
+            if renamed_gone.contains(&g) {
+                continue;
+            }
+            self.changes.push(NoteChange::Delete {
+                path: gone.relative_path.clone(),
+            });
+            ctx.send(WatchEvent::FileChanged {
+                path: gone.path.clone(),
+                change: FileChange::Removed,
+            });
+        }
+        let created = self
+            .appeared
+            .iter()
+            .enumerate()
+            .filter(|(a, _)| !renamed_appeared.contains(a))
+            .map(|(_, appeared)| appeared.path.clone())
+            .chain(self.unread.drain(..));
+        for path in created.collect::<Vec<_>>() {
+            ctx.send(WatchEvent::FileChanged {
+                path,
+                change: FileChange::Created,
+            });
+        }
+        if let Some(store) = &ctx.store
+            && !self.changes.is_empty()
+        {
+            // Not waited for: the watcher thread moves on.
+            let _ = store.apply(&ctx.token, std::mem::take(&mut self.changes));
+        }
+    }
 }
 
 /// Rebuilds matcher and index on a separate thread; publishes both only if
@@ -425,7 +616,22 @@ fn spawn_rebuild(ctx: WatchContext) {
                 return;
             }
             *ctx.ignore.write() = index.ignore.clone();
-            *ctx.index.lock() = LiveIndex::from_index(&index);
+            let mut rebuilt = LiveIndex::from_index(&index);
+            {
+                // Contents already read stay known while the file is unchanged.
+                let mut live = ctx.index.lock();
+                for file in index.files.iter() {
+                    if let (Some(old), Some(new)) =
+                        (live.get(&file.path), rebuilt.get_mut(&file.path))
+                        && old.size == new.size
+                        && old.modified_ns == new.modified_ns
+                    {
+                        new.hash = old.hash;
+                        new.title = old.title.clone();
+                    }
+                }
+                *live = rebuilt;
+            }
             ctx.send(WatchEvent::IgnoreRebuilt);
             ctx.send(WatchEvent::DirectoryChanged {
                 path: ctx.root.clone(),
@@ -464,16 +670,26 @@ mod tests {
             setup(&root);
             let counter = EpochCounter::new();
             let index = index_workspace_with_global(&root, None, &counter.token()).unwrap();
+            let mut live = LiveIndex::from_index(&index);
+            // As after a first pass: every note's content is known.
+            for file in &index.files {
+                if let (Ok(bytes), Some(entry)) = (fs::read(&file.path), live.get_mut(&file.path)) {
+                    entry.hash = Some(crate::store::content_hash(&bytes));
+                }
+            }
             let (sender, events) = mpsc::channel();
             let reloads = Arc::new(Mutex::new(0));
             let reload_count = reloads.clone();
             let ctx = WatchContext {
                 root: root.clone(),
                 token: counter.token(),
-                index: Arc::new(Mutex::new(LiveIndex::from_index(&index))),
+                index: Arc::new(Mutex::new(live)),
                 ignore: Arc::new(RwLock::new(index.ignore.clone())),
                 self_writes: Arc::new(SelfWriteLog::new()),
+                store: None,
+                files: Arc::new(crate::reconcile::OsFiles),
                 reload_settings: Some(Arc::new(move || *reload_count.lock() += 1)),
+                on_error: None,
                 events: sender,
             };
             Self {
@@ -572,19 +788,88 @@ mod tests {
         });
     }
 
+    /// US-086: after an outside edit, a return to the bytes Cerata last
+    /// wrote (an undo, a checkout) is reported, not dropped as an echo.
+    #[test]
+    fn an_outside_return_to_our_last_write_is_reported() {
+        let h = Harness::new(|root| fs::write(root.join("a.md"), "ours").unwrap()).start();
+        let path = h.root.join("a.md");
+        let hash = h.ctx.self_writes.record(&path, b"ours");
+        h.ctx.self_writes.written(&path, hash, b"ours");
+        let modified = |e: &WatchEvent| {
+            matches!(
+                e,
+                WatchEvent::FileChanged {
+                    change: FileChange::Modified,
+                    ..
+                }
+            )
+        };
+        fs::write(&path, "theirs, longer").unwrap();
+        h.expect("the outside edit", modified);
+        fs::write(&path, "ours").unwrap();
+        h.expect("the return to our last write", modified);
+    }
+
+    /// US-085: a note renamed outside Cerata is one event, not a removal
+    /// and a creation, and keeps what the index knew of it.
+    #[test]
+    fn a_rename_outside_cerata_is_reported_as_one() {
+        let h =
+            Harness::new(|root| fs::write(root.join("old.md"), "# Kept title").unwrap()).start();
+        fs::rename(h.root.join("old.md"), h.root.join("new.md")).unwrap();
+        let renamed = h.expect("rename", |e| matches!(e, WatchEvent::Renamed { .. }));
+        assert_eq!(
+            renamed.event,
+            WatchEvent::Renamed {
+                from: h.root.join("old.md"),
+                to: h.root.join("new.md"),
+            }
+        );
+        let index = h.ctx.index.lock();
+        assert!(!index.contains(&h.root.join("old.md")));
+        assert_eq!(index.title(&h.root.join("new.md")), Some("Kept title"));
+    }
+
+    /// US-084: an error from the OS watcher (lost events) asks for a pass.
+    #[test]
+    fn a_watch_error_asks_for_a_reconciliation() {
+        struct Quiet;
+        impl WatchBackend for Quiet {
+            fn watch(&mut self, _: &Path, _: bool) -> notify::Result<()> {
+                Ok(())
+            }
+            fn unwatch(&mut self, _: &Path) -> notify::Result<()> {
+                Ok(())
+            }
+        }
+        let mut h = Harness::new(|_| {});
+        let asked = Arc::new(Mutex::new(0));
+        let counted = asked.clone();
+        h.ctx.on_error = Some(Arc::new(move || *counted.lock() += 1));
+        let (os_sender, os_receiver) = mpsc::channel();
+        let _watcher =
+            WorkspaceWatcher::start_with_backend(h.ctx.clone(), Box::new(Quiet), os_receiver)
+                .unwrap();
+        os_sender
+            .send(Err(notify::Error::generic("buffer overflow")))
+            .unwrap();
+        let deadline = Instant::now() + WAIT;
+        while *asked.lock() == 0 {
+            assert!(Instant::now() < deadline, "no reconciliation asked");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
     #[test]
     fn rename_moves_index_membership() {
         let h = Harness::new(|root| fs::write(root.join("old.md"), "x").unwrap()).start();
         fs::rename(h.root.join("old.md"), h.root.join("new.md")).unwrap();
-        h.expect("removal of the old name", |e| {
-            matches!(
-                e,
-                WatchEvent::FileChanged {
-                    change: FileChange::Removed,
-                    ..
-                }
-            )
-        });
+        // One rename, not a removal and a creation (US-085).
+        h.expect(
+            "rename of the old name",
+            |e| matches!(e, WatchEvent::Renamed { from, .. } if *from == h.root.join("old.md")),
+        );
         h.expect(
             "parent listing change",
             |e| matches!(e, WatchEvent::DirectoryChanged { path } if *path == h.root),

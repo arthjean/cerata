@@ -235,6 +235,27 @@ pub struct RecentFile {
     pub label: String,
 }
 
+impl Palette {
+    /// The global recents listed (compact window).
+    pub fn recents(&self) -> &[RecentFile] {
+        &self.recents
+    }
+
+    /// New labels for the recents, read in the background.
+    pub fn relabel_recents(
+        &mut self,
+        labels: &std::collections::HashMap<PathBuf, String>,
+        cx: &mut gpui::Context<Self>,
+    ) {
+        for recent in &mut self.recents {
+            if let Some(label) = labels.get(&recent.path) {
+                recent.label = label.clone();
+            }
+        }
+        cx.notify();
+    }
+}
+
 pub struct Palette {
     pub intent: Intent,
     pub field: Entity<TextField>,

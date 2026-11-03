@@ -437,6 +437,9 @@ fn centered(text: &'static str) -> AnyElement {
         .into_any_element()
 }
 
+/// Widest a window notice grows before its text wraps.
+const NOTICE_MAX_WIDTH: f32 = 560.0;
+
 /// The window's notice, announced as a status and kept until dismissed
 /// (its close button, or a click on it), with its action buttons if any.
 pub fn notice(
@@ -451,13 +454,16 @@ pub fn notice(
             .bottom(px(24.0))
             .left_0()
             .right_0()
+            .px(px(16.0))
             .flex()
             .justify_center()
             .child(
-                div()
-                    .id("window-notice")
+                selector(div().id("window-notice"), "window-notice")
                     .role(gpui::Role::Status)
                     .aria_label(notice.clone())
+                    // A long notice (a store path) wraps inside the window
+                    // instead of pushing its buttons out of it.
+                    .max_w(px(NOTICE_MAX_WIDTH))
                     .flex()
                     .items_center()
                     .gap(px(8.0))
@@ -470,7 +476,7 @@ pub fn notice(
                     .border_color(theme::border())
                     .text_size(px(13.0))
                     .cursor_pointer()
-                    .child(notice)
+                    .child(div().flex_1().min_w_0().child(notice))
                     .children(actions.into_iter().enumerate().map(|(ix, action)| {
                         crate::a11y::button(
                             selector(
@@ -479,6 +485,7 @@ pub fn notice(
                             ),
                             action.label(),
                         )
+                        .flex_shrink_0()
                         .px(px(8.0))
                         .py(px(2.0))
                         .rounded(px(4.0))
@@ -494,20 +501,24 @@ pub fn notice(
                         ))
                     }))
                     .child(
-                        crate::a11y::button(div().id("window-notice-close"), "Dismiss")
-                            .size(px(22.0))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .rounded(px(4.0))
-                            .group("window-notice-close")
-                            .hover(|s| s.bg(theme::panel()))
-                            .child(
-                                icon(Icon::Close, 14.0, theme::muted())
-                                    .group_hover("window-notice-close", |s| {
-                                        s.text_color(theme::text())
-                                    }),
-                            ),
+                        crate::a11y::button(
+                            selector(div().id("window-notice-close"), "window-notice-close"),
+                            "Dismiss",
+                        )
+                        .flex_shrink_0()
+                        .size(px(22.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(4.0))
+                        .group("window-notice-close")
+                        .hover(|s| s.bg(theme::panel()))
+                        .child(
+                            icon(Icon::Close, 14.0, theme::muted())
+                                .group_hover("window-notice-close", |s| {
+                                    s.text_color(theme::text())
+                                }),
+                        ),
                     )
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.notice = None;

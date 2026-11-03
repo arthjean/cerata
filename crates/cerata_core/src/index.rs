@@ -4,26 +4,30 @@
 //! - one ignore model: the walk builds and filters with the same
 //!   [`WorkspaceIgnore`] the sidebar and watcher use (Writer defect 3);
 //! - one Markdown predicate, `.md` and `.markdown` in any case (defect 2);
-//! - indexing runs off the calling thread and is canceled by epoch
-//!   ([`spawn_index`]), never synchronously on the UI thread (defect 4);
+//! - indexing runs off the calling thread and is canceled by epoch (the
+//!   reconciliation of `crate::reconcile`), never synchronously on the UI
+//!   thread (defect 4);
 //! - relative paths are normalized to `/`, so the filename bonus works with
 //!   Windows separators (Writer `search.rs:112` used `rfind('/')`, defect 5);
-//! - an unreadable directory is skipped with a warning instead of silently.
+//! - an unreadable directory is skipped with a warning instead of silently;
+//! - every file's name is kept, so an embed resolves by name without a walk
+//!   ([`LiveIndex::find_by_name`], US-087).
 
 use crate::epoch::EpochToken;
 use crate::ignore::{GitignoreChain, IgnoreBuilder, WorkspaceIgnore, global_gitignore_path};
 use crate::markdown::is_markdown_path;
+use crate::store::ContentHash;
 use parking_lot::{Condvar, Mutex};
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ffi::OsString;
-use std::fs::FileType;
+use std::fs::{FileType, Metadata};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::UNIX_EPOCH;
 
 /// One Markdown file of the workspace.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct IndexedFile {
     pub path: PathBuf,
     /// Path relative to the workspace root, always `/`-separated.
@@ -31,6 +35,44 @@ pub struct IndexedFile {
     pub name: String,
     /// Seconds since the Unix epoch, 0 when unknown.
     pub modified_at: u64,
+    pub size: u64,
+    /// Nanoseconds since the Unix epoch, 0 when unknown.
+    pub modified_ns: u64,
+    /// BLAKE3 hash of the last content seen, `None` until read.
+    pub hash: Option<ContentHash>,
+    /// Title of the last content seen, `None` until read or without one.
+    pub title: Option<String>,
+}
+
+impl IndexedFile {
+    /// Entry for `path` with its size and times, content not read.
+    pub fn new(root: &Path, path: &Path, metadata: Option<&Metadata>) -> Self {
+        let modified_ns = metadata.map_or(0, modified_ns);
+        Self {
+            path: path.to_path_buf(),
+            relative_path: relative_slash_path(root, path),
+            name: path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            modified_at: modified_ns / 1_000_000_000,
+            size: metadata.map_or(0, Metadata::len),
+            modified_ns,
+            hash: None,
+            title: None,
+        }
+    }
+}
+
+/// Modification time of `metadata` in nanoseconds since the Unix epoch.
+pub fn modified_ns(metadata: &Metadata) -> u64 {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map_or(0, |since| {
+            u64::try_from(since.as_nanos()).unwrap_or(u64::MAX)
+        })
 }
 
 /// A directory the walk could not read. Indexing continues without it.
@@ -45,6 +87,8 @@ pub struct WalkWarning {
 pub struct WorkspaceIndex {
     pub root: PathBuf,
     pub files: Vec<IndexedFile>,
+    /// Every other non-ignored file (images, attachments), for names.
+    pub other_files: Vec<PathBuf>,
     /// The root and every ancestor directory of an indexed file.
     pub dirs_with_markdown: HashSet<PathBuf>,
     /// The matcher the walk filtered with, to share with sidebar and watcher.
@@ -56,48 +100,6 @@ pub struct WorkspaceIndex {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[error("indexing canceled: the workspace changed")]
 pub struct Canceled;
-
-/// How a background indexing job ended.
-#[derive(Debug)]
-pub enum IndexReport {
-    Completed {
-        epoch: u64,
-        file_count: usize,
-        duration: Duration,
-        index: WorkspaceIndex,
-    },
-    Canceled {
-        epoch: u64,
-    },
-}
-
-/// Indexes `root` on a background thread and reports through `on_done`.
-///
-/// The job is canceled as soon as `token` goes stale (a newer workspace
-/// epoch started); it then reports [`IndexReport::Canceled`]. A completed
-/// report carries the file count for the caller's "indexed N files" signal.
-pub fn spawn_index(
-    root: PathBuf,
-    token: EpochToken,
-    on_done: impl FnOnce(IndexReport) + Send + 'static,
-) -> std::io::Result<std::thread::JoinHandle<()>> {
-    std::thread::Builder::new()
-        .name("cerata-index".into())
-        .spawn(move || {
-            let started = Instant::now();
-            let epoch = token.epoch();
-            let report = match index_workspace(&root, &token) {
-                Ok(index) => IndexReport::Completed {
-                    epoch,
-                    file_count: index.files.len(),
-                    duration: started.elapsed(),
-                    index,
-                },
-                Err(Canceled) => IndexReport::Canceled { epoch },
-            };
-            on_done(report);
-        })
-}
 
 /// Indexes the Markdown files of `root`, honoring the user's global gitignore.
 pub fn index_workspace(root: &Path, token: &EpochToken) -> Result<WorkspaceIndex, Canceled> {
@@ -111,17 +113,18 @@ pub fn index_workspace_with_global(
     token: &EpochToken,
 ) -> Result<WorkspaceIndex, Canceled> {
     let files = Mutex::new(Vec::new());
+    let others = Mutex::new(Vec::new());
     let walked = walk(root, global_gitignore, token, &|entry: &WalkEntry| {
-        if !entry.file_type.is_file() || !is_markdown_path(&entry.path) {
+        if !entry.file_type.is_file() {
             return;
         }
-        let modified_at = entry.modified.map(epoch_seconds).unwrap_or(0);
-        files.lock().push(IndexedFile {
-            relative_path: relative_slash_path(root, &entry.path),
-            name: entry.name.to_string_lossy().into_owned(),
-            path: entry.path.clone(),
-            modified_at,
-        });
+        if is_markdown_path(&entry.path) {
+            files
+                .lock()
+                .push(IndexedFile::new(root, &entry.path, entry.metadata.as_ref()));
+        } else {
+            others.lock().push(entry.path.clone());
+        }
     })?;
     let mut files = files.into_inner();
     files.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
@@ -129,6 +132,7 @@ pub fn index_workspace_with_global(
     Ok(WorkspaceIndex {
         root: root.to_path_buf(),
         files,
+        other_files: others.into_inner(),
         dirs_with_markdown,
         ignore: Arc::new(walked.ignore),
         warnings: walked.warnings,
@@ -160,12 +164,6 @@ pub fn relative_slash_path(root: &Path, path: &Path) -> String {
     parts.join("/")
 }
 
-fn epoch_seconds(time: SystemTime) -> u64 {
-    time.duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs())
-        .unwrap_or(0)
-}
-
 /// The index kept up to date by the watcher. Every update costs the depth
 /// of the changed path, never a copy of the whole index (Writer
 /// `watcher.rs:327-374` cloned the full index on each event).
@@ -175,7 +173,14 @@ pub struct LiveIndex {
     /// Sorted by path, so a folder's files form one contiguous range.
     files: std::collections::BTreeMap<PathBuf, IndexedFile>,
     /// Number of indexed files below each directory (root included).
-    dir_counts: std::collections::HashMap<PathBuf, usize>,
+    dir_counts: HashMap<PathBuf, usize>,
+    /// Non-Markdown files, sorted by path.
+    other_files: BTreeSet<PathBuf>,
+    /// Lowercase file name to the paths of every file with that name.
+    names: HashMap<String, BTreeSet<PathBuf>>,
+    /// Set once a walk listed every file: before that, a name not found
+    /// may just not be known yet.
+    names_complete: bool,
 }
 
 impl LiveIndex {
@@ -184,6 +189,9 @@ impl LiveIndex {
             root: root.to_path_buf(),
             files: Default::default(),
             dir_counts: Default::default(),
+            other_files: Default::default(),
+            names: Default::default(),
+            names_complete: false,
         }
     }
 
@@ -192,7 +200,101 @@ impl LiveIndex {
         for file in &index.files {
             live.upsert(file.clone());
         }
+        for path in &index.other_files {
+            live.add_other(path);
+        }
+        live.names_complete = true;
         live
+    }
+
+    /// `true` once a walk listed every file ([`Self::find_by_name`] is
+    /// then an answer, not a guess).
+    pub fn names_complete(&self) -> bool {
+        self.names_complete
+    }
+
+    pub fn get(&self, path: &Path) -> Option<&IndexedFile> {
+        self.files.get(path)
+    }
+
+    pub fn get_mut(&mut self, path: &Path) -> Option<&mut IndexedFile> {
+        self.files.get_mut(path)
+    }
+
+    /// The notes directly in `dir` whose content was read, by file name,
+    /// with their title: one ordered scan of `dir`'s range, no lookup per
+    /// note (a sidebar listing of 50,000 notes, US-083).
+    pub fn titles_in(&self, dir: &Path) -> HashMap<String, Option<String>> {
+        let prefix = match relative_slash_path(&self.root, dir) {
+            relative if relative.is_empty() || dir == self.root => String::new(),
+            relative => format!("{relative}/"),
+        };
+        self.files
+            .range(dir.to_path_buf()..)
+            .map(|(_, file)| file)
+            .take_while(|file| file.relative_path.starts_with(&prefix))
+            .filter(|file| file.hash.is_some() && !file.relative_path[prefix.len()..].contains('/'))
+            .map(|file| (file.name.clone(), file.title.clone()))
+            .collect()
+    }
+
+    /// The last title seen for `path`, if it has one.
+    pub fn title(&self, path: &Path) -> Option<&str> {
+        self.files.get(path).and_then(|file| file.title.as_deref())
+    }
+
+    /// Records a non-Markdown file, for lookups by name.
+    pub fn add_other(&mut self, path: &Path) {
+        if self.other_files.insert(path.to_path_buf()) {
+            self.add_name(path);
+        }
+    }
+
+    /// Replaces the non-Markdown files with `paths`, from a full walk.
+    pub fn set_other_files(&mut self, paths: impl IntoIterator<Item = PathBuf>) {
+        for path in std::mem::take(&mut self.other_files) {
+            self.remove_name(&path);
+        }
+        for path in paths {
+            self.add_other(&path);
+        }
+        self.names_complete = true;
+    }
+
+    /// The file named `file_name` (any case), or `None`. On duplicates the
+    /// shortest path wins: fewest components, then lexicographic order, as
+    /// [`find_file_by_name`] decides.
+    pub fn find_by_name(&self, file_name: &str) -> Option<PathBuf> {
+        self.names
+            .get(&file_name.to_lowercase())?
+            .iter()
+            .min_by(|a, b| {
+                a.components()
+                    .count()
+                    .cmp(&b.components().count())
+                    .then_with(|| a.cmp(b))
+            })
+            .cloned()
+    }
+
+    fn add_name(&mut self, path: &Path) {
+        if let Some(name) = path.file_name() {
+            self.names
+                .entry(name.to_string_lossy().to_lowercase())
+                .or_default()
+                .insert(path.to_path_buf());
+        }
+    }
+
+    fn remove_name(&mut self, path: &Path) {
+        let Some(name) = path.file_name() else { return };
+        let key = name.to_string_lossy().to_lowercase();
+        if let Some(paths) = self.names.get_mut(&key) {
+            paths.remove(path);
+            if paths.is_empty() {
+                self.names.remove(&key);
+            }
+        }
     }
 
     pub fn root(&self) -> &Path {
@@ -218,18 +320,58 @@ impl LiveIndex {
     /// Inserts or updates one file. Returns `true` if it was not indexed.
     pub fn upsert(&mut self, file: IndexedFile) -> bool {
         let path = file.path.clone();
+        let depth = folder_depth(&file.relative_path);
         let added = self.files.insert(path.clone(), file).is_none();
         if added {
-            for dir in ancestors_within(&path, &self.root) {
-                *self.dir_counts.entry(dir.to_path_buf()).or_insert(0) += 1;
-            }
+            self.count_in_folders(&path, depth);
+            self.add_name(&path);
         }
         added
     }
 
+    /// An index of `files` built at once: much faster than one upsert per
+    /// file for a whole library (US-083, the index read from the store).
+    pub fn from_files(root: &Path, files: Vec<IndexedFile>) -> Self {
+        let mut live = Self::new(root);
+        let mut counted = Vec::with_capacity(files.len());
+        live.files = files
+            .into_iter()
+            .map(|file| {
+                counted.push((file.path.clone(), folder_depth(&file.relative_path)));
+                (file.path.clone(), file)
+            })
+            .collect();
+        for (path, depth) in counted {
+            live.count_in_folders(&path, depth);
+            live.add_name(&path);
+        }
+        live
+    }
+
+    fn count_in_folders(&mut self, path: &Path, depth: usize) {
+        for dir in path.ancestors().skip(1).take(depth) {
+            match self.dir_counts.get_mut(dir) {
+                Some(count) => *count += 1,
+                None => {
+                    self.dir_counts.insert(dir.to_path_buf(), 1);
+                }
+            }
+        }
+    }
+
     /// Removes `path` and, if it is a folder, every file below it. Returns
-    /// the removed files.
+    /// the removed Markdown files; other files leave the name table too.
     pub fn remove_subtree(&mut self, path: &Path) -> Vec<IndexedFile> {
+        let others: Vec<PathBuf> = self
+            .other_files
+            .range(path.to_path_buf()..)
+            .take_while(|key| key.starts_with(path))
+            .cloned()
+            .collect();
+        for other in others {
+            self.other_files.remove(&other);
+            self.remove_name(&other);
+        }
         let doomed: Vec<PathBuf> = self
             .files
             .range(path.to_path_buf()..)
@@ -240,7 +382,8 @@ impl LiveIndex {
         let mut removed = Vec::with_capacity(doomed.len());
         for key in doomed {
             if let Some(file) = self.files.remove(&key) {
-                for dir in ancestors_within(&key, &self.root) {
+                let depth = folder_depth(&file.relative_path);
+                for dir in key.ancestors().skip(1).take(depth) {
                     if let Some(count) = self.dir_counts.get_mut(dir) {
                         *count -= 1;
                         if *count == 0 {
@@ -248,6 +391,7 @@ impl LiveIndex {
                         }
                     }
                 }
+                self.remove_name(&key);
                 removed.push(file);
             }
         }
@@ -308,16 +452,22 @@ impl MarkdownDirs for LiveIndex {
     }
 }
 
-fn ancestors_within<'p>(path: &'p Path, root: &'p Path) -> impl Iterator<Item = &'p Path> {
-    path.ancestors()
-        .skip(1)
-        .take_while(move |dir| dir.starts_with(root))
+/// Folders from a file's own up to the root, from its relative path:
+/// `a/b/c.md` is in three (`a/b`, `a` and the root).
+fn folder_depth(relative_path: &str) -> usize {
+    relative_path.matches('/').count() + 1
 }
 
-/// Markdown files below `dir`, filtered by `ignore`, for a folder that
-/// appeared after the initial walk (created or moved in).
-pub fn index_subtree(root: &Path, dir: &Path, ignore: &WorkspaceIgnore) -> Vec<IndexedFile> {
+/// Files below `dir`, filtered by `ignore`, for a folder that appeared
+/// after the initial walk (created or moved in): its Markdown files, and
+/// the paths of the others.
+pub fn index_subtree(
+    root: &Path,
+    dir: &Path,
+    ignore: &WorkspaceIgnore,
+) -> (Vec<IndexedFile>, Vec<PathBuf>) {
     let mut found = Vec::new();
+    let mut others = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(current) = stack.pop() {
         let Ok(entries) = std::fs::read_dir(&current) else {
@@ -334,29 +484,22 @@ pub fn index_subtree(root: &Path, dir: &Path, ignore: &WorkspaceIgnore) -> Vec<I
             if file_type.is_dir() {
                 stack.push(path);
             } else if file_type.is_file() && is_markdown_path(&path) {
-                found.push(indexed_file(root, &path));
+                found.push(IndexedFile::new(
+                    root,
+                    &path,
+                    entry.metadata().ok().as_ref(),
+                ));
+            } else if file_type.is_file() {
+                others.push(path);
             }
         }
     }
-    found
+    (found, others)
 }
 
-/// Index entry for one existing file.
+/// Index entry for one existing file, content not read.
 pub fn indexed_file(root: &Path, path: &Path) -> IndexedFile {
-    let modified_at = std::fs::metadata(path)
-        .ok()
-        .and_then(|meta| meta.modified().ok())
-        .map(epoch_seconds)
-        .unwrap_or(0);
-    IndexedFile {
-        path: path.to_path_buf(),
-        relative_path: relative_slash_path(root, path),
-        name: path
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_default(),
-        modified_at,
-    }
+    IndexedFile::new(root, path, std::fs::metadata(path).ok().as_ref())
 }
 
 /// A search hit, ranked by `score` (higher first).
@@ -484,7 +627,8 @@ pub(crate) struct WalkEntry {
     pub(crate) path: PathBuf,
     pub(crate) name: OsString,
     pub(crate) file_type: FileType,
-    pub(crate) modified: Option<SystemTime>,
+    /// From the directory listing: on Windows no file is opened for it.
+    pub(crate) metadata: Option<Metadata>,
 }
 
 pub(crate) struct Walked {
@@ -618,12 +762,11 @@ fn read_dir_job(
             let chain = builder.enter(&job.chain, &path);
             children.push(Job { dir: path, chain });
         } else {
-            let modified = entry.metadata().ok().and_then(|meta| meta.modified().ok());
             visit(&WalkEntry {
                 path,
                 name: entry.file_name(),
                 file_type,
-                modified,
+                metadata: entry.metadata().ok(),
             });
         }
     }
@@ -635,6 +778,7 @@ mod tests {
     use super::*;
     use crate::epoch::EpochCounter;
     use std::fs;
+    use std::time::{Duration, Instant};
     use tempfile::TempDir;
 
     fn token() -> EpochToken {
@@ -835,48 +979,6 @@ mod tests {
         assert_eq!(results[0].relative_path, "plans/deep/roadmap.md");
     }
 
-    #[test]
-    fn spawn_index_reports_completion_with_file_count() {
-        let dir = setup_workspace();
-        let counter = EpochCounter::new();
-        let (sender, receiver) = std::sync::mpsc::channel();
-        let caller = std::thread::current().id();
-        let handle = spawn_index(dir.path().to_path_buf(), counter.token(), move |report| {
-            assert_ne!(std::thread::current().id(), caller);
-            sender.send(report).unwrap();
-        })
-        .unwrap();
-        handle.join().unwrap();
-        match receiver.recv().unwrap() {
-            IndexReport::Completed {
-                file_count, epoch, ..
-            } => {
-                assert_eq!(file_count, 3);
-                assert_eq!(epoch, 0);
-            }
-            IndexReport::Canceled { .. } => panic!("expected completion"),
-        }
-    }
-
-    #[test]
-    fn spawn_index_is_canceled_by_a_newer_epoch() {
-        let dir = setup_workspace();
-        let counter = EpochCounter::new();
-        let token = counter.token();
-        counter.advance();
-        let (sender, receiver) = std::sync::mpsc::channel();
-        spawn_index(dir.path().to_path_buf(), token, move |report| {
-            sender.send(report).unwrap();
-        })
-        .unwrap()
-        .join()
-        .unwrap();
-        assert!(matches!(
-            receiver.recv().unwrap(),
-            IndexReport::Canceled { epoch: 0 }
-        ));
-    }
-
     #[cfg(unix)]
     #[test]
     fn unreadable_directory_is_skipped_with_a_warning() {
@@ -930,6 +1032,35 @@ mod tests {
     }
 
     #[test]
+    fn titles_in_lists_the_read_notes_of_one_folder_only() {
+        let root = PathBuf::from("/w");
+        let file = |rel: &str, title: Option<&str>| {
+            let mut file = IndexedFile {
+                path: rel.split('/').fold(root.clone(), |p, part| p.join(part)),
+                relative_path: rel.to_owned(),
+                name: rel.rsplit('/').next().unwrap().to_owned(),
+                ..Default::default()
+            };
+            file.hash = title.map(|_| [0; 32]);
+            file.title = title.map(str::to_owned);
+            file
+        };
+        let mut live = LiveIndex::new(&root);
+        live.upsert(file("top.md", Some("Top")));
+        live.upsert(file("unread.md", None));
+        live.upsert(file("a/inner.md", Some("Inner")));
+        live.upsert(file("a/b/deep.md", Some("Deep")));
+        live.upsert(file("a-b/side.md", Some("Side")));
+        let root_titles = live.titles_in(&root);
+        assert_eq!(root_titles.len(), 1);
+        assert_eq!(root_titles["top.md"].as_deref(), Some("Top"));
+        let a = live.titles_in(&root.join("a"));
+        assert_eq!(a.len(), 1);
+        assert_eq!(a["inner.md"].as_deref(), Some("Inner"));
+        assert_eq!(live.titles_in(&root.join("a").join("b")).len(), 1);
+    }
+
+    #[test]
     fn live_index_tracks_folders_incrementally() {
         let root = PathBuf::from("/w");
         let file = |rel: &str| IndexedFile {
@@ -937,6 +1068,7 @@ mod tests {
             relative_path: rel.to_owned(),
             name: rel.rsplit('/').next().unwrap().to_owned(),
             modified_at: 0,
+            ..Default::default()
         };
         let mut live = LiveIndex::new(&root);
         assert!(live.upsert(file("a/b/one.md")));
@@ -974,10 +1106,11 @@ mod tests {
             relative_path: "batch/one.md".into(),
             name: "one.md".into(),
             modified_at: 0,
+            ..Default::default()
         });
 
         for _ in 0..2 {
-            let found = index_subtree(&root, &batch, &ignore);
+            let (found, _) = index_subtree(&root, &batch, &ignore);
             let mut names: Vec<&str> = found.iter().map(|f| f.name.as_str()).collect();
             names.sort_unstable();
             assert_eq!(names, ["one.md", "two.MARKDOWN"]);
@@ -998,6 +1131,7 @@ mod tests {
             relative_path: format!("d{}/n{i}.md", i % 100),
             name: format!("n{i}.md"),
             modified_at: 0,
+            ..Default::default()
         };
         let mut live = LiveIndex::new(&root);
         for i in 0..50_000 {
@@ -1028,6 +1162,7 @@ mod tests {
             name: name.into(),
             path,
             modified_at,
+            ..Default::default()
         }
     }
 

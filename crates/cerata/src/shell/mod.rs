@@ -22,6 +22,7 @@ use std::time::Duration;
 
 use cerata_core::fs::text::SaveOptions;
 use cerata_core::fs::{FileContent, FsError, WorkspaceFs};
+use cerata_core::reconcile::ReconcileTrigger;
 use cerata_core::save::{AutoSaver, SaveSnapshot};
 use cerata_core::session::SessionStore;
 use cerata_core::startup::StartupBundle;
@@ -285,6 +286,10 @@ pub struct WindowView {
     /// The window background to set on the next frame (translucency).
     background: Option<gpui::WindowBackgroundAppearance>,
     _appearance: Subscription,
+    _activation: Subscription,
+    /// Titles of global recents read in the background, by path.
+    pub recent_titles: HashMap<PathBuf, Option<String>>,
+    recent_titles_task: Option<Task<()>>,
     _tasks: Vec<Task<()>>,
 }
 
@@ -316,6 +321,12 @@ impl WindowView {
         let observed = cx.weak_entity();
         let appearance_changes = window.observe_window_appearance(move |_, cx| {
             let _ = observed.update(cx, |this, cx| this.settings_applied(cx));
+        });
+        // Back to the window: catch up with changes made meanwhile (US-084).
+        let activation = cx.observe_window_activation(window, |this, window, _| {
+            if window.is_window_active() {
+                this.reconcile(ReconcileTrigger::Focus);
+            }
         });
         let sidebar_filter =
             cx.new(|cx| crate::editor::text_field::TextField::new("Search", cx).bare(15.0));
@@ -377,6 +388,9 @@ impl WindowView {
             _settings_events: None,
             background: None,
             _appearance: appearance_changes,
+            _activation: activation,
+            recent_titles: HashMap::new(),
+            recent_titles_task: None,
             _tasks: vec![saves],
         }
     }
@@ -890,6 +904,13 @@ impl WindowView {
         self.tabs_changed(window, cx);
     }
 
+    /// Asks the library for a reconciliation pass (US-084).
+    fn reconcile(&self, trigger: ReconcileTrigger) {
+        if let Some(runtime) = self.core.runtime() {
+            runtime.request_reconcile(trigger);
+        }
+    }
+
     fn restores_open_files(&self) -> bool {
         self.core
             .settings()
@@ -1023,6 +1044,9 @@ impl WindowView {
             let mut editor = Editor::new(text, Some(path), config, cx);
             if let Some(root) = &root {
                 editor.images.set_root(root);
+            }
+            if let Some(runtime) = &runtime {
+                editor.images.set_names(runtime.names());
             }
             editor.workspace = runtime;
             editor
@@ -1375,10 +1399,18 @@ impl WindowView {
                 return Ok(());
             };
             let bytes = cerata_core::fs::text::encode(&text, file.format);
-            if let Some(runtime) = self.core.runtime() {
-                runtime.self_writes.record(&file.path, &bytes);
+            let runtime = self.core.runtime();
+            let recorded = runtime
+                .as_ref()
+                .map(|runtime| runtime.self_writes.record(&file.path, &bytes));
+            let written = fs.write_bytes(&file.path, &bytes).map(|_| ());
+            if let (Some(runtime), Some(hash)) = (&runtime, recorded) {
+                match &written {
+                    Ok(()) => runtime.self_writes.written(&file.path, hash, &bytes),
+                    Err(_) => runtime.self_writes.abandoned(&file.path, hash),
+                }
             }
-            fs.write_bytes(&file.path, &bytes).map(|_| ())
+            written
         });
         if let Err(error) = written {
             self.show_notice(format!("Image links not updated: {error}"), cx);
@@ -1592,6 +1624,8 @@ impl WindowView {
             WatchEvent::RootRemoved => {
                 self.show_notice("The workspace folder was moved or deleted", cx);
             }
+            WatchEvent::Renamed { from, to } => self.renamed_outside(&from, &to, cx),
+            WatchEvent::Notice { message } => self.show_notice(message, cx),
             WatchEvent::WatchLimited { message } => self.show_notice(message, cx),
             WatchEvent::DirectoryChanged { path } => {
                 if let Some(sidebar) = self.sidebar.clone() {
@@ -1614,6 +1648,19 @@ impl WindowView {
                 }
                 cx.notify();
             }
+        }
+    }
+
+    /// A note renamed outside Cerata (US-085): its pins, tabs and buffer
+    /// follow it, as after a rename in the sidebar, and nothing is written.
+    fn renamed_outside(&mut self, from: &Path, to: &Path, cx: &mut Context<Self>) {
+        if let Some(runtime) = self.core.runtime() {
+            runtime.self_writes.renamed(from, to);
+        }
+        match self.sidebar.clone() {
+            // The sidebar's bookkeeping ends with `SidebarEvent::Renamed`.
+            Some(sidebar) => sidebar.update(cx, |sidebar, cx| sidebar.moved_outside(from, to, cx)),
+            None => self.path_renamed(from, to, cx),
         }
     }
 

@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use cerata_core::fs::titles::extract_title;
+use cerata_core::fs::titles::{extract_title, title_from_text};
 use cerata_core::settings::ConfigValue;
 use gpui::{AppContext as _, Context, Focusable as _, PathPromptOptions, Window};
 
@@ -27,7 +27,9 @@ impl WindowView {
     }
 
     /// Global recent files, newest first, without `exclude`; labeled by
-    /// title, else stem.
+    /// title, else stem. No file is read here (US-083): a title comes from
+    /// the open document, the library's index or the titles read last time;
+    /// [`Self::refresh_recent_titles`] reads the others in the background.
     pub fn global_recents(&self, exclude: Option<&Path>, cx: &gpui::App) -> Vec<RecentFile> {
         let core = crate::app::core(cx);
         core.recents
@@ -40,10 +42,77 @@ impl WindowView {
             .filter(|path| Some(path.as_path()) != exclude)
             .take(COMPACT_RECENTS)
             .map(|path| RecentFile {
-                label: extract_title(&path).unwrap_or_else(|| stem(&file_name(&path)).to_owned()),
+                label: self
+                    .known_title(&path)
+                    .unwrap_or_else(|| stem(&file_name(&path)).to_owned()),
                 path,
             })
             .collect()
+    }
+
+    /// A note's title without reading its file, if one is known.
+    pub fn known_title(&self, path: &Path) -> Option<String> {
+        if let Some(doc) = self
+            .docs
+            .get(path)
+            .filter(|doc| doc.loading_since.is_none())
+        {
+            return title_from_text(&doc.disk_text);
+        }
+        if let Some(runtime) = self.core.runtime() {
+            let index = runtime.index.lock();
+            if let Some(file) = index.get(path).filter(|file| file.hash.is_some()) {
+                return file.title.clone();
+            }
+        }
+        self.recent_titles.get(path).cloned().flatten()
+    }
+
+    /// Reads the titles of `recents` off the UI thread, then relabels the
+    /// recents shown (the compact picker, the palette).
+    pub fn refresh_recent_titles(&mut self, recents: &[RecentFile], cx: &mut Context<Self>) {
+        let paths: Vec<PathBuf> = recents.iter().map(|recent| recent.path.clone()).collect();
+        if paths.is_empty() {
+            return;
+        }
+        let task = cx.spawn(async move |this, cx| {
+            let titles: Vec<(PathBuf, Option<String>)> = cx
+                .background_executor()
+                .spawn(async move {
+                    paths
+                        .into_iter()
+                        .map(|path| {
+                            let title = extract_title(&path);
+                            (path, title)
+                        })
+                        .collect()
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                this.recent_titles.extend(titles);
+                let label = |this: &Self, recent: &RecentFile| {
+                    this.known_title(&recent.path)
+                        .unwrap_or_else(|| stem(&file_name(&recent.path)).to_owned())
+                };
+                if let Some(mut picker) = this.recents_picker.take() {
+                    for recent in &mut picker {
+                        recent.label = label(this, recent);
+                    }
+                    this.recents_picker = Some(picker);
+                }
+                if let Some(palette) = this.palette.clone() {
+                    let labels: std::collections::HashMap<PathBuf, String> = palette
+                        .read(cx)
+                        .recents()
+                        .iter()
+                        .map(|recent| (recent.path.clone(), label(this, recent)))
+                        .collect();
+                    palette.update(cx, |palette, cx| palette.relabel_recents(&labels, cx));
+                }
+                cx.notify();
+            });
+        });
+        self.recent_titles_task = Some(task);
     }
 
     pub fn open_palette(&mut self, intent: Intent, window: &mut Window, cx: &mut Context<Self>) {
@@ -63,6 +132,7 @@ impl WindowView {
         if intent == Intent::Libraries {
             self.refresh_libraries(cx);
         }
+        self.refresh_recent_titles(&recents, cx);
         let libraries = self.welcome.libraries.clone();
         let palette = cx.new(|cx| {
             let mut palette =

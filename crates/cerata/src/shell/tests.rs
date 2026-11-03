@@ -549,6 +549,63 @@ fn make_dirty(cx: &mut TestAppContext, handle: WindowHandle<WindowView>, path: &
     type_text(cx, handle, " more");
 }
 
+/// US-085: a note renamed outside Cerata keeps its tab, its unsaved text
+/// and its pin, and the detection writes nothing.
+#[gpui::test]
+fn a_note_renamed_outside_cerata_keeps_its_tab_buffer_and_pin(cx: &mut TestAppContext) {
+    let env = setup(cx);
+    let old = env.file("old.md", "# Old");
+    let handle = workspace(cx, &env);
+    update(cx, handle, |view, window, cx| {
+        view.open_file(&old, window, cx)
+    });
+    let library = cx.update(|cx| key_of(cx, &env.root()));
+    cx.update(|cx| app::core(cx).pins.toggle(&library, &old).unwrap());
+    make_dirty(cx, handle, &old);
+    let saved = std::fs::read_to_string(&old).unwrap();
+    assert!(
+        !saved.contains("more"),
+        "the second edit waits for the throttle"
+    );
+
+    let new = env.root().join("new.md");
+    std::fs::rename(&old, &new).unwrap();
+    update(cx, handle, |view, window, cx| {
+        let event = WatchEvent::Renamed {
+            from: old.clone(),
+            to: new.clone(),
+        };
+        view.on_watch_event(event, window, cx)
+    });
+
+    let (active, text) = read(cx, handle, |view, cx| {
+        let doc = view.active_doc().unwrap();
+        let state = &doc.editor.read(cx).state;
+        (
+            view.tabs.active_path().map(Path::to_path_buf),
+            state.text().as_str().to_owned(),
+        )
+    });
+    assert_eq!(active, Some(new.clone()));
+    assert!(
+        text.contains(" mine more"),
+        "the unsaved text is kept: {text:?}"
+    );
+    assert!(!old.exists(), "nothing was written at the old path");
+    assert!(
+        std::fs::read_to_string(&new)
+            .unwrap()
+            .starts_with(saved.trim_end())
+    );
+    let pins = cx.update(|cx| app::core(cx).pins.load(&library).unwrap());
+    assert_eq!(pins, std::slice::from_ref(&new));
+    // The unsaved text is saved where the note now lives.
+    wait_until(cx, |_| {
+        std::fs::read_to_string(&new).is_ok_and(|text| text.contains("more"))
+    });
+    assert!(!old.exists());
+}
+
 fn conflict(cx: &mut TestAppContext, handle: WindowHandle<WindowView>) -> Option<Conflict> {
     read(cx, handle, |view, _| {
         view.active_doc().unwrap().conflict.clone()
@@ -3071,6 +3128,41 @@ fn ctrl_n_without_a_library_goes_to_the_default_one(cx: &mut TestAppContext) {
     let mut vcx = VisualTestContext::from_window(handle.into(), cx);
     vcx.run_until_parked();
     assert!(vcx.debug_bounds("window-notice-action").is_some());
+}
+
+#[gpui::test]
+fn a_long_notice_wraps_and_keeps_its_dismiss_button_in_the_window(cx: &mut TestAppContext) {
+    let env = setup(cx);
+    let handle = workspace(cx, &env);
+    let set_aside = format!(
+        r"C:\Users\someone\{}\store.sqlite.corrupt-20261103-162356",
+        "x".repeat(240)
+    );
+    update(cx, handle, |view, _, cx| {
+        view.show_notice(
+            format!(
+                "Cerata rebuilt this library's index. Older versions were set aside in {set_aside}."
+            ),
+            cx,
+        )
+    });
+    let mut vcx = VisualTestContext::from_window(handle.into(), cx);
+    vcx.run_until_parked();
+    let viewport = vcx.update(|window, _| window.viewport_size());
+    let notice = vcx.debug_bounds("window-notice").expect("the notice");
+    let close = vcx.debug_bounds("window-notice-close").expect("Dismiss");
+    assert!(
+        notice.left() >= px(0.0) && notice.right() <= viewport.width,
+        "the notice leaves the window: {notice:?} in {viewport:?}"
+    );
+    assert!(
+        close.left() >= notice.left() && close.right() <= notice.right(),
+        "Dismiss leaves the notice: {close:?} in {notice:?}"
+    );
+    assert!(
+        notice.size.height > close.size.height * 2.0,
+        "the text wraps: {notice:?}"
+    );
 }
 
 /// Renames `from` to `to`, retrying while Windows still holds a handle of

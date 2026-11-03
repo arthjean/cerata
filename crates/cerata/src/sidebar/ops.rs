@@ -8,9 +8,10 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use cerata_core::fs::assets::{AssetsOutcome, LinkRewrite, NoteOperation};
-use cerata_core::fs::{DirEntry, EntryKind, FsError, NEW_FILE_CONTENT, WorkspaceFs};
+use cerata_core::fs::{DirEntry, EntryKind, FsError, NEW_FILE_CONTENT};
 use cerata_core::index::relative_slash_path;
 use cerata_core::settings::ConfigValue;
+use cerata_core::workspace::WorkspaceRuntime;
 use gpui::{AppContext as _, ClipboardItem, Context, Entity, Pixels, Point, Subscription, Window};
 
 use super::tree::{Listing, Row, SortMode, stem};
@@ -419,7 +420,7 @@ impl Sidebar {
             return None;
         }
         let mut committed = None;
-        match move_entry(&runtime.fs, &entry.path, &new, entry.is_dir) {
+        match move_entry(&runtime, &entry.path, &new, entry.is_dir) {
             Ok(done) => {
                 self.renaming = None;
                 if created {
@@ -477,6 +478,12 @@ impl Sidebar {
             self.after_move(from, to, None, cx);
         }
         self.after_move(old, &done.path, done.links(old), cx);
+    }
+
+    /// A note moved outside Cerata (US-085): the same bookkeeping as a
+    /// move made here, with no link to rewrite and nothing written.
+    pub fn moved_outside(&mut self, old: &Path, new: &Path, cx: &mut Context<Self>) {
+        self.after_move(old, new, None, cx);
     }
 
     /// Bookkeeping once `old` became `new` on disk: expanded folders,
@@ -627,7 +634,7 @@ impl Sidebar {
                 ));
                 continue;
             }
-            match move_entry(&runtime.fs, source, &target, is_dir) {
+            match move_entry(&runtime, source, &target, is_dir) {
                 Ok(done) => {
                     notices.extend(done.notice());
                     moved.push((source.clone(), done));
@@ -906,20 +913,30 @@ pub fn surface_menu(
 }
 
 /// Renames or moves `old` to `new`: a Markdown file with its assets folder
-/// (EP-015), anything else alone.
+/// (EP-015), anything else alone. The move is recorded as Cerata's, so the
+/// watcher keeps the note's identity without telling it as an outside
+/// rename (US-085). An autosave being written finishes first: one written
+/// after the move would recreate `old`.
 fn move_entry(
-    fs: &WorkspaceFs,
+    runtime: &WorkspaceRuntime,
     old: &Path,
     new: &Path,
     is_dir: bool,
 ) -> Result<NoteOperation, FsError> {
-    if !is_dir && cerata_core::markdown::is_markdown_path(old) {
-        return fs.rename_note(old, new);
+    let _gate = runtime.self_writes.write_gate();
+    runtime.self_writes.record_move(old, new);
+    let moved = if !is_dir && cerata_core::markdown::is_markdown_path(old) {
+        runtime.fs.rename_note(old, new)
+    } else {
+        runtime.fs.rename(old, new).map(|path| NoteOperation {
+            path,
+            assets: AssetsOutcome::None,
+        })
+    };
+    if moved.is_err() {
+        runtime.self_writes.forget_move(old, new);
     }
-    Ok(NoteOperation {
-        path: fs.rename(old, new)?,
-        assets: AssetsOutcome::None,
-    })
+    moved
 }
 
 #[cfg(test)]
