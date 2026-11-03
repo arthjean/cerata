@@ -82,6 +82,11 @@ pub fn resolve(note_dir: Option<&Path>, url: &str) -> Option<Source> {
         }
     }
     let path = PathBuf::from(percent_decode(url));
+    // Checked before the join: on Unix `\\host\share` is a relative name,
+    // and the same note opened on Windows would reach the share.
+    if names_network_path(&path) {
+        return None;
+    }
     if path.is_absolute() || url.starts_with('/') {
         return local(path);
     }
