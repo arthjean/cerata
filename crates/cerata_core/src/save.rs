@@ -432,6 +432,8 @@ mod tests {
     const CONFLICT: u64 = u64::MAX - 1;
 
     const THROTTLE: Duration = Duration::from_millis(300);
+    /// Start-up of a save thread, as seen between two write snapshots.
+    const THREAD_START_SLACK: Duration = Duration::from_millis(10);
     const WAIT: Duration = Duration::from_secs(5);
 
     fn setup() -> (
@@ -560,10 +562,14 @@ mod tests {
         assert_eq!(writes.len(), 2, "the burst coalesced into one write");
         // Snapshots taken at write start (the follow-up probe after a
         // write also snapshots, so compare the first and the last start).
+        // The throttle runs from the timer's dispatch of the first write;
+        // each snapshot is taken once its save thread has started, so the
+        // first thread's start-up can eat a fraction of a millisecond of the
+        // gap (299.2 ms seen on Linux). A broken throttle gives a gap near 0.
         let starts = editor.write_starts.lock();
         let (first, last) = (starts[0], starts[starts.len() - 1]);
         assert!(
-            last.duration_since(first) >= THROTTLE,
+            last.duration_since(first) >= THROTTLE - THREAD_START_SLACK,
             "{:?}",
             last.duration_since(first)
         );
