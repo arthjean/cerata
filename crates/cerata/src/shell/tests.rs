@@ -997,14 +997,132 @@ fn duplicate_copies_unsaved_text_into_a_new_tab(cx: &mut TestAppContext) {
         view.open_file(&a, window, cx)
     });
     make_dirty(cx, handle, &a);
-    update(cx, handle, |view, window, cx| {
-        view.duplicate(&a, window, cx)
-    });
+    update(cx, handle, |view, _, cx| view.duplicate(&a, cx));
+    cx.run_until_parked();
     let copy = env.root().join("a copy.md");
     assert!(std::fs::read_to_string(&copy).unwrap().contains("more"));
     let active = read(cx, handle, |view, _| view.tabs.active_path().map(file_name));
     assert_eq!(active.as_deref(), Some("a copy.md"));
     assert_eq!(read(cx, handle, |view, _| view.tabs.tabs().len()), 2);
+}
+
+// ---- US-073: a duplicate gets its own assets folder ----
+
+fn notice_text(cx: &mut TestAppContext, handle: WindowHandle<WindowView>) -> Option<String> {
+    read(cx, handle, |view, _| {
+        view.notice.as_ref().map(|n| n.to_string())
+    })
+}
+
+#[gpui::test]
+fn duplicate_copies_the_assets_folder_and_rewrites_the_copy(cx: &mut TestAppContext) {
+    let env = setup(cx);
+    env.file("foo-assets/x.png", "x");
+    env.file("foo-assets/sub/y.png", "y");
+    let foo = env.file("foo.md", "![x](foo-assets/x.png)");
+    let handle = workspace(cx, &env);
+    update(cx, handle, |view, window, cx| {
+        view.open_file(&foo, window, cx)
+    });
+    make_dirty(cx, handle, &foo);
+    update(cx, handle, |view, _, cx| view.duplicate(&foo, cx));
+    cx.run_until_parked();
+    let copy = env.root().join("foo copy.md");
+    let text = std::fs::read_to_string(&copy).unwrap();
+    assert!(
+        text.starts_with("![x](<foo copy-assets/x.png>)") && text.contains("more"),
+        "rewritten, unsaved text kept: {text}"
+    );
+    assert!(env.root().join("foo copy-assets/x.png").is_file());
+    assert!(env.root().join("foo copy-assets/sub/y.png").is_file());
+    assert!(env.root().join("foo-assets/x.png").is_file());
+    let active = read(cx, handle, |view, _| view.tabs.active_path().map(file_name));
+    assert_eq!(active.as_deref(), Some("foo copy.md"));
+    assert_eq!(notice_text(cx, handle), None);
+}
+
+#[gpui::test]
+fn a_taken_copy_folder_keeps_the_links_and_says_so(cx: &mut TestAppContext) {
+    let env = setup(cx);
+    env.file("foo-assets/x.png", "x");
+    env.folder("foo copy-assets");
+    let foo = env.file("foo.md", "![x](foo-assets/x.png)");
+    let handle = workspace(cx, &env);
+    update(cx, handle, |view, _, cx| view.duplicate(&foo, cx));
+    cx.run_until_parked();
+    assert_eq!(
+        std::fs::read_to_string(env.root().join("foo copy.md")).unwrap(),
+        "![x](foo-assets/x.png)"
+    );
+    assert_eq!(
+        std::fs::read_dir(env.root().join("foo copy-assets"))
+            .unwrap()
+            .count(),
+        0
+    );
+    assert_eq!(
+        notice_text(cx, handle).as_deref(),
+        Some("Images stay in \"foo-assets\": \"foo copy-assets\" already exists")
+    );
+}
+
+/// A copy still running after 300 ms says so; the tab opens when it ends.
+#[gpui::test]
+fn a_slow_duplicate_shows_a_notice_until_it_opens(cx: &mut TestAppContext) {
+    use cerata_core::fs::assets::{AssetsOutcome, NoteOperation};
+    let env = setup(cx);
+    let foo = env.file("foo.md", "x");
+    let copy = env.file("foo copy.md", "x");
+    let handle = workspace(cx, &env);
+    let (done, gate) = futures::channel::oneshot::channel::<()>();
+    update(cx, handle, |view, _, cx| {
+        let copy = copy.clone();
+        let work = cx.background_spawn(async move {
+            let _ = gate.await;
+            Ok(NoteOperation {
+                path: copy,
+                assets: AssetsOutcome::None,
+            })
+        });
+        view.duplicate_when_done(&foo, work, cx);
+    });
+    cx.run_until_parked();
+    assert_eq!(notice_text(cx, handle), None, "not before 300 ms");
+    cx.executor()
+        .advance_clock(crate::editor::import::LOADING_NOTICE_DELAY);
+    cx.run_until_parked();
+    assert_eq!(
+        notice_text(cx, handle).as_deref(),
+        Some("Duplicating \"foo\"\u{2026}")
+    );
+    done.send(()).unwrap();
+    cx.run_until_parked();
+    assert_eq!(notice_text(cx, handle), None);
+    let active = read(cx, handle, |view, _| view.tabs.active_path().map(file_name));
+    assert_eq!(active.as_deref(), Some("foo copy.md"));
+}
+
+#[gpui::test]
+fn a_failed_duplicate_opens_nothing_and_says_why(cx: &mut TestAppContext) {
+    let env = setup(cx);
+    let foo = env.file("foo.md", "x");
+    let handle = workspace(cx, &env);
+    let tabs = read(cx, handle, |view, _| view.tabs.tabs().len());
+    update(cx, handle, |view, _, cx| {
+        let work = cx.background_spawn(async move {
+            Err(FsError::Io {
+                path: PathBuf::from("foo copy-assets/x.png"),
+                source: std::io::Error::other("disk full"),
+            })
+        });
+        view.duplicate_when_done(&foo, work, cx);
+    });
+    cx.run_until_parked();
+    assert_eq!(
+        notice_text(cx, handle).as_deref(),
+        Some("Failed to duplicate: foo copy-assets/x.png: disk full")
+    );
+    assert_eq!(read(cx, handle, |view, _| view.tabs.tabs().len()), tabs);
 }
 
 // ---- US-028: palette, welcome, new tab, compact window ----

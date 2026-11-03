@@ -94,6 +94,25 @@ pub enum SaveResult {
     Conflicted { path: PathBuf, revision: u64 },
 }
 
+impl SaveResult {
+    /// The result for a file at or under `old`, now at `new`.
+    pub fn moved(mut self, old: &Path, new: &Path) -> Self {
+        let path = match &mut self {
+            Self::Saved { path, .. }
+            | Self::Failed { path, .. }
+            | Self::Conflicted { path, .. } => path,
+        };
+        if let Ok(rest) = path.strip_prefix(old) {
+            *path = if rest.as_os_str().is_empty() {
+                new.to_path_buf()
+            } else {
+                new.join(rest)
+            };
+        }
+        self
+    }
+}
+
 /// The [`SaveTarget`] of a window: the dirty texts, copied in on every
 /// edit, and the results queued for the window.
 pub struct SaveBridge {

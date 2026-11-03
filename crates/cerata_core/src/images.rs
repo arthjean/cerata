@@ -189,17 +189,7 @@ fn bmp_to_png(bmp: &[u8]) -> Option<Vec<u8>> {
     Some(png)
 }
 
-/// Writer's `formatMarkdownDestination`: angle brackets around a
-/// destination with spaces or parentheses. `%` is escaped, since a local
-/// destination is percent-decoded when it is resolved.
-pub fn markdown_destination(path: &str) -> String {
-    let path = path.replace('%', "%25");
-    if path.contains([' ', '\t', '(', ')', '<', '>']) {
-        format!("<{}>", path.replace('<', "%3C").replace('>', "%3E"))
-    } else {
-        path
-    }
-}
+pub use cerata_markdown::asset_links::markdown_destination;
 
 /// What enters a note.
 #[derive(Clone, Debug, PartialEq, Eq)]

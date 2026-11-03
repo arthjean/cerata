@@ -62,9 +62,12 @@ pub enum SidebarEvent {
     /// A note just made by "New File": opened with the caret at its end.
     OpenCreated(PathBuf),
     OpenInNewTab(PathBuf),
+    /// `links`: how the destinations of a renamed note change, its assets
+    /// folder having followed it or stayed (EP-015).
     Renamed {
         old: PathBuf,
         new: PathBuf,
+        links: Option<cerata_core::fs::assets::LinkRewrite>,
     },
     Notice(String),
     /// The window decides: it knows which files have unsaved changes.

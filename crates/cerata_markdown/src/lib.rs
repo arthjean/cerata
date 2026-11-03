@@ -7,6 +7,7 @@
 
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
+pub mod asset_links;
 pub mod atomic;
 pub mod basic;
 pub mod cells;

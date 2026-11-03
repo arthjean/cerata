@@ -10,6 +10,7 @@
 //! - renames validate the new name (defect 15);
 //! - one Markdown predicate (defect 2).
 
+pub mod assets;
 pub mod atomic;
 pub mod text;
 pub mod titles;
@@ -386,17 +387,22 @@ impl WorkspaceFs {
     pub fn duplicate(&self, source: &Path, unsaved: Option<&str>) -> Result<PathBuf, FsError> {
         let source_file = self.read_file(source)?;
         let content = unsaved.unwrap_or(&source_file.content);
-        let parent = source_file
-            .path
+        let candidate = self.reserve_copy(&source_file.path)?;
+        self.fill_copy(&candidate, content, source_file.format)?;
+        Ok(candidate)
+    }
+
+    /// Creates the empty file `<stem> copy.<ext>` (or the first free
+    /// `<stem> copy {n}.<ext>`) next to `source`, which must be canonical.
+    fn reserve_copy(&self, source: &Path) -> Result<PathBuf, FsError> {
+        let parent = source
             .parent()
-            .ok_or_else(|| FsError::NotFound(source_file.path.clone()))?;
-        let stem = source_file
-            .path
+            .ok_or_else(|| FsError::NotFound(source.to_path_buf()))?;
+        let stem = source
             .file_stem()
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_default();
-        let extension = source_file
-            .path
+        let extension = source
             .extension()
             .map(|e| format!(".{}", e.to_string_lossy()))
             .unwrap_or_default();
@@ -414,18 +420,27 @@ impl WorkspaceFs {
             {
                 Ok(file) => {
                     drop(file);
-                    if let Err(error) = self.write_file(&candidate, content, source_file.format) {
-                        // Leave no empty placeholder behind.
-                        let _ = fs::remove_file(&candidate);
-                        return Err(error);
-                    }
                     return Ok(candidate);
                 }
                 Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
                 Err(error) => return Err(FsError::io(&candidate, error)),
             }
         }
-        Err(FsError::AlreadyExists(source_file.path))
+        Err(FsError::AlreadyExists(source.to_path_buf()))
+    }
+
+    /// Writes a reserved copy; on failure, leaves no empty placeholder.
+    fn fill_copy(
+        &self,
+        candidate: &Path,
+        content: &str,
+        format: TextFormat,
+    ) -> Result<(), FsError> {
+        if let Err(error) = self.write_file(candidate, content, format) {
+            let _ = fs::remove_file(candidate);
+            return Err(error);
+        }
+        Ok(())
     }
 }
 

@@ -1021,3 +1021,243 @@ fn typing_in_the_search_field_filters_and_escape_clears(cx: &mut TestAppContext)
         .unwrap();
     assert_eq!(text, "");
 }
+
+// ---- US-072: the assets folder follows its note ----
+
+/// `foo.md` linking `foo-assets/x.png`, in `dir` ("" for the root).
+fn note_with_assets(env: &Env, dir: &str) -> PathBuf {
+    let prefix = if dir.is_empty() {
+        String::new()
+    } else {
+        format!("{dir}/")
+    };
+    env.file(&format!("{prefix}foo-assets/x.png"), "x");
+    env.file(&format!("{prefix}foo.md"), "![x](foo-assets/x.png)\n")
+}
+
+fn rename_to(
+    cx: &mut TestAppContext,
+    handle: WindowHandle<WindowView>,
+    sidebar: &Entity<Sidebar>,
+    path: &Path,
+    typed: &str,
+) {
+    with_window(cx, handle, sidebar, |s, window, cx| {
+        s.start_rename(path, window, cx)
+    });
+    let field = sidebar.read_with(cx, |s, _| s.renaming.as_ref().unwrap().field.clone());
+    field.update(cx, |f, cx| f.set_text(typed, cx));
+    with_window(cx, handle, sidebar, |s, window, cx| {
+        s.commit_rename(window, cx)
+    });
+}
+
+fn doc_text(cx: &mut TestAppContext, handle: WindowHandle<WindowView>, path: &Path) -> String {
+    cx.update(|cx| {
+        handle.read_with(cx, |view, cx| {
+            view.docs
+                .get(path)
+                .map(|doc| doc.editor.read(cx).state.doc().to_owned())
+        })
+    })
+    .unwrap()
+    .unwrap_or_default()
+}
+
+fn shell_notice(cx: &mut TestAppContext, handle: WindowHandle<WindowView>) -> Option<String> {
+    cx.update(|cx| handle.read_with(cx, |view, _| view.notice.as_ref().map(|n| n.to_string())))
+        .unwrap()
+}
+
+#[gpui::test]
+fn renaming_an_open_edited_note_rewrites_its_buffer_and_takes_its_assets(cx: &mut TestAppContext) {
+    use cerata_core::watcher::{FileChange, WatchEvent};
+    let env = setup(cx);
+    let foo = note_with_assets(&env, "");
+    let (handle, sidebar) = open(cx, &env);
+    handle
+        .update(cx, |view, window, cx| view.open_file(&foo, window, cx))
+        .unwrap();
+    cx.run_until_parked();
+    let editor = cx
+        .update(|cx| handle.read_with(cx, |v, _| v.docs.get(&foo).unwrap().editor.clone()))
+        .unwrap();
+    editor.update(cx, |editor, cx| {
+        let end = editor.state.text().len();
+        editor.update_state(cx, |state| {
+            let _ = state.apply(
+                cerata_markdown::Transaction::new()
+                    .change(cerata_markdown::Change::insert(end, "unsaved"))
+                    .event(cerata_markdown::UserEvent::Type),
+            );
+        });
+    });
+
+    rename_to(cx, handle, &sidebar, &foo, "bar");
+    let bar = env.root().join("bar.md");
+    assert!(env.root().join("bar-assets/x.png").is_file());
+    assert!(!env.root().join("foo-assets").exists(), "no orphan folder");
+    assert_eq!(
+        doc_text(cx, handle, &bar),
+        "![x](bar-assets/x.png)\nunsaved",
+        "the buffer is rewritten, its unsaved text kept"
+    );
+
+    // The rename's own watcher events neither reload nor conflict. The
+    // watcher drops an event whose content Cerata just wrote; it is fed the
+    // others, as it would be.
+    let echo = sidebar.read_with(cx, |s, _| {
+        s.runtime().unwrap().self_writes.is_self_write(&bar)
+    });
+    let events = [(&bar, FileChange::Created), (&foo, FileChange::Removed)];
+    for (path, change) in events.into_iter().filter(|(p, _)| !(echo && *p == &bar)) {
+        handle
+            .update(cx, |view, window, cx| {
+                let path = path.to_path_buf();
+                view.on_watch_event(WatchEvent::FileChanged { path, change }, window, cx)
+            })
+            .unwrap();
+    }
+    cx.run_until_parked();
+    let conflicted = cx
+        .update(|cx| handle.read_with(cx, |v, _| v.docs.get(&bar).unwrap().conflict.clone()))
+        .unwrap();
+    assert_eq!(conflicted, None);
+    assert_eq!(
+        doc_text(cx, handle, &bar),
+        "![x](bar-assets/x.png)\nunsaved"
+    );
+
+    // The autosave writes the rewrite.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while !std::fs::read_to_string(&bar).is_ok_and(|t| t.contains("bar-assets")) {
+        assert!(std::time::Instant::now() < deadline, "never saved");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let _ = handle.update(cx, |view, _, cx| view.drain_saves(cx));
+        cx.run_until_parked();
+    }
+
+    // One undo step takes the rewrite back, and only it.
+    editor.update(cx, |editor, cx| {
+        editor.update_state(cx, |state| state.undo());
+    });
+    assert_eq!(
+        doc_text(cx, handle, &bar),
+        "![x](foo-assets/x.png)\nunsaved"
+    );
+}
+
+#[gpui::test]
+fn renaming_a_closed_note_rewrites_it_on_disk_as_a_self_write(cx: &mut TestAppContext) {
+    let env = setup(cx);
+    let foo = note_with_assets(&env, "");
+    env.file("other.md", "![o](foo-assets/x.png)\n");
+    let (handle, sidebar) = open(cx, &env);
+    rename_to(cx, handle, &sidebar, &foo, "bar");
+    let bar = env.root().join("bar.md");
+    assert_eq!(
+        std::fs::read_to_string(&bar).unwrap(),
+        "![x](bar-assets/x.png)\n"
+    );
+    assert!(env.root().join("bar-assets/x.png").is_file());
+    assert_eq!(
+        std::fs::read_to_string(env.root().join("other.md")).unwrap(),
+        "![o](foo-assets/x.png)\n",
+        "only the renamed note is rewritten"
+    );
+    let echo = sidebar.read_with(cx, |s, _| {
+        s.runtime().unwrap().self_writes.is_self_write(&bar)
+    });
+    assert!(echo, "the watcher knows the write is Cerata's");
+    assert_eq!(shell_notice(cx, handle), None);
+}
+
+#[gpui::test]
+fn a_note_without_assets_renames_as_before(cx: &mut TestAppContext) {
+    let env = setup(cx);
+    let a = env.file("a.md", "![x](a-assets/x.png)\n");
+    let (handle, sidebar) = open(cx, &env);
+    rename_to(cx, handle, &sidebar, &a, "b");
+    assert_eq!(
+        std::fs::read_to_string(env.root().join("b.md")).unwrap(),
+        "![x](a-assets/x.png)\n"
+    );
+    assert!(!env.root().join("b-assets").exists());
+}
+
+#[gpui::test]
+fn a_taken_folder_name_keeps_the_folder_and_says_so(cx: &mut TestAppContext) {
+    let env = setup(cx);
+    let foo = note_with_assets(&env, "");
+    env.file("bar-assets/y.png", "y");
+    let (handle, sidebar) = open(cx, &env);
+    rename_to(cx, handle, &sidebar, &foo, "bar");
+    assert!(env.root().join("bar.md").is_file());
+    assert!(
+        env.root().join("foo-assets/x.png").is_file(),
+        "the folder stays"
+    );
+    assert_eq!(
+        std::fs::read_to_string(env.root().join("bar.md")).unwrap(),
+        "![x](foo-assets/x.png)\n",
+        "still a sibling: the links stay valid"
+    );
+    assert_eq!(
+        shell_notice(cx, handle).as_deref(),
+        Some("Images stay in \"foo-assets\": \"bar-assets\" already exists")
+    );
+}
+
+fn drag_onto(cx: &mut TestAppContext, sidebar: &Entity<Sidebar>, source: &Path, dir: &Path) {
+    sidebar.update(cx, |s, cx| s.toggle_dir(dir, cx));
+    cx.run_until_parked();
+    let target = entry(cx, sidebar, dir).entry;
+    let start = gpui::point(px(10.0), px(10.0));
+    sidebar.update(cx, |s, cx| {
+        s.begin_drag(source, start);
+        s.drag_moved(start + gpui::point(px(0.0), px(8.0)), Some(target), cx);
+        s.end_drag(cx);
+    });
+    cx.run_until_parked();
+}
+
+#[gpui::test]
+fn a_dragged_note_takes_its_assets_and_keeps_its_text(cx: &mut TestAppContext) {
+    let env = setup(cx);
+    let foo = note_with_assets(&env, "a");
+    env.file("b/keep.md", "k");
+    let (handle, sidebar) = open(cx, &env);
+    let b = env.root().join("b");
+    drag_onto(cx, &sidebar, &foo, &b);
+    assert_eq!(
+        std::fs::read_to_string(b.join("foo.md")).unwrap(),
+        "![x](foo-assets/x.png)\n"
+    );
+    assert!(b.join("foo-assets/x.png").is_file());
+    assert!(
+        !env.root().join("a/foo-assets").exists(),
+        "no orphan folder"
+    );
+    assert_eq!(shell_notice(cx, handle), None);
+}
+
+#[gpui::test]
+fn a_note_dragged_over_a_taken_folder_points_its_links_back(cx: &mut TestAppContext) {
+    let env = setup(cx);
+    let foo = note_with_assets(&env, "a");
+    env.file("b/foo-assets/other.png", "o");
+    // A folder shows in the sidebar once it holds a note.
+    env.file("b/keep.md", "k");
+    let (handle, sidebar) = open(cx, &env);
+    let b = env.root().join("b");
+    drag_onto(cx, &sidebar, &foo, &b);
+    assert_eq!(
+        std::fs::read_to_string(b.join("foo.md")).unwrap(),
+        "![x](../a/foo-assets/x.png)\n"
+    );
+    assert!(env.root().join("a/foo-assets/x.png").is_file());
+    assert_eq!(
+        shell_notice(cx, handle).as_deref(),
+        Some("Images stay in \"foo-assets\": \"foo-assets\" already exists")
+    );
+}

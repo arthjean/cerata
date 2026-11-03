@@ -439,6 +439,31 @@ impl Editor {
         });
     }
 
+    /// Moves every destination into the folder `from` (relative to the
+    /// note) to `to`, in one undo step: the note was renamed and its assets
+    /// folder followed it or stayed (EP-015). `false` when nothing changed.
+    pub fn rewrite_asset_links(&mut self, from: &str, to: &str, cx: &mut Context<Self>) -> bool {
+        use cerata_markdown::asset_links;
+        if self.state.is_loading() {
+            return false;
+        }
+        let doc = self.state.doc();
+        let links = asset_links::links_into_tree(self.state.tree(), doc, from);
+        let changes = asset_links::rewrite(doc, &links, to);
+        if changes.is_empty() {
+            return false;
+        }
+        self.update_state(cx, |state| {
+            state
+                .apply(
+                    Transaction::new()
+                        .changes(changes)
+                        .event(UserEvent::Command),
+                )
+                .is_ok()
+        })
+    }
+
     pub fn select(&mut self, selection: Selection, cx: &mut Context<Self>) {
         self.update_state(cx, |state| {
             let _ = state.apply(

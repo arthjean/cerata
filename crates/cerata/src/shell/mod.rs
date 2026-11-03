@@ -244,6 +244,9 @@ pub struct WindowView {
     pending_undos: HashMap<PathBuf, Vec<Undo>>,
     active_editor: Option<EntityId>,
     pub notice: Option<SharedString>,
+    /// Duplicates still copying (US-073), by id.
+    duplicating: Vec<u64>,
+    next_duplicate: u64,
     session_task: Option<Task<()>>,
     sessions: SessionStore,
     focus_handle: FocusHandle,
@@ -339,6 +342,8 @@ impl WindowView {
             pending_undos: HashMap::new(),
             active_editor: None,
             notice: None,
+            duplicating: Vec::new(),
+            next_duplicate: 0,
             session_task: None,
             sessions: crate::app::core(cx).sessions.clone(),
             focus_handle: cx.focus_handle(),
@@ -418,14 +423,17 @@ impl WindowView {
             SidebarEvent::OpenInNewTab(path) => self.with_window(cx, move |this, window, cx| {
                 this.open_file_in_new_tab(&path, window, cx)
             }),
-            SidebarEvent::Renamed { old, new } => self.path_renamed(&old, &new, cx),
+            SidebarEvent::Renamed { old, new, links } => {
+                self.path_renamed(&old, &new, cx);
+                if let Some(links) = links {
+                    self.rewrite_asset_links(&new, &links, cx);
+                }
+            }
             SidebarEvent::Notice(notice) => self.show_notice(notice, cx),
             SidebarEvent::Delete(paths) => self.with_window(cx, move |this, window, cx| {
                 this.request_delete(paths, window, cx)
             }),
-            SidebarEvent::Duplicate(path) => self.with_window(cx, move |this, window, cx| {
-                this.duplicate(&path, window, cx)
-            }),
+            SidebarEvent::Duplicate(path) => self.duplicate(&path, cx),
             SidebarEvent::SettingsChanged => cx.notify(),
         }
     }
@@ -539,8 +547,10 @@ impl WindowView {
     }
 
     /// "Duplicate": `<stem> copy.md`, with the unsaved text when the file
-    /// has some, opened in a new tab (`duplicate-file.ts:26-73`).
-    pub fn duplicate(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
+    /// has some, opened in a new tab (`duplicate-file.ts:26-73`). Its assets
+    /// folder is copied for it in the background (US-073); a copy still
+    /// running after 300 ms shows `Duplicating "foo"…`.
+    pub fn duplicate(&mut self, path: &Path, cx: &mut Context<Self>) {
         let Some(fs) = self.fs() else { return };
         let unsaved = self
             .docs
@@ -550,16 +560,84 @@ impl WindowView {
                 let state = &doc.editor.read(cx).state;
                 state.is_dirty().then(|| state.doc().to_owned())
             });
-        match fs.duplicate(path, unsaved.as_deref()) {
-            Ok(copy) => {
-                if let (Some(sidebar), Some(parent)) = (self.sidebar.clone(), copy.parent()) {
+        let source = path.to_path_buf();
+        let work = cx.background_spawn({
+            let source = source.clone();
+            async move { fs.duplicate_note(&source, unsaved.as_deref()) }
+        });
+        self.duplicate_when_done(&source, work, cx);
+    }
+
+    /// Opens the copy `work` makes of `source` once it is done, with the
+    /// notice of a copy still running after 300 ms.
+    fn duplicate_when_done(
+        &mut self,
+        source: &Path,
+        work: Task<Result<cerata_core::fs::assets::NoteOperation, FsError>>,
+        cx: &mut Context<Self>,
+    ) {
+        let id = self.next_duplicate;
+        self.next_duplicate += 1;
+        self.duplicating.push(id);
+        let waiting: SharedString = format!(
+            "Duplicating \"{}\"\u{2026}",
+            source
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        )
+        .into();
+        cx.spawn({
+            let waiting = waiting.clone();
+            async move |this, cx| {
+                cx.background_executor()
+                    .timer(crate::editor::import::LOADING_NOTICE_DELAY)
+                    .await;
+                this.update(cx, |this, cx| {
+                    if this.duplicating.contains(&id) {
+                        this.show_notice(waiting, cx);
+                    }
+                })
+                .ok();
+            }
+        })
+        .detach();
+        cx.spawn(async move |this, cx| {
+            let result = work.await;
+            this.update(cx, |this, cx| this.duplicated(id, &waiting, result, cx))
+                .ok();
+        })
+        .detach();
+    }
+
+    fn duplicated(
+        &mut self,
+        id: u64,
+        waiting: &SharedString,
+        result: Result<cerata_core::fs::assets::NoteOperation, FsError>,
+        cx: &mut Context<Self>,
+    ) {
+        self.duplicating.retain(|pending| *pending != id);
+        if self.notice.as_ref() == Some(waiting) {
+            self.notice = None;
+        }
+        match result {
+            Ok(done) => {
+                if let (Some(sidebar), Some(parent)) = (self.sidebar.clone(), done.path.parent()) {
                     let parent = parent.to_path_buf();
                     sidebar.update(cx, |sidebar, cx| sidebar.refresh_dir(&parent, cx));
                 }
-                self.open_file_in_new_tab(&copy, window, cx);
+                if let Some(notice) = done.notice() {
+                    self.show_notice(notice, cx);
+                }
+                let copy = done.path;
+                self.with_window(cx, move |this, window, cx| {
+                    this.open_file_in_new_tab(&copy, window, cx)
+                });
             }
             Err(error) => self.show_notice(format!("Failed to duplicate: {error}"), cx),
         }
+        cx.notify();
     }
 
     /// Runs `f` with this view's window, after the current update (events
@@ -1228,6 +1306,11 @@ impl WindowView {
 
     /// A file or folder was renamed or moved inside Cerata.
     pub fn path_renamed(&mut self, old: &Path, new: &Path, cx: &mut Context<Self>) {
+        // A save that ended before the rename reports under the old path:
+        // moved to the new one, it still updates the document's disk text,
+        // so the watcher's events for the new path are not taken for an
+        // outside change.
+        let pending = self.bridge.take_results();
         self.tabs.rewrite_prefix(old, new);
         for (from, to) in self.docs.rewrite_prefix(old, new) {
             self.bridge.rename(&from, &to);
@@ -1246,7 +1329,48 @@ impl WindowView {
                     .update(cx, |editor, _| editor.path = Some(to.clone()));
             }
         }
+        for result in pending {
+            self.on_save_result(result.moved(old, new), cx);
+        }
         self.after_tabs_change(cx);
+    }
+
+    /// The note now at `path` was renamed and its assets folder followed it
+    /// or stayed (EP-015): its destinations into the folder are rewritten,
+    /// in its buffer when it is open (one undo step, saved by the autosave),
+    /// else on disk, as a write the watcher knows is Cerata's.
+    pub fn rewrite_asset_links(
+        &mut self,
+        path: &Path,
+        links: &cerata_core::fs::assets::LinkRewrite,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(doc) = self
+            .docs
+            .get(path)
+            .filter(|doc| doc.loading_since.is_none())
+        {
+            doc.editor.update(cx, |editor, cx| {
+                editor.rewrite_asset_links(&links.from, &links.to, cx)
+            });
+            return;
+        }
+        let Some(fs) = self.fs() else { return };
+        let written = fs.read_file(path).and_then(|file| {
+            let Some(text) =
+                cerata_markdown::asset_links::rewrite_text(&file.content, &links.from, &links.to)
+            else {
+                return Ok(());
+            };
+            let bytes = cerata_core::fs::text::encode(&text, file.format);
+            if let Some(runtime) = self.core.runtime() {
+                runtime.self_writes.record(&file.path, &bytes);
+            }
+            fs.write_bytes(&file.path, &bytes).map(|_| ())
+        });
+        if let Err(error) = written {
+            self.show_notice(format!("Image links not updated: {error}"), cx);
+        }
     }
 
     /// A file or folder was deleted inside Cerata.

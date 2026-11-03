@@ -7,7 +7,8 @@
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use cerata_core::fs::{DirEntry, EntryKind, FsError, NEW_FILE_CONTENT};
+use cerata_core::fs::assets::{AssetsOutcome, LinkRewrite, NoteOperation};
+use cerata_core::fs::{DirEntry, EntryKind, FsError, NEW_FILE_CONTENT, WorkspaceFs};
 use cerata_core::index::relative_slash_path;
 use cerata_core::settings::ConfigValue;
 use gpui::{AppContext as _, ClipboardItem, Context, Entity, Pixels, Point, Subscription, Window};
@@ -418,15 +419,18 @@ impl Sidebar {
             return None;
         }
         let mut committed = None;
-        match runtime.fs.rename(&entry.path, &new) {
-            Ok(new) => {
+        match move_entry(&runtime.fs, &entry.path, &new, entry.is_dir) {
+            Ok(done) => {
                 self.renaming = None;
                 if created {
-                    self.name_heading(&new, &typed);
+                    self.name_heading(&done.path, &typed);
                 }
-                self.after_move(&entry.path, &new, cx);
+                self.after_note_move(&entry.path, &done, cx);
+                if let Some(notice) = done.notice() {
+                    cx.emit(SidebarEvent::Notice(notice));
+                }
                 window.focus(&self.focus_handle, cx);
-                committed = Some(new);
+                committed = Some(done.path);
             }
             Err(FsError::AlreadyExists(_)) => {
                 let kind = if entry.is_dir { "folder" } else { "file" };
@@ -465,9 +469,25 @@ impl Sidebar {
         }
     }
 
+    /// [`Self::after_move`] for a note and the assets folder that followed
+    /// it, the folder first; the note's event carries the rewrite of its
+    /// links (EP-015).
+    fn after_note_move(&mut self, old: &Path, done: &NoteOperation, cx: &mut Context<Self>) {
+        if let AssetsOutcome::Followed { from, to } = &done.assets {
+            self.after_move(from, to, None, cx);
+        }
+        self.after_move(old, &done.path, done.links(old), cx);
+    }
+
     /// Bookkeeping once `old` became `new` on disk: expanded folders,
     /// pins, listings, and the window's tabs (through the event).
-    fn after_move(&mut self, old: &Path, new: &Path, cx: &mut Context<Self>) {
+    fn after_move(
+        &mut self,
+        old: &Path,
+        new: &Path,
+        links: Option<LinkRewrite>,
+        cx: &mut Context<Self>,
+    ) {
         let rewritten: Vec<PathBuf> = self
             .expanded
             .iter()
@@ -509,6 +529,7 @@ impl Sidebar {
         cx.emit(SidebarEvent::Renamed {
             old: old.to_path_buf(),
             new: new.to_path_buf(),
+            links,
         });
     }
 
@@ -580,8 +601,15 @@ impl Sidebar {
         };
         let dest = drop_dest(drag.over.as_ref(), &runtime.root);
         let mut failures = Vec::new();
-        let mut moved = Vec::new();
+        let mut moved: Vec<(PathBuf, NoteOperation)> = Vec::new();
+        let mut notices = Vec::new();
         for source in &drag.paths {
+            // An assets folder dragged with its note already moved with it.
+            if moved.iter().any(|(_, done)| {
+                matches!(&done.assets, AssetsOutcome::Followed { from, .. } if from == source)
+            }) {
+                continue;
+            }
             let is_dir = source.is_dir();
             if !can_move(source, is_dir, &dest) {
                 continue;
@@ -599,8 +627,11 @@ impl Sidebar {
                 ));
                 continue;
             }
-            match runtime.fs.rename(source, &target) {
-                Ok(new) => moved.push((source.clone(), new)),
+            match move_entry(&runtime.fs, source, &target, is_dir) {
+                Ok(done) => {
+                    notices.extend(done.notice());
+                    moved.push((source.clone(), done));
+                }
                 Err(error) => failures.push(format!(
                     "• \"{}\": {error}",
                     source
@@ -613,8 +644,8 @@ impl Sidebar {
         if dest != runtime.root {
             self.expand(&dest, cx);
         }
-        for (old, new) in moved {
-            self.after_move(&old, &new, cx);
+        for (old, done) in &moved {
+            self.after_note_move(old, done, cx);
         }
         self.selection.clear();
         if !failures.is_empty() {
@@ -623,6 +654,8 @@ impl Sidebar {
                 failures.len(),
                 failures.join("\n")
             )));
+        } else if !notices.is_empty() {
+            cx.emit(SidebarEvent::Notice(notices.join("\n")));
         }
         cx.notify();
         true
@@ -870,6 +903,23 @@ pub fn surface_menu(
         },
     ));
     items
+}
+
+/// Renames or moves `old` to `new`: a Markdown file with its assets folder
+/// (EP-015), anything else alone.
+fn move_entry(
+    fs: &WorkspaceFs,
+    old: &Path,
+    new: &Path,
+    is_dir: bool,
+) -> Result<NoteOperation, FsError> {
+    if !is_dir && cerata_core::markdown::is_markdown_path(old) {
+        return fs.rename_note(old, new);
+    }
+    Ok(NoteOperation {
+        path: fs.rename(old, new)?,
+        assets: AssetsOutcome::None,
+    })
 }
 
 #[cfg(test)]
