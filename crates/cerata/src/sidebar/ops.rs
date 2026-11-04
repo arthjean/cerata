@@ -129,7 +129,11 @@ impl Sidebar {
             if entry.is_dir {
                 folder_menu(entry.path.clone())
             } else {
-                file_menu(entry.path.clone(), self.is_pinned(&entry.path))
+                file_menu(
+                    entry.path.clone(),
+                    self.is_pinned(&entry.path),
+                    self.conflicted.contains(&entry.path),
+                )
             }
         };
         self.menu = Some(Menu::new(position, items));
@@ -736,11 +740,12 @@ fn sep<V>() -> Item<V> {
     Item::Separator
 }
 
-pub fn file_menu(path: PathBuf, pinned: bool) -> Vec<Item<Sidebar>> {
+pub fn file_menu(path: PathBuf, pinned: bool, conflicted: bool) -> Vec<Item<Sidebar>> {
     let p = || path.clone();
     let (open, new_tab, pin, dup, rel, abs, reveal, rename, delete) =
         (p(), p(), p(), p(), p(), p(), p(), p(), p());
-    vec![
+    let (history, review) = (p(), p());
+    let mut items = vec![
         Item::action("Open", move |_, _, cx: &mut Context<Sidebar>| {
             cx.emit(SidebarEvent::Open(open.clone()))
         }),
@@ -755,6 +760,22 @@ pub fn file_menu(path: PathBuf, pinned: bool) -> Vec<Item<Sidebar>> {
         Item::action("Duplicate", move |_, _, cx: &mut Context<Sidebar>| {
             cx.emit(SidebarEvent::Duplicate(dup.clone()))
         }),
+        Item::action(
+            "Show Note History",
+            move |_, _, cx: &mut Context<Sidebar>| {
+                cx.emit(SidebarEvent::ShowHistory(history.clone()))
+            },
+        ),
+    ];
+    if conflicted {
+        items.push(Item::action(
+            "Review Conflict",
+            move |_, _, cx: &mut Context<Sidebar>| {
+                cx.emit(SidebarEvent::ReviewConflict(review.clone()))
+            },
+        ));
+    }
+    items.extend([
         sep(),
         Item::action("Copy relative path", move |s: &mut Sidebar, _, cx| {
             s.copy_paths(std::slice::from_ref(&rel), true, cx)
@@ -773,7 +794,8 @@ pub fn file_menu(path: PathBuf, pinned: bool) -> Vec<Item<Sidebar>> {
         Item::action("Delete", move |_, _, cx: &mut Context<Sidebar>| {
             cx.emit(SidebarEvent::Delete(vec![delete.clone()]))
         }),
-    ]
+    ]);
+    items
 }
 
 pub fn folder_menu(path: PathBuf) -> Vec<Item<Sidebar>> {
@@ -924,6 +946,16 @@ fn move_entry(
     is_dir: bool,
 ) -> Result<NoteOperation, FsError> {
     let _gate = runtime.self_writes.write_gate();
+    // The notes moved keep their pending versions under their old path,
+    // where the store still knows them (US-089).
+    let flushed = if is_dir {
+        runtime.flush_history(None, Some(cerata_core::workspace::HISTORY_FLUSH))
+    } else {
+        runtime.flush_history(Some(old), Some(cerata_core::workspace::HISTORY_FLUSH))
+    };
+    if !flushed {
+        log::warn!("versions of {} not written before its move", old.display());
+    }
     runtime.self_writes.record_move(old, new);
     let moved = if !is_dir && cerata_core::markdown::is_markdown_path(old) {
         runtime.fs.rename_note(old, new)
@@ -1065,13 +1097,14 @@ mod tests {
     #[test]
     fn menus_follow_writer_order_with_separators() {
         assert_eq!(
-            labels(&file_menu(PathBuf::from("/v/a.md"), false)),
+            labels(&file_menu(PathBuf::from("/v/a.md"), false, false)),
             [
                 "Open",
                 "Open in new tab",
                 "Pin",
                 "-",
                 "Duplicate",
+                "Show Note History",
                 "-",
                 "Copy relative path",
                 "Copy absolute path",
@@ -1083,8 +1116,12 @@ mod tests {
             ]
         );
         assert_eq!(
-            labels(&file_menu(PathBuf::from("/v/a.md"), true))[2],
+            labels(&file_menu(PathBuf::from("/v/a.md"), true, false))[2],
             "Unpin"
+        );
+        assert_eq!(
+            labels(&file_menu(PathBuf::from("/v/a.md"), false, true))[6],
+            "Review Conflict"
         );
         assert_eq!(
             labels(&folder_menu(PathBuf::from("/v/d"))),

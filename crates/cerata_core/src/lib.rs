@@ -9,8 +9,10 @@
 
 pub mod cli;
 pub mod cloud;
+pub mod conflict_copy;
 pub mod epoch;
 pub mod fs;
+pub mod history;
 pub mod ignore;
 pub mod images;
 pub mod index;
@@ -18,6 +20,7 @@ pub mod json_store;
 pub mod library;
 pub mod links;
 pub mod markdown;
+pub mod merge;
 pub mod open_target;
 pub mod paths;
 pub mod pins;

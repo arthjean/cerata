@@ -44,13 +44,17 @@ pub struct Doc {
     pub loading_since: Option<Instant>,
     pub save_error: Option<String>,
     pub conflict: Option<Conflict>,
-    /// "Compare" is showing the disk and editor texts side by side.
-    pub compare: bool,
+    /// The three-way merge of a `Conflict::Modified` whose changes overlap,
+    /// shown by "Review Changes" (US-092).
+    pub merge: Option<cerata_core::merge::Merge>,
     /// The editor revision last seen, to notice edits.
     pub seen_revision: u64,
     /// A disk change arrived while a save was in flight: decided once the
     /// save completes.
     pub change_pending: bool,
+    /// The text found on disk was offered to the history before the first
+    /// edit (kept only for a note without versions, US-089).
+    pub first_version_offered: bool,
 }
 
 impl Doc {
@@ -63,9 +67,10 @@ impl Doc {
             loading_since: loading.then(Instant::now),
             save_error: None,
             conflict: None,
-            compare: false,
+            merge: None,
             seen_revision: 0,
             change_pending: false,
+            first_version_offered: false,
         }
     }
 

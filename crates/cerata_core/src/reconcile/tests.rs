@@ -64,6 +64,7 @@ impl Lib {
             ignore: Arc::new(RwLock::new(Arc::new(WorkspaceIgnore::bootstrap(&root)))),
             index_ready: Arc::new(AtomicBool::new(false)),
             store: Some(store.clone()),
+            history: None,
             self_writes: Arc::new(SelfWriteLog::new()),
             files: files.clone(),
             global_gitignore: None,

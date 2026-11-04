@@ -5,6 +5,7 @@ mod banner;
 mod commands;
 mod compact;
 pub mod frame;
+mod history;
 pub mod libraries;
 mod pages;
 mod sidebar_footer;
@@ -290,6 +291,11 @@ pub struct WindowView {
     /// Titles of global recents read in the background, by path.
     pub recent_titles: HashMap<PathBuf, Option<String>>,
     recent_titles_task: Option<Task<()>>,
+    /// The open history panel (US-091) and the open merge review (US-092).
+    pub history_panel: Option<Entity<crate::history_panel::HistoryPanel>>,
+    _history_events: Option<Subscription>,
+    pub merge_review: Option<Entity<crate::merge_review::MergeReview>>,
+    _review_events: Option<Subscription>,
     _tasks: Vec<Task<()>>,
 }
 
@@ -342,7 +348,7 @@ impl WindowView {
             if cx.windows().len() == 1 {
                 cx.quit();
             } else {
-                let _ = this.update(cx, |view, _| view.before_close());
+                let _ = this.update(cx, |view, cx| view.before_close(cx));
                 window.defer(cx, |window, _| window.remove_window());
             }
             false
@@ -391,6 +397,10 @@ impl WindowView {
             _activation: activation,
             recent_titles: HashMap::new(),
             recent_titles_task: None,
+            history_panel: None,
+            _history_events: None,
+            merge_review: None,
+            _review_events: None,
             _tasks: vec![saves],
         }
     }
@@ -456,6 +466,12 @@ impl WindowView {
                 this.request_delete(paths, window, cx)
             }),
             SidebarEvent::Duplicate(path) => self.duplicate(&path, cx),
+            SidebarEvent::ShowHistory(path) => self.with_window(cx, move |this, window, cx| {
+                this.show_history(Some(path), crate::history_panel::View::Note, window, cx)
+            }),
+            SidebarEvent::ReviewConflict(path) => self.with_window(cx, move |this, window, cx| {
+                this.review_conflict(&path, window, cx)
+            }),
             SidebarEvent::SettingsChanged => cx.notify(),
         }
     }
@@ -1178,6 +1194,10 @@ impl WindowView {
         if let Some(doc) = self.docs.remove(path) {
             self.editor_subscriptions.remove(&doc.editor.entity_id());
         }
+        // Its tab closed: the pending save version is written now (US-089).
+        if let Some(runtime) = self.core.runtime() {
+            runtime.flush_history(Some(path), None);
+        }
         self.bridge.forget(path);
         if let Some(saver) = &self.saver {
             saver.cancel(path);
@@ -1206,8 +1226,15 @@ impl WindowView {
             format: doc.format,
         };
         let conflicted = doc.conflict.is_some();
+        let first_edit = dirty && !doc.first_version_offered;
         if let Some(doc) = self.docs.get_mut(&path) {
             doc.seen_revision = revision;
+            doc.first_version_offered |= dirty;
+        }
+        if first_edit {
+            // What the note held before this session's first edit, kept if
+            // it has no history yet.
+            self.offer_first_version(&path);
         }
         if dirty && !conflicted {
             self.bridge.set_dirty(&path, snapshot);
@@ -1493,10 +1520,76 @@ impl WindowView {
     }
 
     /// The window is about to close (or the app to quit): pending edits
-    /// reach the disk and the session is saved.
-    pub fn before_close(&mut self) {
+    /// reach the disk, then their versions the history (US-089), and the
+    /// session is saved. A note whose outside change was never reviewed is
+    /// written too: its disk state is already an `external` version, so
+    /// neither side is lost (US-092).
+    pub fn before_close(&mut self, cx: &mut Context<Self>) {
+        let unresolved: Vec<PathBuf> = self
+            .docs
+            .iter()
+            .filter(|(_, doc)| matches!(doc.conflict, Some(Conflict::Modified { .. })))
+            .map(|(path, _)| path.clone())
+            .collect();
+        for path in unresolved {
+            if let Some(doc) = self.docs.get_mut(&path) {
+                doc.conflict = None;
+                doc.merge = None;
+            }
+            self.resume_saves(&path, cx);
+        }
         self.flush_saves();
+        if let Some(runtime) = self.core.runtime()
+            && !runtime.close_history(cerata_core::workspace::HISTORY_FLUSH)
+        {
+            log::error!("versions still unwritten when the window closed");
+        }
         self.save_session_now();
+    }
+
+    /// The library's history, if it has one.
+    pub fn history(&self) -> Option<cerata_core::history::History> {
+        self.core.runtime()?.history.read().clone()
+    }
+
+    /// Records a version of `path` holding `text` in the note's format.
+    pub fn record_version(
+        &self,
+        path: &Path,
+        text: &str,
+        format: cerata_core::fs::text::TextFormat,
+        cause: cerata_core::history::Cause,
+    ) -> bool {
+        let Some(runtime) = self.core.runtime() else {
+            return false;
+        };
+        let (Some(history), Some(relative)) =
+            (runtime.history.read().clone(), runtime.relative(path))
+        else {
+            return false;
+        };
+        let bytes = cerata_core::fs::text::encode(text, format);
+        history.record(cerata_core::history::Request::new(relative, bytes, cause));
+        true
+    }
+
+    fn offer_first_version(&self, path: &Path) {
+        let Some(doc) = self.docs.get(path) else {
+            return;
+        };
+        let Some(runtime) = self.core.runtime() else {
+            return;
+        };
+        let (Some(history), Some(relative)) =
+            (runtime.history.read().clone(), runtime.relative(path))
+        else {
+            return;
+        };
+        let bytes = cerata_core::fs::text::encode(&doc.disk_text, doc.format);
+        let mut request =
+            cerata_core::history::Request::new(relative, bytes, cerata_core::history::Cause::Save);
+        request.only_if_empty = true;
+        history.record(request);
     }
 
     // ---- Session ----
@@ -1705,9 +1798,18 @@ impl WindowView {
         let editor = doc.editor.clone();
         let dirty = editor.read(cx).state.is_dirty();
         if dirty {
-            doc.conflict = Some(Conflict::Modified { disk: file.content });
-            self.hold_saves(path);
+            self.merge_disk_change(path, file, cx);
         } else {
+            // The disk state is a version before the buffer follows it.
+            self.record_version(
+                path,
+                &file.content,
+                file.format,
+                cerata_core::history::Cause::External,
+            );
+            let Some(doc) = self.docs.get_mut(path) else {
+                return;
+            };
             self.bridge.set_disk(path, Some(file.content.clone()));
             doc.disk_text = file.content.clone();
             doc.format = file.format;
@@ -1757,7 +1859,7 @@ impl WindowView {
             self.bridge.set_disk(&path, Some(disk.clone()));
             doc.disk_text = disk;
         }
-        doc.compare = false;
+        doc.merge = None;
         self.resume_saves(&path, cx);
     }
 
@@ -1804,7 +1906,7 @@ impl WindowView {
         let Some(Conflict::Modified { disk }) = doc.conflict.take() else {
             return;
         };
-        doc.compare = false;
+        doc.merge = None;
         self.bridge.set_disk(&path, Some(disk.clone()));
         doc.disk_text = disk.clone();
         let editor = doc.editor.clone();
@@ -1814,17 +1916,6 @@ impl WindowView {
         });
         if let Some(doc) = self.docs.get_mut(&path) {
             doc.seen_revision = revision;
-        }
-        cx.notify();
-    }
-
-    /// "Compare" shows or hides the disk and editor texts side by side.
-    pub fn toggle_compare(&mut self, cx: &mut Context<Self>) {
-        let Some(path) = self.tabs.active_path().map(Path::to_path_buf) else {
-            return;
-        };
-        if let Some(doc) = self.docs.get_mut(&path) {
-            doc.compare = !doc.compare;
         }
         cx.notify();
     }
@@ -1987,8 +2078,8 @@ impl Render for WindowView {
                 window.toggle_fullscreen()
             })
             .on_action(
-                cx.listener(|this, _: &crate::app_menu::CloseWindow, window, _| {
-                    this.before_close();
+                cx.listener(|this, _: &crate::app_menu::CloseWindow, window, cx| {
+                    this.before_close(cx);
                     window.remove_window();
                 }),
             );
@@ -2002,7 +2093,7 @@ impl Render for WindowView {
                 }))
                 .on_action(cx.listener(|this, _: &CloseTab, window, cx| {
                     if this.tabs.only_launchers() {
-                        this.before_close();
+                        this.before_close(cx);
                         window.remove_window();
                     } else {
                         let ix = this.tabs.active_index();
@@ -2050,19 +2141,22 @@ impl Render for WindowView {
                 );
             }
             let mut content = div().relative().flex_1().min_h_0().w_full();
-            let mut comparing = None;
-            if let Some(doc) = self.active_doc() {
-                if let Some(conflict) = &doc.conflict {
-                    content = content.child(banner::render(conflict, doc.compare, cx));
-                }
-                if let (true, Some(Conflict::Modified { disk })) = (doc.compare, &doc.conflict) {
-                    let mine = doc.editor.read(cx).state.doc().to_owned();
-                    comparing = Some(banner::compare(disk, &mine));
-                }
-            }
             let editing = matches!(page, Page::Editor(_));
-            content = match comparing {
-                Some(compare) => content.child(compare),
+            // The merge review, then the history panel, take the place of
+            // the page and its banner: drawn over them, a translucent theme
+            // would show them through.
+            let overlay = self
+                .merge_review
+                .clone()
+                .map(gpui::AnyView::from)
+                .or_else(|| self.history_panel.clone().map(gpui::AnyView::from));
+            if overlay.is_none()
+                && let Some(conflict) = self.active_doc().and_then(|doc| doc.conflict.clone())
+            {
+                content = content.child(banner::render(&conflict, cx));
+            }
+            content = match overlay {
+                Some(overlay) => content.child(overlay),
                 None => content.child(pages::render(page, self, cx)),
             };
             main = main.child(content);

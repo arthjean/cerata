@@ -13,6 +13,30 @@ mod render;
 pub(crate) mod reveal;
 pub mod tree;
 
+/// The notes of loaded folders whose conflict copy (Syncthing, Dropbox)
+/// sits beside them; a copy without its original is an ordinary note.
+fn conflicted<'a>(listings: impl Iterator<Item = &'a Listing>) -> HashSet<PathBuf> {
+    let mut originals = HashSet::new();
+    for listing in listings {
+        let Listing::Loaded(entries) = listing else {
+            continue;
+        };
+        let names: HashSet<&str> = entries
+            .iter()
+            .filter(|entry| !entry.is_dir)
+            .map(|entry| entry.name.as_str())
+            .collect();
+        for entry in entries.iter().filter(|entry| !entry.is_dir) {
+            if let Some((original, _)) = cerata_core::conflict_copy::original_name(&entry.name)
+                && names.contains(original.as_str())
+            {
+                originals.insert(entry.path.with_file_name(original));
+            }
+        }
+    }
+    originals
+}
+
 #[cfg(test)]
 mod tests;
 
@@ -73,6 +97,10 @@ pub enum SidebarEvent {
     /// The window decides: it knows which files have unsaved changes.
     Delete(Vec<PathBuf>),
     Duplicate(PathBuf),
+    /// "Show Note History" (US-091).
+    ShowHistory(PathBuf),
+    /// "Review Conflict" on a note with a sync conflict copy (US-093).
+    ReviewConflict(PathBuf),
     /// A sidebar setting changed (sort, sections).
     SettingsChanged,
 }
@@ -90,6 +118,8 @@ pub struct Sidebar {
     generation: u64,
     pub root_listing: Listing,
     pub listings: HashMap<PathBuf, Listing>,
+    /// Notes with a sync service's conflict copy beside them (US-093).
+    pub conflicted: HashSet<PathBuf>,
     pub expanded: HashSet<PathBuf>,
     pub rows: Vec<Row>,
     pub options: SortOptions,
@@ -155,6 +185,7 @@ impl Sidebar {
             generation: 0,
             root_listing: Listing::Loading,
             listings: HashMap::new(),
+            conflicted: HashSet::new(),
             expanded: HashSet::new(),
             rows: Vec::new(),
             options: SortOptions::default(),
@@ -422,6 +453,8 @@ impl Sidebar {
             self.unfiled_open,
         );
         self.selection.retain_visible(&self.rows);
+        self.conflicted =
+            conflicted(std::iter::once(&self.root_listing).chain(self.listings.values()));
     }
 
     /// Expands or collapses a folder. Collapsing is immediate; expanding

@@ -668,11 +668,12 @@ fn a_dirty_file_is_neither_reloaded_nor_saved(cx: &mut TestAppContext) {
         "no autosave"
     );
 
-    update(cx, handle, |view, _, cx| view.toggle_compare(cx));
-    assert!(read(cx, handle, |view, _| view
-        .active_doc()
-        .unwrap()
-        .compare));
+    // The overlap waits for "Review Changes", which opens the review.
+    update(cx, handle, |view, window, cx| {
+        view.review_changes(window, cx)
+    });
+    assert!(read(cx, handle, |view, _| view.merge_review.is_some()));
+    update(cx, handle, |view, window, cx| view.close_review(window, cx));
 
     update(cx, handle, |view, _, cx| view.keep_mine(cx));
     wait_until(cx, |_| {
@@ -1263,15 +1264,22 @@ fn the_palette_commands_are_writers_filtered_by_substring(cx: &mut TestAppContex
     });
     focus_shell(cx, handle);
     keys(cx, handle, secondary!("shift-p"));
+    use crate::palette::HistoryCommand;
     let all: Vec<Choice> = Command::ALL
         .into_iter()
-        .chain([Command::InsertImage])
+        .chain([
+            Command::History(HistoryCommand::ShowNoteHistory),
+            Command::History(HistoryCommand::ShowDeletedNotes),
+            Command::History(HistoryCommand::ReviewConflict),
+            Command::InsertImage,
+        ])
         .map(Choice::Command)
         .collect();
     assert_eq!(
         choices(cx, handle),
         all,
-        "with a workspace and a note every command applies, Insert image last"
+        "with a workspace and a note every command applies, the history's views \
+         next (its panel actions wait for the panel), Insert image last"
     );
     let mut vcx = VisualTestContext::from_window(handle.into(), cx);
     vcx.simulate_input("ZOOM");
@@ -3369,3 +3377,5 @@ fn dismissing_the_palette_on_a_new_tab_keeps_the_shortcuts(cx: &mut TestAppConte
     keys(cx, handle, secondary!("p"));
     assert_eq!(palette_intent(cx, handle), Some(Intent::Search));
 }
+
+mod history;

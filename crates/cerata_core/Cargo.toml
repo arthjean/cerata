@@ -26,9 +26,19 @@ getrandom = "0.3"
 # The library store (ADR 0009, EP-017): SQLite compiled in, content hashes.
 rusqlite = { version = "0.41.1", features = ["bundled"] }
 blake3 = "1.8.7"
+# Version blobs of the history: deltas on the previous version, zstd level 3
+# (US-088, ADR 0009 addendum).
+zstd = { version = "0.14.3", default-features = false }
+# Three-way merge of outside changes (US-092): line then word diffs, the
+# histogram algorithm Zed uses.
+imara-diff = "0.2.0"
+# The device's name in the history: the OS host name (already in the tree).
+gethostname = "1.1.0"
 
 [dev-dependencies]
 tempfile.workspace = true
+# Dictionary training, measured by `history_bench` only (US-088).
+zstd = { version = "0.14.3", default-features = false, features = ["zdict_builder"] }
 
 [lints]
 workspace = true

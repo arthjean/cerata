@@ -20,6 +20,7 @@
 //! - deleting the watched root closes the workspace instead of crashing.
 
 use crate::epoch::EpochToken;
+use crate::history::{Cause, History, Request, conflict_version};
 use crate::ignore::{WorkspaceIgnore, is_gitignore_path};
 use crate::index::{IndexedFile, LiveIndex, index_subtree, index_workspace};
 use crate::markdown::is_markdown_path;
@@ -99,6 +100,9 @@ pub struct WatchContext {
     pub self_writes: Arc<SelfWriteLog>,
     /// The library's store, kept current with what the watcher sees.
     pub store: Option<Store>,
+    /// The library's history: a change made outside Cerata becomes a
+    /// version (US-089).
+    pub history: Option<History>,
     /// How notes are read (and offline placeholders recognized).
     pub files: Arc<dyn FileAccess>,
     /// Called on the watcher thread when `.cerata/config` changes.
@@ -439,6 +443,10 @@ fn process_batch(ctx: &WatchContext, batch: Vec<notify::Result<Event>>) -> bool 
 struct NoteEvents {
     gone: Vec<Gone>,
     appeared: Vec<Appeared>,
+    /// The bytes of each appeared note, unless Cerata wrote them.
+    appeared_bytes: Vec<Option<Vec<u8>>>,
+    /// Versions of the notes changed outside Cerata.
+    versions: Vec<Request>,
     /// Appeared notes that could not be read: never rename candidates.
     unread: Vec<PathBuf>,
     changes: Vec<NoteChange>,
@@ -457,17 +465,18 @@ impl NoteEvents {
         let previous = ctx.index.lock().get(&file.path).cloned();
         let added = previous.is_none();
         let offline = metadata.is_some_and(|metadata| ctx.files.is_offline(&file.path, metadata));
-        let content = if offline {
+        let read = if offline {
             None
         } else {
             match ctx.files.read(&file.path) {
-                Ok(bytes) => Some(note_content(&bytes)),
+                Ok(bytes) => Some(bytes),
                 Err(error) => {
                     log::warn!("cannot read {}: {error}", file.path.display());
                     None
                 }
             }
         };
+        let content = read.as_deref().map(note_content);
         let Some(content) = content else {
             if let Some(previous) = &previous {
                 file.hash = previous.hash;
@@ -510,7 +519,12 @@ impl NoteEvents {
                 hash: content.hash,
                 sketch: content.sketch,
             });
+            self.appeared_bytes.push(read.filter(|_| !echo));
         } else if !known && !echo {
+            if let Some(bytes) = read {
+                self.versions
+                    .push(Request::new(relative_path, bytes, Cause::External));
+            }
             ctx.send(WatchEvent::FileChanged {
                 path,
                 change: FileChange::Modified,
@@ -552,6 +566,13 @@ impl NoteEvents {
             renamed_gone.insert(*g);
             renamed_appeared.insert(*a);
             let (from, to) = (&self.gone[*g], &self.appeared[*a]);
+            // Renamed and changed: the new content is a version.
+            if from.hash != Some(to.hash)
+                && let Some(bytes) = self.appeared_bytes.get_mut(*a).and_then(Option::take)
+            {
+                self.versions
+                    .push(Request::new(to.relative_path.clone(), bytes, Cause::Rename));
+            }
             if let Some(file) = ctx.index.lock().get(&to.path).cloned() {
                 self.changes.push(NoteChange::Rename {
                     from: from.relative_path.clone(),
@@ -580,6 +601,26 @@ impl NoteEvents {
                 change: FileChange::Removed,
             });
         }
+        for (a, appeared) in self.appeared.iter().enumerate() {
+            if renamed_appeared.contains(&a) {
+                continue;
+            }
+            // A note created outside Cerata, unless empty (a new note); a
+            // sync service's conflict copy is a branch of its original.
+            if let Some(bytes) = self
+                .appeared_bytes
+                .get_mut(a)
+                .and_then(Option::take)
+                .filter(|bytes| !bytes.is_empty())
+            {
+                let conflict = ctx.store.as_ref().and_then(|store| {
+                    conflict_version(store, &ctx.root, &appeared.path, bytes.clone())
+                });
+                self.versions.push(conflict.unwrap_or_else(|| {
+                    Request::new(appeared.relative_path.clone(), bytes, Cause::External)
+                }));
+            }
+        }
         let created = self
             .appeared
             .iter()
@@ -598,6 +639,12 @@ impl NoteEvents {
         {
             // Not waited for: the watcher thread moves on.
             let _ = store.apply(&ctx.token, std::mem::take(&mut self.changes));
+        }
+        // After the index rows they belong to.
+        if let Some(history) = &ctx.history {
+            for request in self.versions.drain(..) {
+                history.record(request);
+            }
         }
     }
 }
@@ -687,6 +734,7 @@ mod tests {
                 ignore: Arc::new(RwLock::new(index.ignore.clone())),
                 self_writes: Arc::new(SelfWriteLog::new()),
                 store: None,
+                history: None,
                 files: Arc::new(crate::reconcile::OsFiles),
                 reload_settings: Some(Arc::new(move || *reload_count.lock() += 1)),
                 on_error: None,

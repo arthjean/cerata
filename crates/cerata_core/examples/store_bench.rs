@@ -214,6 +214,7 @@ fn reconcile(root: &Path, runs: usize) -> Result<(), String> {
         ))),
         index_ready: Arc::new(AtomicBool::new(false)),
         store: Some(store.clone()),
+        history: None,
         self_writes: Arc::new(SelfWriteLog::new()),
         files: files.clone(),
         global_gitignore: cerata_core::ignore::global_gitignore_path(),

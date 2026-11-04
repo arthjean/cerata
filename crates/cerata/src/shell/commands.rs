@@ -8,7 +8,9 @@ use cerata_core::settings::ConfigValue;
 use gpui::{AppContext as _, Context, Focusable as _, PathPromptOptions, Window};
 
 use super::{WindowView, file_name};
-use crate::palette::{Availability, Choice, Command, Intent, Palette, PaletteEvent, RecentFile};
+use crate::palette::{
+    Availability, Choice, Command, HistoryCommand, Intent, Palette, PaletteEvent, RecentFile,
+};
 use crate::routing::{Chrome, OpenRequest};
 use crate::sidebar::tree::stem;
 use crate::zoom;
@@ -23,6 +25,7 @@ impl WindowView {
             compact: self.chrome == Chrome::Compact,
             has_active_file: self.tabs.active_path().is_some(),
             has_tabs: !self.tabs.tabs().is_empty(),
+            history_open: self.history_panel.is_some(),
         }
     }
 
@@ -121,6 +124,12 @@ impl WindowView {
             .into_iter()
             .filter(|command| command.available(availability))
             .collect();
+        available.extend(
+            HistoryCommand::ALL
+                .into_iter()
+                .filter(|command| command.available(availability))
+                .map(Command::History),
+        );
         available.extend(self.editor_commands(cx));
         let runtime = self.core.runtime();
         let compact = self.chrome == Chrome::Compact;
@@ -240,6 +249,7 @@ impl WindowView {
                     });
                 }
             }
+            Command::History(command) => self.run_history_command(command, window, cx),
             Command::Editor(id) => {
                 if let super::Page::Editor(editor) = self.page(cx) {
                     let clock = crate::editor::actions::clock();
@@ -363,7 +373,7 @@ impl WindowView {
         let Some(root) = self.workspace_root().map(Path::to_path_buf) else {
             return;
         };
-        self.before_close();
+        self.before_close(cx);
         self.core.clear_workspace_if_current(&root);
         self.workspace = None;
         self.saver = None;

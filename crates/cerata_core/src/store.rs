@@ -4,7 +4,8 @@
 //!
 //! The `.md` files stay the only source of truth: the store keeps what can
 //! be rebuilt from them (path, size, modified time, BLAKE3 hash and title of
-//! every note), so deleting it loses nothing but history.
+//! every note) and the history of the notes (`crate::history`), so deleting
+//! it loses nothing but history.
 //!
 //! One writer connection lives on its own thread; reads open their own
 //! connection on the calling thread (`Connection` is `Send`, not `Sync`).
@@ -49,6 +50,9 @@ const MIGRATIONS: &[&str] = &[
         deleted_at INTEGER
     );
     CREATE UNIQUE INDEX note_live_path ON note(path) WHERE deleted_at IS NULL;",
+    // 2: the history (EP-018): blobs, versions, devices, and the state of
+    // the retention passes and purges.
+    crate::history::SCHEMA,
 ];
 
 /// The schema version this build writes.
@@ -288,6 +292,28 @@ impl Store {
             })();
             if let Err(error) = &result {
                 log::warn!("store write failed: {error}");
+            }
+            let _ = answer.send(result);
+        });
+        if self.writer.send(job).is_err() {
+            let (answer, receiver) = std::sync::mpsc::channel();
+            let _ = answer.send(Err(StoreError::Closed));
+            return receiver;
+        }
+        receiver
+    }
+
+    /// Runs `job` on the writer connection outside any transaction (a
+    /// `VACUUM`, a checkpoint), after the writes queued before it.
+    pub fn maintain<T: Send + 'static>(
+        &self,
+        job: impl FnOnce(&mut Connection) -> rusqlite::Result<T> + Send + 'static,
+    ) -> Receiver<Result<T, StoreError>> {
+        let (answer, receiver) = std::sync::mpsc::channel();
+        let job: Job = Box::new(move |connection| {
+            let result = job(connection).map_err(StoreError::from);
+            if let Err(error) = &result {
+                log::warn!("store maintenance failed: {error}");
             }
             let _ = answer.send(result);
         });

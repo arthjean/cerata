@@ -58,7 +58,7 @@ pub fn init(cx: &mut App, core: CoreApp) {
     // pending edits and session here, before the windows are dropped.
     cx.on_app_quit(|cx| {
         for handle in windows(cx) {
-            let _ = handle.update(cx, |view, _, _| view.before_close());
+            let _ = handle.update(cx, |view, _, cx| view.before_close(cx));
         }
         async {}
     })

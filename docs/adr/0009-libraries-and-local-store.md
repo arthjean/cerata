@@ -63,3 +63,13 @@ Elle est vérifiée par le test `library_write_rule` (`crates/cerata_core/tests/
 - **L'historique en paliers grossit de moins de 50 Mo par an** pour un usage soutenu : mesuré par US-088. Le ratio de compression sur des notes Markdown n'a pas été mesuré.
 - **Le marqueur `.cerata/id` est accepté** par les utilisateurs d'un dossier existant (coffre Obsidian, `docs/` versionné) : hypothèse du PRD, non mesurée.
 - **Le comportement sous macOS et Linux** (dossier en lecture seule, liens durs sur les volumes réseau et FAT) : couvert par un test Unix en CI, à vérifier à la main dans EP-009 et EP-010 du portage.
+
+## Addendum : codec de l'historique (US-088, 2026-11-03)
+
+Cet addendum consigne la mesure que la section « Non prouvé » attendait de US-088 ; il ne change aucune décision ci-dessus.
+
+- **Mesure.** Un an d'usage soutenu simulé par `history_bench` (300 notes de 1 à 20 Ko, 20 éditées par jour, environ 103 versions créées par jour, paliers de la décision 7 appliqués chaque jour) donne un store de 16,03 à 16,59 Mio avec le codec retenu, contre 59,12 à 62,19 Mio pour zstd seul et 32,38 à 34,16 Mio pour zstd avec dictionnaire (trois graines, `docs/benchmarks.md`).
+- **Codec retenu : delta puis zstd niveau 3.** Un blob est compressé par zstd niveau 3 avec, pour dictionnaire, le contenu de la version précédente de la note (sa base). Le premier blob d'une note, et celui qui suivrait 32 deltas, est compressé seul. Lire une version décode donc au plus 32 deltas.
+- **Purge et ramassage.** Supprimer un blob qui sert de base à un autre réencode d'abord ce dernier sur la plus proche base qui reste, ou seul s'il n'en reste aucune : aucun blob gardé ne dépend d'un contenu purgé.
+- **Borne.** Le palier quotidien reste sans limite : la borne de 365 jours, prévue si aucun codec ne tenait 50 Mo, n'est pas appliquée.
+

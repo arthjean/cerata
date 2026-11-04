@@ -106,6 +106,59 @@ pub enum Command {
     /// An editor command of the registry, offered where it applies (the
     /// table commands, with the caret in a drawn table: US-053).
     Editor(&'static str),
+    /// A history command (EP-018): the panel, and its actions while open.
+    History(HistoryCommand),
+}
+
+/// The history's commands: those that open a view need a library, the
+/// panel's actions an open panel (US-091), "Review Conflict" a note.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HistoryCommand {
+    ShowNoteHistory,
+    ShowDeletedNotes,
+    ReviewConflict,
+    Restore,
+    Copy,
+    TogglePin,
+    ShowChanges,
+    DeleteNoteHistory,
+    DeleteHistoryBefore,
+}
+
+impl HistoryCommand {
+    pub const ALL: [Self; 9] = [
+        Self::ShowNoteHistory,
+        Self::ShowDeletedNotes,
+        Self::ReviewConflict,
+        Self::Restore,
+        Self::Copy,
+        Self::TogglePin,
+        Self::ShowChanges,
+        Self::DeleteNoteHistory,
+        Self::DeleteHistoryBefore,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::ShowNoteHistory => "Show Note History",
+            Self::ShowDeletedNotes => "Show Deleted Notes",
+            Self::ReviewConflict => "Review Conflict",
+            Self::Restore => "History: Restore Version",
+            Self::Copy => "History: Copy Version",
+            Self::TogglePin => "History: Pin or Unpin Version",
+            Self::ShowChanges => "History: Show Changes",
+            Self::DeleteNoteHistory => "History: Delete History of This Note",
+            Self::DeleteHistoryBefore => "History: Delete History Before\u{2026}",
+        }
+    }
+
+    pub fn available(self, a: Availability) -> bool {
+        match self {
+            Self::ShowNoteHistory | Self::ReviewConflict => a.has_workspace && a.has_active_file,
+            Self::ShowDeletedNotes => a.has_workspace,
+            _ => a.history_open,
+        }
+    }
 }
 
 impl Command {
@@ -144,6 +197,7 @@ impl Command {
             Self::ImageWidth(preset) => preset.command_label(),
             Self::Image(action) => action.command_label(),
             Self::Editor(id) => cerata_markdown::commands::command(id).map_or(id, |c| c.label),
+            Self::History(command) => command.label(),
         }
     }
 }
@@ -156,6 +210,8 @@ pub struct Availability {
     pub compact: bool,
     pub has_active_file: bool,
     pub has_tabs: bool,
+    /// The history panel is open (its actions are offered).
+    pub history_open: bool,
 }
 
 impl Command {
@@ -168,6 +224,7 @@ impl Command {
             Self::CloseWorkspace => a.has_workspace,
             Self::Settings => !a.compact,
             Self::Editor(_) | Self::InsertImage | Self::ImageWidth(_) | Self::Image(_) => true,
+            Self::History(command) => command.available(a),
             Self::OpenWorkspace
             | Self::SwitchLibrary
             | Self::ToggleTheme

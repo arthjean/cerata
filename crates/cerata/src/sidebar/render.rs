@@ -109,8 +109,11 @@ pub fn row(
     let hovered = entry.clone();
     let menu_entry = entry.clone();
     let draggable = state.draggable;
+    let conflicted = !entry.is_dir && sidebar.conflicted.contains(&entry.path);
     let name = if entry.is_dir {
         format!("{label_name}, folder")
+    } else if conflicted {
+        format!("{label_name}, has a conflict copy")
     } else {
         label_name.clone()
     };
@@ -142,6 +145,7 @@ pub fn row(
         .when(state.dragged, |d| d.opacity(0.4))
         .child(row_icon.relative().flex_none().size(px(ICON_SLOT)))
         .child(label_el)
+        .when(conflicted, |d| d.child(conflict_mark()))
         .when_some(state.error, |d, error| d.child(read_error(error)))
         .on_mouse_down(
             MouseButton::Left,
@@ -176,6 +180,20 @@ pub fn row(
                 this.click_row(&clicked, cx);
             }
         }))
+}
+
+/// "Conflict copy" after the label of a note whose sync conflict copy sits
+/// beside it (US-093): words, not a color alone.
+fn conflict_mark() -> gpui::Div {
+    div()
+        .flex_none()
+        .px(px(6.0))
+        .rounded(px(4.0))
+        .border_1()
+        .border_color(theme::border())
+        .text_size(px(11.0))
+        .text_color(theme::muted())
+        .child("Conflict copy")
 }
 
 /// The rename field in place of a label, with its error under it.

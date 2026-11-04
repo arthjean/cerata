@@ -1,6 +1,7 @@
 //! The banner of a document that changed or vanished on disk while it had
-//! unsaved changes, and the read-only side-by-side comparison. Writer had
-//! neither: it reloaded over the unsaved text (`use-file-watcher.ts:31-50`).
+//! unsaved changes. Writer had none: it reloaded over the unsaved text
+//! (`use-file-watcher.ts:31-50`). A change whose edits overlap the buffer's
+//! offers "Review Changes", the block-by-block merge review (US-092).
 
 use gpui::{
     AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
@@ -11,7 +12,7 @@ use super::WindowView;
 use crate::documents::Conflict;
 use crate::editor::theme;
 
-pub const MODIFIED: &str = "This file changed on disk";
+pub const MODIFIED: &str = "This note changed outside Cerata.";
 pub const DELETED: &str = "This file was deleted from disk";
 
 fn button(id: &'static str, label: &'static str) -> gpui::Stateful<gpui::Div> {
@@ -27,10 +28,11 @@ fn button(id: &'static str, label: &'static str) -> gpui::Stateful<gpui::Div> {
         .child(label)
 }
 
-pub fn render(conflict: &Conflict, comparing: bool, cx: &mut Context<WindowView>) -> AnyElement {
+pub fn render(conflict: &Conflict, cx: &mut Context<WindowView>) -> AnyElement {
     let bar = div()
         .id("conflict-banner")
         .flex()
+        .flex_wrap()
         .items_center()
         .gap(px(8.0))
         .px(px(16.0))
@@ -44,33 +46,28 @@ pub fn render(conflict: &Conflict, comparing: bool, cx: &mut Context<WindowView>
             .child(
                 div()
                     .flex_1()
+                    .min_w_0()
                     .font_weight(FontWeight::MEDIUM)
                     .child(MODIFIED),
             )
             .child(
-                button("conflict-keep", "Keep my version")
+                button("conflict-review", "Review Changes")
+                    .on_click(cx.listener(|this, _, window, cx| this.review_changes(window, cx))),
+            )
+            .child(
+                button("conflict-keep", "Keep My Version")
                     .on_click(cx.listener(|this, _, _, cx| this.keep_mine(cx))),
             )
             .child(
                 button("conflict-reload", "Reload")
                     .on_click(cx.listener(|this, _, _, cx| this.reload_from_disk(cx))),
             )
-            .child(
-                button(
-                    "conflict-compare",
-                    if comparing {
-                        "Hide Comparison"
-                    } else {
-                        "Compare"
-                    },
-                )
-                .on_click(cx.listener(|this, _, _, cx| this.toggle_compare(cx))),
-            )
             .into_any_element(),
         Conflict::Deleted => bar
             .child(
                 div()
                     .flex_1()
+                    .min_w_0()
                     .font_weight(FontWeight::MEDIUM)
                     .child(DELETED),
             )
@@ -84,56 +81,4 @@ pub fn render(conflict: &Conflict, comparing: bool, cx: &mut Context<WindowView>
             )
             .into_any_element(),
     }
-}
-
-fn column(id: &'static str, heading: &'static str, text: &str) -> AnyElement {
-    div()
-        .flex_1()
-        .min_w_0()
-        .flex()
-        .flex_col()
-        .child(
-            div()
-                .px(px(16.0))
-                .py(px(6.0))
-                .text_size(px(12.0))
-                .text_color(theme::muted())
-                .border_b_1()
-                .border_color(theme::border())
-                .child(heading),
-        )
-        .child(
-            div()
-                .id(id)
-                .flex_1()
-                .overflow_y_scroll()
-                .px(px(16.0))
-                .py(px(8.0))
-                .font_family("monospace")
-                .text_size(px(13.0))
-                .children(text.lines().map(|line| {
-                    div()
-                        .min_h(px(18.0))
-                        .whitespace_normal()
-                        .child(line.to_owned())
-                })),
-        )
-        .into_any_element()
-}
-
-/// The disk's text and the editor's, side by side and read-only.
-pub fn compare(disk: &str, mine: &str) -> AnyElement {
-    div()
-        .id("conflict-compare-view")
-        .absolute()
-        .top(px(41.0))
-        .bottom_0()
-        .left_0()
-        .right_0()
-        .flex()
-        .bg(theme::background())
-        .child(column("compare-disk", "On disk", disk))
-        .child(div().w(px(1.0)).h_full().bg(theme::border()))
-        .child(column("compare-mine", "In the editor", mine))
-        .into_any_element()
 }

@@ -19,6 +19,7 @@
 
 use crate::epoch::EpochToken;
 use crate::fs::titles::title_from_bytes;
+use crate::history::{Cause, History, Request, conflict_version, unversioned_heads};
 use crate::ignore::WorkspaceIgnore;
 use crate::index::{IndexedFile, LiveIndex, WalkEntry, modified_ns, walk};
 use crate::markdown::is_markdown_path;
@@ -266,6 +267,9 @@ pub struct ReconcileContext {
     /// Set once an index (from the store or a walk) is published.
     pub index_ready: Arc<AtomicBool>,
     pub store: Option<Store>,
+    /// The library's history: what changed outside Cerata becomes a
+    /// version (US-089).
+    pub history: Option<History>,
     pub self_writes: Arc<SelfWriteLog>,
     pub files: Arc<dyn FileAccess>,
     pub global_gitignore: Option<PathBuf>,
@@ -298,6 +302,8 @@ pub struct PassReport {
     pub modified: usize,
     pub removed: usize,
     pub renamed: usize,
+    /// Versions recorded for changes made outside Cerata.
+    pub versions: usize,
     pub duration: Duration,
 }
 
@@ -315,6 +321,9 @@ pub enum PassError {
 pub struct PassState {
     /// Files modified too close to the last walk to be trusted.
     recheck: HashSet<PathBuf>,
+    /// The notes written without their version were looked for (once per
+    /// opening of the library).
+    heads_checked: bool,
 }
 
 struct Seen {
@@ -437,13 +446,21 @@ pub fn run_pass(
     let mut changed: Vec<(IndexedFile, IndexedFile, Option<NoteContent>)> = Vec::new();
     let mut appeared: Vec<Appeared> = Vec::new();
     let mut appeared_files: Vec<(IndexedFile, Option<NoteContent>, bool)> = Vec::new();
+    // The bytes read, for the versions of what changed outside Cerata.
+    let mut bytes_read: HashMap<PathBuf, Vec<u8>> = HashMap::new();
     for (mut entry, previous) in to_read {
         if ctx.token.is_stale() {
             return Err(PassError::Canceled);
         }
         report.opened += 1;
         let content = match ctx.files.read(&entry.path) {
-            Ok(bytes) => note_content(&bytes),
+            Ok(bytes) => {
+                let content = note_content(&bytes);
+                if ctx.history.is_some() {
+                    bytes_read.insert(entry.path.clone(), bytes);
+                }
+                content
+            }
             Err(error) => {
                 log::warn!("cannot read {}: {error}", entry.path.display());
                 if previous.is_none() {
@@ -509,6 +526,7 @@ pub fn run_pass(
 
     // Apply to the index, then the store, then tell.
     let mut events: Vec<WatchEvent> = Vec::new();
+    let mut versions: Vec<Request> = Vec::new();
     let mut dirs: BTreeSet<PathBuf> = BTreeSet::new();
     let mut changes: Vec<NoteChange> = Vec::new();
     {
@@ -527,6 +545,16 @@ pub fn run_pass(
                 .is_some_and(|hash| ctx.self_writes.matches(&entry.path, &hash));
             if content_changed && !echo && !offline {
                 ctx.self_writes.superseded(&entry.path);
+            }
+            if content_changed
+                && !echo
+                && let Some(bytes) = bytes_read.remove(&entry.path)
+            {
+                versions.push(Request::new(
+                    entry.relative_path.clone(),
+                    bytes,
+                    Cause::External,
+                ));
             }
             if content_changed && previous.hash.is_some() && !echo {
                 report.modified += 1;
@@ -553,6 +581,15 @@ pub fn run_pass(
             match pair {
                 Some(g) if !gone[g].path.exists() => {
                     let from = &gone[g];
+                    if from.hash != entry.hash
+                        && let Some(bytes) = bytes_read.remove(&entry.path)
+                    {
+                        versions.push(Request::new(
+                            entry.relative_path.clone(),
+                            bytes,
+                            Cause::Rename,
+                        ));
+                    }
                     index.remove_subtree(&from.path);
                     changes.push(NoteChange::Rename {
                         from: from.relative_path.clone(),
@@ -569,6 +606,23 @@ pub fn run_pass(
                     dirs.extend(from.path.parent().map(Path::to_path_buf));
                 }
                 _ => {
+                    let echo = entry
+                        .hash
+                        .is_some_and(|hash| ctx.self_writes.matches(&entry.path, &hash));
+                    if !echo
+                        && let Some(bytes) = bytes_read
+                            .remove(&entry.path)
+                            .filter(|bytes| !bytes.is_empty())
+                    {
+                        // A sync service's conflict copy is a branch of its
+                        // original (US-093).
+                        let conflict = ctx.store.as_ref().and_then(|store| {
+                            conflict_version(store, &ctx.root, &entry.path, bytes.clone())
+                        });
+                        versions.push(conflict.unwrap_or_else(|| {
+                            Request::new(entry.relative_path.clone(), bytes, Cause::External)
+                        }));
+                    }
                     changes.push(NoteChange::Upsert {
                         record: note_record(&entry, offline),
                         sketch: content.map(|content| content.sketch),
@@ -604,6 +658,16 @@ pub fn run_pass(
         index.set_other_files(others);
     }
     commit(ctx, changes)?;
+    if let Some(history) = &ctx.history {
+        if !state.heads_checked {
+            state.heads_checked = true;
+            versions.extend(unrecorded_writes(ctx, &versions));
+        }
+        report.versions = versions.len();
+        for request in versions {
+            history.record(request);
+        }
+    }
     for event in events {
         ctx.send(event);
     }
@@ -613,6 +677,36 @@ pub fn run_pass(
     on_published();
     report.duration = started.elapsed();
     Ok(report)
+}
+
+/// Notes whose last write has no version (a crash came between the two,
+/// US-089): what the disk holds becomes an outside version, unless it is
+/// already among `queued`.
+fn unrecorded_writes(ctx: &ReconcileContext, queued: &[Request]) -> Vec<Request> {
+    let Some(store) = &ctx.store else {
+        return Vec::new();
+    };
+    let paths = unversioned_heads(store).unwrap_or_else(|error| {
+        log::warn!("unversioned notes not checked: {error}");
+        Vec::new()
+    });
+    let mut found = Vec::new();
+    for relative in paths {
+        if queued.iter().any(|request| request.path == relative) {
+            continue;
+        }
+        let path = path_from_relative(&ctx.root, &relative);
+        let offline =
+            std::fs::metadata(&path).is_ok_and(|metadata| ctx.files.is_offline(&path, &metadata));
+        if offline {
+            continue;
+        }
+        match ctx.files.read(&path) {
+            Ok(bytes) => found.push(Request::new(relative, bytes, Cause::External)),
+            Err(error) => log::warn!("cannot read {}: {error}", path.display()),
+        }
+    }
+    found
 }
 
 /// The first pass of a library the index knows nothing of: the walk is

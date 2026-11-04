@@ -10,8 +10,10 @@
 
 use crate::epoch::{EpochCounter, EpochToken};
 use crate::fs::{FsError, WorkspaceFs};
+use crate::history::History;
+use crate::history::device::Device;
 use crate::ignore::{WorkspaceIgnore, global_gitignore_path};
-use crate::index::{IndexedFile, LiveIndex};
+use crate::index::{IndexedFile, LiveIndex, relative_slash_path};
 use crate::library::LibraryKey;
 use crate::markdown::is_markdown_path;
 use crate::open_target::OpenTarget;
@@ -29,6 +31,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::Sender;
+
+/// How long a library change waits for its pending versions.
+pub const HISTORY_FLUSH: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// `{root, epoch}` of a window's workspace at some instant.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,6 +55,11 @@ pub struct WorkspaceRuntime {
     pub index_ready: Arc<AtomicBool>,
     /// The library's store once opened; `None` before or without one.
     pub store: Arc<RwLock<Option<Store>>>,
+    /// The library's history, with its store (EP-018).
+    pub history: Arc<RwLock<Option<History>>>,
+    /// Why the library has no store, once its opening failed (the history
+    /// panel says it, US-091).
+    pub store_unavailable: Arc<RwLock<Option<String>>>,
     /// The passes that catch up with changes the watcher missed.
     pub reconciler: Reconciler,
     watcher: Arc<Mutex<Option<WorkspaceWatcher>>>,
@@ -78,6 +88,45 @@ impl WorkspaceRuntime {
     /// Asks for a reconciliation pass (see [`Reconciler::request`]).
     pub fn request_reconcile(&self, trigger: ReconcileTrigger) -> bool {
         self.reconciler.request(trigger)
+    }
+
+    /// `path` relative to the root, `/`-separated; `None` outside it.
+    pub fn relative(&self, path: &Path) -> Option<String> {
+        path.starts_with(&self.root)
+            .then(|| relative_slash_path(&self.root, path))
+    }
+
+    /// Writes the pending save versions of `path` (every note with
+    /// `None`) now: a tab closes, the library changes, the app quits. With
+    /// `wait`, blocks until they are committed or the time is up.
+    pub fn flush_history(&self, path: Option<&Path>, wait: Option<std::time::Duration>) -> bool {
+        let Some(history) = self.history.read().clone() else {
+            return true;
+        };
+        let relative = match path {
+            Some(path) => match self.relative(path) {
+                Some(relative) => Some(relative),
+                None => return true,
+            },
+            None => None,
+        };
+        match wait {
+            Some(timeout) => history.flush_and_wait(relative.as_deref(), timeout),
+            None => {
+                history.flush(relative.as_deref());
+                true
+            }
+        }
+    }
+
+    /// The library closes: its pending versions are written (waited for
+    /// up to `timeout`), then a retention pass runs off this thread
+    /// (US-090).
+    pub fn close_history(&self, timeout: std::time::Duration) -> bool {
+        match self.history.read().clone() {
+            Some(history) => history.close(timeout),
+            None => true,
+        }
     }
 
     /// Lookups by file name for embeds (US-087).
@@ -170,6 +219,11 @@ impl WindowState {
         &self,
         build: impl FnOnce(EpochToken) -> Arc<WorkspaceRuntime>,
     ) -> Arc<WorkspaceRuntime> {
+        // The library changes: its pending versions are written first,
+        // while its epoch is still current (US-089).
+        if let Some(old) = self.runtime() {
+            old.close_history(HISTORY_FLUSH);
+        }
         let mut slot = self.runtime.write();
         self.epoch.advance();
         *self.standalone_file.write() = None;
@@ -189,6 +243,9 @@ impl WindowState {
 
     /// Closes the workspace if it is still `root`.
     pub fn clear_workspace_if_current(&self, root: &Path) -> bool {
+        if let Some(old) = self.runtime().filter(|runtime| runtime.root == root) {
+            old.close_history(HISTORY_FLUSH);
+        }
         let mut slot = self.runtime.write();
         if slot.as_ref().map(|runtime| runtime.root.as_path()) != Some(root) {
             return false;
@@ -392,6 +449,8 @@ pub fn open_workspace_with(
             self_writes: Arc::new(SelfWriteLog::new()),
             index_ready: Arc::new(AtomicBool::new(false)),
             store: Arc::new(RwLock::new(None)),
+            history: Arc::new(RwLock::new(None)),
+            store_unavailable: Arc::new(RwLock::new(None)),
             reconciler: Reconciler::new(),
             watcher: Arc::new(Mutex::new(None)),
         })
@@ -470,8 +529,31 @@ fn bootstrap(
             Err(error) => log::warn!("library index not read from the store: {error}"),
         }
     }
+    let history = store
+        .as_ref()
+        .zip(options.store_root.as_deref())
+        .map(|(store, root)| {
+            let events = events.clone();
+            let (library_root, token) = (job.root.clone(), job.token.clone());
+            History::start(
+                store.clone(),
+                job.token.clone(),
+                Device::load_or_create(root),
+                Arc::new(move |message| {
+                    if token.is_current() {
+                        let _ = events.send(WatchEnvelope {
+                            root: library_root.clone(),
+                            epoch: token.epoch(),
+                            event: WatchEvent::Notice { message },
+                        });
+                    }
+                }),
+            )
+        });
     *job.store.write() = store.clone();
-    job.self_writes.set_sink(write_sink(job, store.clone()));
+    *job.history.write() = history.clone();
+    job.self_writes
+        .set_sink(write_sink(job, store.clone(), history.clone()));
     let files: Arc<dyn FileAccess> = options.files.unwrap_or_else(|| Arc::new(OsFiles));
     let ctx = ReconcileContext {
         root: job.root.clone(),
@@ -480,6 +562,7 @@ fn bootstrap(
         ignore: job.ignore.clone(),
         index_ready: job.index_ready.clone(),
         store: store.clone(),
+        history: history.clone(),
         self_writes: job.self_writes.clone(),
         files: files.clone(),
         global_gitignore: global_gitignore_path(),
@@ -496,6 +579,7 @@ fn bootstrap(
             ignore: watcher_job.ignore.clone(),
             self_writes: watcher_job.self_writes.clone(),
             store,
+            history,
             files,
             reload_settings: Some(Arc::new(move || {
                 if let Err(error) = settings.load_workspace(&reload_root) {
@@ -526,12 +610,19 @@ fn open_store(
     send: &dyn Fn(WatchEvent),
 ) -> Option<Store> {
     let dir = library_store_dir(store_root, &job.library_id);
+    let unavailable = |reason: String| *job.store_unavailable.write() = Some(reason);
     if dir.starts_with(&job.root) {
         log::warn!(
             "no store for {}: its store folder would be inside it",
             job.root.display()
         );
+        unavailable(UNAVAILABLE.into());
         return None;
+    }
+    if let Some(service) = crate::cloud::synced_by(&dir) {
+        unavailable(format!(
+            "History is unavailable: Cerata keeps no history in a folder synced by {service}."
+        ));
     }
     match Store::open(&dir, &crate::cloud::synced_by) {
         StoreOpen::Ready { store, notice } => {
@@ -543,6 +634,11 @@ fn open_store(
             Some(store)
         }
         StoreOpen::Unavailable { notice } => {
+            match &notice {
+                Some(notice) => unavailable(notice.message()),
+                None if job.store_unavailable.read().is_none() => unavailable(UNAVAILABLE.into()),
+                None => {}
+            }
             if let Some(notice) = notice {
                 send(WatchEvent::Notice {
                     message: notice.message(),
@@ -552,6 +648,9 @@ fn open_store(
         }
     }
 }
+
+/// Why a library has no store, when nothing more precise is known.
+const UNAVAILABLE: &str = "History is unavailable: this library's store could not be opened.";
 
 /// The live index the store describes: no file is opened.
 pub fn index_from_store(root: &Path, notes: &[StoredNote]) -> LiveIndex {
@@ -576,8 +675,9 @@ pub fn index_from_store(root: &Path, notes: &[StoredNote]) -> LiveIndex {
 }
 
 /// Cerata's own writes of notes update the index and the store with the
-/// content written (US-086): the next pass and the next event know it.
-fn write_sink(job: &WorkspaceRuntime, store: Option<Store>) -> WriteSink {
+/// content written (US-086): the next pass and the next event know it. A
+/// save becomes a version after the typing pause (US-089).
+fn write_sink(job: &WorkspaceRuntime, store: Option<Store>, history: Option<History>) -> WriteSink {
     let root = job.root.clone();
     let index = job.index.clone();
     let token = job.token.clone();
@@ -593,6 +693,7 @@ fn write_sink(job: &WorkspaceRuntime, store: Option<Store>) -> WriteSink {
         file.hash = Some(written.hash);
         file.title = content.title;
         let record = note_record(&file, false);
+        let relative = file.relative_path.clone();
         index.lock().upsert(file);
         if let Some(store) = &store {
             let _ = store.apply(
@@ -602,6 +703,9 @@ fn write_sink(job: &WorkspaceRuntime, store: Option<Store>) -> WriteSink {
                     sketch: Some(content.sketch),
                 }],
             );
+        }
+        if let Some(history) = &history {
+            history.saved(relative, bytes.to_vec());
         }
     })
 }
@@ -818,6 +922,276 @@ mod tests {
         let record = store.note("a.md").unwrap().unwrap().record;
         assert_eq!(record.hash, Some(hash));
         assert_eq!(record.title.as_deref(), Some("Saved by Cerata"));
+    }
+
+    fn versions(store: &Store, path: &str) -> Vec<(crate::history::Cause, String)> {
+        crate::history::versions_of_path(store, path)
+            .unwrap()
+            .map(|(_, versions)| versions)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|v| {
+                let bytes = crate::history::content(store, &v.hash).unwrap().unwrap();
+                (v.cause, String::from_utf8(bytes).unwrap())
+            })
+            .collect()
+    }
+
+    fn wait_until(what: &str, mut done: impl FnMut() -> bool) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !done() {
+            assert!(std::time::Instant::now() < deadline, "timed out: {what}");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    /// US-089: a write of Cerata's becomes a `save` version, at once when
+    /// the library changes rather than after the typing pause, and the
+    /// device that wrote it is named.
+    #[test]
+    fn a_save_becomes_a_version_when_the_library_changes() {
+        let (_config, settings) = settings();
+        let window = WindowRegistry::new().create(settings);
+        let stores = TempDir::new().unwrap();
+        let library = note_library();
+        let other = note_library();
+        let root = dunce::canonicalize(library.path()).unwrap();
+        let files = Arc::new(CountingFiles::default());
+        let (runtime, _events, _) = open_with_store(&window, &root, stores.path(), files.clone());
+        assert!(
+            runtime
+                .reconciler
+                .wait_for_passes(1, Duration::from_secs(10))
+        );
+        let store = runtime.store.read().clone().unwrap();
+        let path = root.join("a.md");
+        let bytes = b"# Typed in Cerata\n";
+        let hash = runtime.self_writes.record(&path, bytes);
+        runtime.fs.write_bytes(&path, bytes).unwrap();
+        runtime.self_writes.written(&path, hash, bytes);
+        // Within the 30 s pause: no version yet.
+        store.sync().unwrap();
+        assert_eq!(versions(&store, "a.md"), []);
+        let other_root = dunce::canonicalize(other.path()).unwrap();
+        let (_, _, _) = open_with_store(&window, &other_root, stores.path(), files);
+        assert_eq!(
+            versions(&store, "a.md"),
+            [(
+                crate::history::Cause::Save,
+                "# Typed in Cerata\n".to_owned()
+            )]
+        );
+        let device = crate::history::versions_of_path(&store, "a.md")
+            .unwrap()
+            .unwrap()
+            .1[0]
+            .device_name
+            .clone();
+        assert_eq!(device, crate::history::device::host_name());
+        assert!(
+            stores
+                .path()
+                .join(crate::history::device::DEVICE_ID_FILE)
+                .is_file()
+        );
+    }
+
+    /// US-089: a change made outside Cerata, found by a pass, is an
+    /// `external` version.
+    #[test]
+    fn an_outside_change_found_by_a_pass_is_a_version() {
+        let (_config, settings) = settings();
+        let window = WindowRegistry::new().create(settings);
+        let stores = TempDir::new().unwrap();
+        let library = note_library();
+        let root = dunce::canonicalize(library.path()).unwrap();
+        let files = Arc::new(CountingFiles::default());
+        let (runtime, _events, _) = open_with_store(&window, &root, stores.path(), files);
+        assert!(
+            runtime
+                .reconciler
+                .wait_for_passes(1, Duration::from_secs(10))
+        );
+        let store = runtime.store.read().clone().unwrap();
+        // Opening and indexing a library records nothing.
+        assert_eq!(versions(&store, "a.md"), []);
+        let path = root.join("b.md");
+        std::fs::write(&path, "# Beta, edited by an agent\n").unwrap();
+        aged(&path);
+        assert!(runtime.request_reconcile(ReconcileTrigger::Focus));
+        wait_until("an external version", || {
+            !versions(&store, "b.md").is_empty()
+        });
+        assert_eq!(
+            versions(&store, "b.md"),
+            [(
+                crate::history::Cause::External,
+                "# Beta, edited by an agent\n".to_owned()
+            )]
+        );
+    }
+
+    /// US-093: a sync conflict copy found beside its original is a
+    /// `conflict` version of the original, whose parent is the original's
+    /// last version before the copy's modified time; the original's head
+    /// stays its own text.
+    #[test]
+    fn a_conflict_copy_is_a_conflict_version_of_its_original() {
+        let (_config, settings) = settings();
+        let window = WindowRegistry::new().create(settings);
+        let stores = TempDir::new().unwrap();
+        let library = note_library();
+        let root = dunce::canonicalize(library.path()).unwrap();
+        let files = Arc::new(CountingFiles::default());
+        let (runtime, _events, _) = open_with_store(&window, &root, stores.path(), files);
+        assert!(
+            runtime
+                .reconciler
+                .wait_for_passes(1, Duration::from_secs(10))
+        );
+        let store = runtime.store.read().clone().unwrap();
+        let history = runtime.history.read().clone().unwrap();
+        let now = crate::history::unix_now();
+        for (text, ts) in [
+            ("# Alpha, before the copy\n", now - 7200),
+            ("# Alpha, after\n", now),
+        ] {
+            let mut request = crate::history::Request::new(
+                "a.md".to_owned(),
+                text.as_bytes().to_vec(),
+                crate::history::Cause::Save,
+            );
+            request.ts = ts;
+            history.record(request);
+        }
+        assert!(history.flush_and_wait(None, Duration::from_secs(5)));
+        // The copy was written an hour ago, between the two versions.
+        let copy = root.join("a.sync-conflict-20261103-101010-ABCDEFG.md");
+        std::fs::write(&copy, "# Alpha, from the other device\n").unwrap();
+        aged(&copy);
+        assert!(runtime.request_reconcile(ReconcileTrigger::Focus));
+        wait_until("the conflict version", || {
+            versions(&store, "a.md").len() == 3
+        });
+        let (_, listed) = crate::history::versions_of_path(&store, "a.md")
+            .unwrap()
+            .unwrap();
+        let conflict = &listed[0];
+        assert_eq!(conflict.cause, crate::history::Cause::Conflict);
+        assert_eq!(
+            crate::history::content(&store, &conflict.hash)
+                .unwrap()
+                .unwrap(),
+            b"# Alpha, from the other device\n"
+        );
+        assert_eq!(
+            conflict.parent,
+            Some(listed[2].hash),
+            "the version before the copy"
+        );
+        // The copy stays a note of its own until it is reviewed.
+        assert_eq!(
+            versions(&store, "a.sync-conflict-20261103-101010-ABCDEFG.md"),
+            []
+        );
+    }
+
+    /// US-093: a copy whose original is missing is an ordinary note.
+    #[test]
+    fn a_conflict_copy_without_its_original_is_an_ordinary_note() {
+        let (_config, settings) = settings();
+        let window = WindowRegistry::new().create(settings);
+        let stores = TempDir::new().unwrap();
+        let library = note_library();
+        let root = dunce::canonicalize(library.path()).unwrap();
+        let files = Arc::new(CountingFiles::default());
+        let (runtime, _events, _) = open_with_store(&window, &root, stores.path(), files);
+        assert!(
+            runtime
+                .reconciler
+                .wait_for_passes(1, Duration::from_secs(10))
+        );
+        let store = runtime.store.read().clone().unwrap();
+        let name = "gone.sync-conflict-20261103-101010-ABCDEFG.md";
+        std::fs::write(root.join(name), "# Orphan copy\n").unwrap();
+        aged(&root.join(name));
+        assert!(runtime.request_reconcile(ReconcileTrigger::Focus));
+        wait_until("the copy as a note", || !versions(&store, name).is_empty());
+        assert_eq!(
+            versions(&store, name),
+            [(
+                crate::history::Cause::External,
+                "# Orphan copy\n".to_owned()
+            )]
+        );
+        assert_eq!(versions(&store, "gone.md"), []);
+    }
+
+    /// US-089: a crash between the write of a note and its version leaves
+    /// the index ahead of the history; reopening the library records what
+    /// the disk holds as an `external` version, and no note is lost.
+    #[test]
+    fn a_crash_between_a_write_and_its_version_is_caught_up_on_reopen() {
+        let (_config, settings) = settings();
+        let window = WindowRegistry::new().create(settings);
+        let stores = TempDir::new().unwrap();
+        let library = note_library();
+        let root = dunce::canonicalize(library.path()).unwrap();
+        let files = Arc::new(CountingFiles::default());
+        let (runtime, _events, _) = open_with_store(&window, &root, stores.path(), files.clone());
+        assert!(
+            runtime
+                .reconciler
+                .wait_for_passes(1, Duration::from_secs(10))
+        );
+        let path = root.join("a.md");
+        let first = b"# First, versioned\n";
+        let hash = runtime.self_writes.record(&path, first);
+        runtime.fs.write_bytes(&path, first).unwrap();
+        runtime.self_writes.written(&path, hash, first);
+        assert!(runtime.flush_history(None, Some(Duration::from_secs(5))));
+        let store = runtime.store.read().clone().unwrap();
+        // The crash: the `.md` and the index row are written, the version
+        // never is.
+        let second = b"# Second, written just before the crash\n";
+        std::fs::write(&path, second).unwrap();
+        aged(&path);
+        let mut file = IndexedFile::new(&root, &path, std::fs::metadata(&path).ok().as_ref());
+        file.hash = Some(crate::store::content_hash(second));
+        store
+            .apply(
+                &runtime.token,
+                vec![NoteChange::Upsert {
+                    record: note_record(&file, false),
+                    sketch: None,
+                }],
+            )
+            .recv()
+            .unwrap()
+            .unwrap();
+        assert!(window.clear_workspace_if_current(&root));
+        drop(runtime);
+        let (runtime, _events, _) = open_with_store(&window, &root, stores.path(), files);
+        // A library opened from its store tells its index before its store.
+        wait_until("the store", || runtime.store.read().is_some());
+        let store = runtime.store.read().clone().unwrap();
+        wait_until("the caught-up version", || {
+            versions(&store, "a.md").len() == 2
+        });
+        assert_eq!(
+            versions(&store, "a.md"),
+            [
+                (
+                    crate::history::Cause::External,
+                    "# Second, written just before the crash\n".to_owned()
+                ),
+                (
+                    crate::history::Cause::Save,
+                    "# First, versioned\n".to_owned()
+                ),
+            ]
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), second);
     }
 
     // Ported from Writer `commands/workspace.rs` tests.
