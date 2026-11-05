@@ -144,17 +144,15 @@ impl Editor {
 
     fn rail_menu_at(&mut self, heading: &Heading, position: Point<Pixels>, cx: &mut Context<Self>) {
         cx.stop_propagation();
-        self.menu = Some(ContextMenu {
+        self.menu = Some(ContextMenu::new(
             position,
-            items: vec![MenuItem::Action {
+            vec![MenuItem::Action {
                 label: "Copy heading link".into(),
                 shortcut: None,
                 enabled: true,
                 action: MenuAction::CopyLink(heading_link(heading)),
             }],
-            open_submenu: None,
-            in_submenu: false,
-        });
+        ));
         cx.notify();
     }
 
@@ -193,35 +191,6 @@ impl Editor {
                     .h(px(TICK_HEIGHT + TICK_GAP))
                     .flex()
                     .items_center()
-                    .capture_key_down(cx.listener(|editor, event: &KeyDownEvent, window, cx| {
-                        // The mark's open menu takes Enter, Space and Escape
-                        // before they click the mark (the editor's context menu
-                        // has no keyboard focus of its own).
-                        let Some(menu) = &editor.menu else {
-                            return;
-                        };
-                        let key = event.keystroke.key.as_str();
-                        if !matches!(key, "enter" | "space" | "escape") {
-                            return;
-                        }
-                        let action = menu.items.iter().find_map(|item| match item {
-                            MenuItem::Action {
-                                enabled: true,
-                                action,
-                                ..
-                            } => Some(action.clone()),
-                            _ => None,
-                        });
-                        editor.menu = None;
-                        if key != "escape"
-                            && let Some(action) = action
-                        {
-                            editor.run_menu_action(action, window, cx);
-                        }
-                        window.prevent_default();
-                        cx.stop_propagation();
-                        cx.notify();
-                    }))
                     .on_key_down(
                         cx.listener(move |editor, event: &KeyDownEvent, window, cx| {
                             let stroke = &event.keystroke;
@@ -234,6 +203,9 @@ impl Editor {
                                     )
                                 });
                                 editor.rail_menu_at(&menu_heading, at, cx);
+                                if let Some(menu) = editor.menu.as_mut() {
+                                    menu.popup.highlight_first();
+                                }
                             }
                         }),
                     )

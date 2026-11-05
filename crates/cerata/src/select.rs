@@ -35,8 +35,26 @@ const ARROW_SPEED: f32 = 4.0;
 const TYPEAHEAD_RESET: Duration = Duration::from_millis(700);
 
 /// coss ui's `accent`, the highlighted option: the text at 4 %.
-fn highlight() -> Hsla {
+pub(crate) fn highlight() -> Hsla {
     theme::text().opacity(0.04)
+}
+
+/// coss ui's `border`: the text at 8 % (6 % in dark mode).
+pub(crate) fn line() -> Hsla {
+    theme::text().opacity(if theme::palette().dark { 0.06 } else { 0.08 })
+}
+
+/// coss ui's popup surface, shared with the menu (`crate::menu`): a 10 px
+/// radius, a [`line`] border and `shadow-lg` at 5 %.
+pub(crate) fn surface<E: Styled>(el: E) -> E {
+    el.rounded(px(RADIUS))
+        .border_1()
+        .border_color(line())
+        .bg(theme::overlay())
+        .shadow(vec![
+            crate::input::shadow(10.0, 15.0, -3.0, 0.05),
+            crate::input::shadow(4.0, 6.0, -4.0, 0.05),
+        ])
 }
 
 /// The trigger around `value`, `width` wide, focused through `focus`; the
@@ -465,7 +483,7 @@ pub fn render<V: HasSelect>(
     }
 
     let anchor = popup.anchor;
-    let surface = div()
+    let surface = surface(div())
         .id("select-popup")
         .role(Role::ListBox)
         .occlude()
@@ -489,14 +507,6 @@ pub fn render<V: HasSelect>(
         .min_w(anchor.size.width + px(2.0 * (PADDING + BORDER) + 20.0))
         .max_w(px(420.0))
         .h(px(placement.height))
-        .rounded(px(RADIUS))
-        .border_1()
-        .border_color(theme::text().opacity(if theme::palette().dark { 0.06 } else { 0.08 }))
-        .bg(theme::overlay())
-        .shadow(vec![
-            crate::input::shadow(10.0, 15.0, -3.0, 0.05),
-            crate::input::shadow(4.0, 6.0, -4.0, 0.05),
-        ])
         .text_size(px(14.0))
         .text_color(theme::text())
         .child(list)

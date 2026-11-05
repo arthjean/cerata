@@ -4,18 +4,16 @@
 //! their shortcuts, a Table submenu with the caret in a drawn table
 //! (US-053), Select all, and Open or Copy link over a link. On a block
 //! image the Image section comes first: its widths and actions (US-068,
-//! US-069).
+//! US-069). The app's menu (`crate::menu`) draws it.
 
 use cerata_markdown::NodeKind;
 use cerata_markdown::commands::command;
-use gpui::{
-    AnyElement, ClipboardItem, Context, InteractiveElement, IntoElement, ParentElement, Pixels,
-    Point, SharedString, StatefulInteractiveElement, Styled, Window, anchored, deferred, div, px,
-};
+use gpui::{ClipboardItem, Context, Pixels, Point, SharedString, Window};
 
+use super::Editor;
 use super::actions::current_os;
-use super::{Editor, theme};
-use crate::icons::{Icon, icon};
+use super::image_actions::ImageAction;
+use crate::menu::{HasMenu, Item, Menu};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum MenuAction {
@@ -253,14 +251,72 @@ pub fn width_items(image: &super::image_actions::ImageMenu) -> Vec<MenuItem> {
         .collect()
 }
 
-#[derive(Clone, Debug)]
+/// The open menu: the app's menu that draws it, each item running its
+/// action through [`Editor::run_menu_action`]; the tests read what it
+/// offers as data.
 pub struct ContextMenu {
-    pub position: Point<Pixels>,
+    #[cfg(test)]
     pub items: Vec<MenuItem>,
-    pub open_submenu: Option<usize>,
-    /// The pointer is over the open submenu, which lies outside the menu's
-    /// bounds: a press there runs its item instead of closing the menu.
-    pub in_submenu: bool,
+    pub popup: Menu<Editor>,
+}
+
+impl ContextMenu {
+    pub fn new(position: Point<Pixels>, items: Vec<MenuItem>) -> Self {
+        Self {
+            popup: Menu::new(position, popup_items(&items)),
+            #[cfg(test)]
+            items,
+        }
+    }
+}
+
+fn popup_items(items: &[MenuItem]) -> Vec<Item<Editor>> {
+    items
+        .iter()
+        .map(|item| match item {
+            MenuItem::Separator => Item::Separator,
+            MenuItem::Submenu { label, items } => Item::submenu(label.clone(), popup_items(items)),
+            MenuItem::Action {
+                label,
+                shortcut,
+                enabled,
+                action,
+            } => {
+                let run = action.clone();
+                let mut item =
+                    Item::action(label.clone(), move |editor: &mut Editor, window, cx| {
+                        editor.run_menu_action(run.clone(), window, cx)
+                    })
+                    .enabled(*enabled);
+                if let Some(chord) = shortcut {
+                    item = item.shortcut(chord.clone());
+                }
+                if removes(action) {
+                    item = item.destructive();
+                }
+                item
+            }
+        })
+        .collect()
+}
+
+/// The actions that delete part of the note, drawn as destructive.
+fn removes(action: &MenuAction) -> bool {
+    matches!(
+        action,
+        MenuAction::Command("table.rowDelete" | "table.columnDelete" | "table.delete")
+            | MenuAction::Image(ImageAction::Delete, _)
+    )
+}
+
+impl HasMenu for Editor {
+    fn menu(&mut self) -> Option<&mut Menu<Self>> {
+        self.menu.as_mut().map(|menu| &mut menu.popup)
+    }
+
+    fn take_menu(&mut self) -> Option<Menu<Self>> {
+        self.menu.take().map(|menu| menu.popup)
+    }
 }
 
 /// The destination of the link at `pos`: a link's URL, an autolink or a
@@ -293,17 +349,15 @@ impl Editor {
             .read_from_clipboard()
             .and_then(|item| item.text())
             .is_some_and(|text| !text.is_empty());
-        self.menu = Some(ContextMenu {
+        self.menu = Some(ContextMenu::new(
             position,
-            items: body_items(
+            body_items(
                 has_text,
                 link_at(&self.state, pos),
                 &self.state,
                 self.image_menu().as_ref(),
             ),
-            open_submenu: None,
-            in_submenu: false,
-        });
+        ));
         cx.notify();
     }
 
@@ -313,7 +367,11 @@ impl Editor {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.menu = None;
+        // Run while the menu is open (not chosen in it): its focus goes
+        // with it, back to the text the action edits.
+        if self.menu.take().is_some() {
+            window.focus(&self.focus_handle, cx);
+        }
         match action {
             MenuAction::Cut => self.cut(cx),
             MenuAction::Copy => self.copy(cx),
@@ -346,160 +404,6 @@ impl Editor {
         }
         cx.notify();
     }
-}
-
-impl ContextMenu {
-    pub fn render(&self, _window: &mut Window, cx: &mut Context<Editor>) -> AnyElement {
-        let list = menu_list(&self.items, self.open_submenu, true, cx);
-        deferred(anchored().position(self.position).child(list))
-            .with_priority(1)
-            .into_any_element()
-    }
-}
-
-fn menu_list(
-    items: &[MenuItem],
-    open: Option<usize>,
-    top: bool,
-    cx: &mut Context<Editor>,
-) -> AnyElement {
-    let mut list = div()
-        .id(if top {
-            "context-menu"
-        } else {
-            "context-submenu"
-        })
-        .occlude()
-        .min_w(px(220.0))
-        .py(px(4.0))
-        .rounded(px(6.0))
-        .bg(theme::overlay())
-        .border_1()
-        .border_color(theme::border())
-        .shadow_md()
-        .text_size(px(13.0))
-        .flex()
-        .flex_col();
-    list = if top {
-        list.on_mouse_down_out(cx.listener(|editor, _, _, cx| {
-            if editor.menu.as_ref().is_some_and(|menu| !menu.in_submenu) {
-                editor.menu = None;
-                cx.notify();
-            }
-        }))
-    } else {
-        list.on_hover(cx.listener(|editor, hovered: &bool, _, _| {
-            if let Some(menu) = &mut editor.menu {
-                menu.in_submenu = *hovered;
-            }
-        }))
-    };
-    for (index, item) in items.iter().enumerate() {
-        match item {
-            MenuItem::Separator => {
-                list = list.child(div().my(px(4.0)).h(px(1.0)).bg(theme::border()));
-            }
-            MenuItem::Action {
-                label,
-                shortcut,
-                enabled,
-                action,
-            } => {
-                let action = action.clone();
-                let enabled = *enabled;
-                let mut row = div()
-                    .id(SharedString::from(format!("menu-{}", label)))
-                    .debug_selector({
-                        let label = label.clone();
-                        move || format!("menu-{label}")
-                    })
-                    .px(px(10.0))
-                    .h(px(26.0))
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .gap(px(16.0))
-                    .child(label.clone())
-                    .children(
-                        shortcut
-                            .clone()
-                            .map(|s| div().text_color(theme::muted()).child(s)),
-                    );
-                if enabled {
-                    row = row
-                        .cursor_pointer()
-                        .hover(|s| s.bg(theme::panel()))
-                        .on_click(cx.listener(move |editor, _, window, cx| {
-                            editor.run_menu_action(action.clone(), window, cx)
-                        }));
-                } else {
-                    row = row.text_color(theme::muted());
-                }
-                if top {
-                    row = row.on_hover(cx.listener(|editor, hovered: &bool, _, cx| {
-                        if *hovered
-                            && let Some(menu) = &mut editor.menu
-                            && menu.open_submenu.is_some()
-                        {
-                            menu.open_submenu = None;
-                            menu.in_submenu = false;
-                            cx.notify();
-                        }
-                    }));
-                }
-                list = list.child(row);
-            }
-            MenuItem::Submenu { label, items } => {
-                let mut row = div()
-                    .id(SharedString::from(format!("submenu-{label}")))
-                    .debug_selector({
-                        let label = label.clone();
-                        move || format!("submenu-{label}")
-                    })
-                    .relative()
-                    .px(px(10.0))
-                    .h(px(26.0))
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .hover(|s| s.bg(theme::panel()))
-                    .child(label.clone())
-                    .child(icon(Icon::ChevronRight, 12.0, theme::muted()))
-                    .on_hover(cx.listener(move |editor, hovered: &bool, _, cx| {
-                        if *hovered
-                            && let Some(menu) = &mut editor.menu
-                            && menu.open_submenu != Some(index)
-                        {
-                            menu.open_submenu = Some(index);
-                            menu.in_submenu = false;
-                            cx.notify();
-                        }
-                    }))
-                    .on_click(cx.listener(move |editor, _, _, cx| {
-                        if let Some(menu) = &mut editor.menu
-                            && menu.open_submenu != Some(index)
-                        {
-                            menu.open_submenu = Some(index);
-                            menu.in_submenu = false;
-                            cx.notify();
-                        }
-                    }));
-                if open == Some(index) {
-                    // Kept inside the window: the Table submenu is taller
-                    // than the space below its row near the bottom (US-053).
-                    row = row.child(
-                        div().absolute().left(px(216.0)).top(px(-4.0)).child(
-                            anchored()
-                                .snap_to_window_with_margin(px(8.0))
-                                .child(menu_list(items, None, false, cx)),
-                        ),
-                    );
-                }
-                list = list.child(row);
-            }
-        }
-    }
-    list.into_any_element()
 }
 
 /// Documents the OS shows rather than runs. A note is untrusted content:

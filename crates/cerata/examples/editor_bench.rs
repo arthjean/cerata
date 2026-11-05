@@ -44,6 +44,15 @@ mod fixture;
 #[allow(dead_code)]
 #[path = "../src/icons.rs"]
 mod icons;
+#[allow(dead_code)]
+#[path = "../src/input.rs"]
+mod input;
+#[allow(dead_code)]
+#[path = "../src/menu.rs"]
+mod menu;
+#[allow(dead_code)]
+#[path = "../src/select.rs"]
+mod select;
 
 use std::cell::RefCell;
 use std::rc::Rc;

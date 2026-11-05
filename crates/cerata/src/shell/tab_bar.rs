@@ -352,7 +352,11 @@ pub fn tab_menu_items(ix: usize, path: std::path::PathBuf) -> Vec<Item<WindowVie
 }
 
 impl HasMenu for WindowView {
-    fn menu(&mut self) -> &mut Option<Menu<Self>> {
-        &mut self.tab_menu
+    fn menu(&mut self) -> Option<&mut Menu<Self>> {
+        self.tab_menu.as_mut()
+    }
+
+    fn take_menu(&mut self) -> Option<Menu<Self>> {
+        self.tab_menu.take()
     }
 }

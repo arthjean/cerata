@@ -1037,8 +1037,8 @@ impl Render for Editor {
                     ),
             );
         }
-        if let Some(menu) = &self.menu {
-            root = root.child(menu.render(window, cx));
+        if let Some(menu) = self.menu.as_mut() {
+            root = root.child(crate::menu::render(&mut menu.popup, window, cx));
         }
         if let Some(list) = self.render_completion(window, cx) {
             root = root.child(list);

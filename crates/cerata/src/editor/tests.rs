@@ -4963,11 +4963,11 @@ fn toolbar_buttons_act_without_moving_the_caret(cx: &mut TestAppContext) {
     // Image width: its submenu opens under the button.
     let width = toolbar_button(cx, "width", 2).expect("width");
     click(cx, width.center(), 1);
-    let menu = editor
-        .read_with(cx, |e, _| e.menu.clone())
+    let at = editor
+        .read_with(cx, |e, _| e.menu.as_ref().map(|m| m.popup.position))
         .expect("submenu");
-    assert_eq!(menu.position.x, width.left());
-    assert!(menu.position.y > width.bottom(), "under the button");
+    assert_eq!(at.x, width.left());
+    assert!(at.y > width.bottom(), "under the button");
     let labels = menu_labels(&editor, cx);
     assert_eq!(labels, ["25%", "50%", "75%", "Full width", "Original size"]);
     let half = cx.debug_bounds("menu-50%").expect("drawn").center();

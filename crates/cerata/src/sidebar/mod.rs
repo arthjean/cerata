@@ -166,8 +166,12 @@ pub struct Sidebar {
 impl EventEmitter<SidebarEvent> for Sidebar {}
 
 impl crate::menu::HasMenu for Sidebar {
-    fn menu(&mut self) -> &mut Option<crate::menu::Menu<Self>> {
-        &mut self.menu
+    fn menu(&mut self) -> Option<&mut crate::menu::Menu<Self>> {
+        self.menu.as_mut()
+    }
+
+    fn take_menu(&mut self) -> Option<crate::menu::Menu<Self>> {
+        self.menu.take()
     }
 }
 

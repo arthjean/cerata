@@ -262,6 +262,9 @@ fn row_keys(
                 .map(|b| b.bottom_left() + gpui::point(px(16.0), px(0.0)))
                 .unwrap_or_default();
             this.open_row_menu(&entry, at, cx);
+            if let Some(menu) = this.menu.as_mut() {
+                menu.highlight_first();
+            }
         } else if keystroke.key == "f2" && keystroke.modifiers.number_of_modifiers() == 0 {
             cx.stop_propagation();
             this.start_rename(&entry.path, window, cx);

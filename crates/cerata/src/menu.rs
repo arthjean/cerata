@@ -1,26 +1,57 @@
-//! Context menus of the app shell (sidebar, tabs, status bar), drawn in
-//! the window like the editor's: actions, check items, separators and one
-//! level of submenus. A press outside closes the menu. An open menu holds
-//! the keyboard focus: arrows move, Enter chooses, Escape closes and gives
-//! the focus back.
+//! The app's menu, on coss ui's (https://coss.com/ui/docs/components/menu),
+//! re-implemented from its measures over Base UI's behavior. Every context
+//! menu draws with it: the sidebar's, the tabs', the status bar's and the
+//! editor's.
+//!
+//! The popup is the select's surface (`crate::select::surface`) with 4 px
+//! of padding and at least 128 px wide. Items are 28 px high with 14 px
+//! text, a shortcut at their end in 12 px muted text, a destructive one in
+//! the danger color, a disabled one at 64 %. A check item keeps its check
+//! in a 12 px column, and the other items of its list are inset to line up
+//! with it. One level of submenus opens beside its row, scrolling when it
+//! is taller than the window.
+//!
+//! The pointer and the keyboard move the same highlight, drawn as the
+//! sidebar's active row (`theme::row_active`) rather than coss ui's 4 %
+//! `accent`, which measured 1.08:1 against the dark popup: too faint to
+//! show the keyboard where it is. A press outside
+//! closes the menu. An open menu holds the keyboard focus: arrows move,
+//! Right and Left enter and leave a submenu, Enter and Space choose,
+//! Escape closes and gives the focus back.
 
 use std::rc::Rc;
 
 use gpui::{
     AnyElement, Context, Div, FocusHandle, InteractiveElement, IntoElement, KeyDownEvent,
-    ParentElement, Pixels, Point, Role, SharedString, Stateful, StatefulInteractiveElement, Styled,
-    Toggled, Window, anchored, deferred, div, prelude::FluentBuilder as _, px,
+    ParentElement, Pixels, Point, Role, ScrollHandle, SharedString, Stateful,
+    StatefulInteractiveElement, Styled, Toggled, Window, anchored, deferred, div,
+    prelude::FluentBuilder as _, px,
 };
 
 use crate::editor::theme;
 use crate::icons::{Icon, icon};
+use crate::select::{line, surface};
+
+const PADDING: f32 = 4.0;
+const BORDER: f32 = 1.0;
+const MIN_WIDTH: f32 = 128.0;
+const ITEM_HEIGHT: f32 = 28.0;
+const ITEM_RADIUS: f32 = crate::input::RADIUS * 0.6;
+/// What a submenu keeps clear of the window's edges.
+const EDGE: f32 = 8.0;
+/// Between a menu's edge and its submenu's.
+const SUBMENU_GAP: f32 = 4.0;
 
 type Run<V> = Rc<dyn Fn(&mut V, &mut Window, &mut Context<V>)>;
 
 pub enum Item<V> {
     Action {
         label: SharedString,
+        /// The chord that runs it outside the menu, shown at the end.
+        shortcut: Option<SharedString>,
         enabled: bool,
+        /// Drawn in the danger color (coss ui's `destructive` variant).
+        destructive: bool,
         /// `Some` for a check item.
         checked: Option<bool>,
         run: Run<V>,
@@ -39,7 +70,9 @@ impl<V> Item<V> {
     ) -> Self {
         Self::Action {
             label: label.into(),
+            shortcut: None,
             enabled: true,
+            destructive: false,
             checked: None,
             run: Rc::new(run),
         }
@@ -52,10 +85,41 @@ impl<V> Item<V> {
     ) -> Self {
         Self::Action {
             label: label.into(),
+            shortcut: None,
             enabled: true,
+            destructive: false,
             checked: Some(checked),
             run: Rc::new(run),
         }
+    }
+
+    pub fn submenu(label: impl Into<SharedString>, items: Vec<Item<V>>) -> Self {
+        Self::Submenu {
+            label: label.into(),
+            items,
+        }
+    }
+
+    /// Shows `chord` at the end of an action.
+    pub fn shortcut(mut self, chord: impl Into<SharedString>) -> Self {
+        if let Self::Action { shortcut, .. } = &mut self {
+            *shortcut = Some(chord.into());
+        }
+        self
+    }
+
+    pub fn enabled(mut self, on: bool) -> Self {
+        if let Self::Action { enabled, .. } = &mut self {
+            *enabled = on;
+        }
+        self
+    }
+
+    pub fn destructive(mut self) -> Self {
+        if let Self::Action { destructive, .. } = &mut self {
+            *destructive = true;
+        }
+        self
     }
 
     #[cfg(test)]
@@ -71,9 +135,15 @@ pub struct Menu<V> {
     pub position: Point<Pixels>,
     pub items: Vec<Item<V>>,
     pub open_submenu: Option<usize>,
-    /// The item the keyboard is on, and the one inside the open submenu.
+    /// The highlighted item, and the one inside the open submenu.
     pub cursor: Option<usize>,
     pub sub_cursor: Option<usize>,
+    /// The pointer is over the open submenu, which lies outside the menu's
+    /// bounds: a press there runs its item instead of closing the menu.
+    in_submenu: bool,
+    /// The open submenu's scroll: one taller than the window scrolls, and
+    /// the keyboard keeps its highlight in sight.
+    sub_scroll: ScrollHandle,
     /// Taken on the first frame; the focus to give back on close.
     focus: Option<FocusHandle>,
     restore: Option<FocusHandle>,
@@ -87,9 +157,17 @@ impl<V> Menu<V> {
             open_submenu: None,
             cursor: None,
             sub_cursor: None,
+            in_submenu: false,
+            sub_scroll: ScrollHandle::new(),
             focus: None,
             restore: None,
         }
+    }
+
+    /// Highlights the first item: a menu opened from the keyboard (Shift+F10,
+    /// the Menu key) is ready for Enter.
+    pub fn highlight_first(&mut self) {
+        self.cursor = step(&self.items, None, true);
     }
 
     /// Labels in order, `-` for separators (tests compare menus with it).
@@ -117,7 +195,8 @@ impl<V> Menu<V> {
 
 /// A view that shows one of these menus.
 pub trait HasMenu: Sized + 'static {
-    fn menu(&mut self) -> &mut Option<Menu<Self>>;
+    fn menu(&mut self) -> Option<&mut Menu<Self>>;
+    fn take_menu(&mut self) -> Option<Menu<Self>>;
 }
 
 /// The next item the keyboard can land on from `from`, wrapping around;
@@ -155,7 +234,7 @@ fn step<V>(items: &[Item<V>], from: Option<usize>, forward: bool) -> Option<usiz
 /// Closes the menu; `restore` gives the focus back to where it was when
 /// the menu opened (keyboard close or a chosen item).
 fn close<V: HasMenu>(view: &mut V, restore: bool, window: &mut Window, cx: &mut Context<V>) {
-    if let Some(menu) = view.menu().take()
+    if let Some(menu) = view.take_menu()
         && restore
         && let Some(previous) = menu.restore
     {
@@ -173,7 +252,7 @@ fn choose<V: HasMenu>(view: &mut V, run: Run<V>, window: &mut Window, cx: &mut C
 /// Escape closes (or leaves the submenu), arrows move, Right and Left
 /// enter and leave a submenu, Enter and Space choose.
 fn on_key<V: HasMenu>(view: &mut V, key: &str, window: &mut Window, cx: &mut Context<V>) {
-    let Some(menu) = view.menu().as_mut() else {
+    let Some(menu) = view.menu() else {
         return;
     };
     let in_sub = menu.sub_cursor.is_some();
@@ -196,8 +275,16 @@ fn on_key<V: HasMenu>(view: &mut V, key: &str, window: &mut Window, cx: &mut Con
                 _ => None,
             });
             match sub_items {
-                Some(items) if in_sub => menu.sub_cursor = step(items, menu.sub_cursor, forward),
-                _ => menu.cursor = step(&menu.items, menu.cursor, forward),
+                Some(items) if in_sub => {
+                    menu.sub_cursor = step(items, menu.sub_cursor, forward);
+                    if let Some(ix) = menu.sub_cursor {
+                        menu.sub_scroll.scroll_to_item(ix);
+                    }
+                }
+                _ => {
+                    menu.cursor = step(&menu.items, menu.cursor, forward);
+                    menu.open_submenu = None;
+                }
             }
             None
         }
@@ -216,6 +303,9 @@ fn on_key<V: HasMenu>(view: &mut V, key: &str, window: &mut Window, cx: &mut Con
                 }
                 Some((ix, Item::Submenu { items, .. })) => {
                     let first = step(items, None, true);
+                    if menu.open_submenu != Some(ix) {
+                        menu.sub_scroll = ScrollHandle::new();
+                    }
                     menu.open_submenu = Some(ix);
                     menu.sub_cursor = first;
                     None
@@ -238,6 +328,51 @@ fn on_key<V: HasMenu>(view: &mut V, key: &str, window: &mut Window, cx: &mut Con
     }
 }
 
+/// Moves the highlight to the row under the pointer: `index` of the top
+/// list, or of the open submenu when `sub`. Over a top row, the submenu
+/// opens when the row is its own and closes otherwise.
+fn point_at<V: HasMenu>(view: &mut V, index: usize, sub: bool, cx: &mut Context<V>) {
+    let Some(menu) = view.menu() else {
+        return;
+    };
+    if sub {
+        if menu.sub_cursor != Some(index) {
+            menu.sub_cursor = Some(index);
+            cx.notify();
+        }
+        return;
+    }
+    let submenu = matches!(menu.items.get(index), Some(Item::Submenu { .. }));
+    let open = submenu.then_some(index);
+    if menu.cursor != Some(index) || menu.open_submenu != open || menu.sub_cursor.is_some() {
+        if menu.open_submenu != open {
+            menu.sub_scroll = ScrollHandle::new();
+        }
+        menu.cursor = Some(index);
+        menu.sub_cursor = None;
+        menu.open_submenu = open;
+        menu.in_submenu = false;
+        cx.notify();
+    }
+}
+
+/// The pointer left row `index`: its highlight goes, unless the row opened
+/// the submenu, which keeps its row highlighted.
+fn point_out<V: HasMenu>(view: &mut V, index: usize, sub: bool, cx: &mut Context<V>) {
+    let Some(menu) = view.menu() else {
+        return;
+    };
+    let cursor = if sub {
+        &mut menu.sub_cursor
+    } else {
+        &mut menu.cursor
+    };
+    if *cursor == Some(index) && (sub || menu.open_submenu != Some(index)) {
+        *cursor = None;
+        cx.notify();
+    }
+}
+
 /// Draws `menu`; on its first frame it takes the keyboard focus.
 pub fn render<V: HasMenu>(
     menu: &mut Menu<V>,
@@ -254,10 +389,16 @@ pub fn render<V: HasMenu>(
             focus
         }
     };
-    let cursors = (menu.cursor, menu.sub_cursor);
-    let list = list(&menu.items, menu.open_submenu, cursors, true, cx)
+    let state = State {
+        cursor: menu.cursor,
+        open: menu.open_submenu,
+        sub_cursor: menu.sub_cursor,
+        sub_scroll: menu.sub_scroll.clone(),
+        max_height: window.viewport_size().height - px(2.0 * EDGE),
+    };
+    let list = list(&menu.items, &state, true, cx)
         .track_focus(&focus)
-        .key_context("ShellMenu")
+        .key_context("Menu")
         .on_key_down(cx.listener(|view, event: &KeyDownEvent, window, cx| {
             let key = event.keystroke.key.clone();
             on_key(view, &key, window, cx);
@@ -267,69 +408,112 @@ pub fn render<V: HasMenu>(
         .into_any_element()
 }
 
+struct State {
+    cursor: Option<usize>,
+    open: Option<usize>,
+    sub_cursor: Option<usize>,
+    sub_scroll: ScrollHandle,
+    /// The window's height less its margins: a taller submenu scrolls.
+    max_height: Pixels,
+}
+
+/// The popup of `items`: the menu's own list when `top`, else its open
+/// submenu's.
 fn list<V: HasMenu>(
     items: &[Item<V>],
-    open: Option<usize>,
-    (cursor, sub_cursor): (Option<usize>, Option<usize>),
+    state: &State,
     top: bool,
     cx: &mut Context<V>,
 ) -> Stateful<Div> {
-    let mut list = div()
-        .id(if top { "shell-menu" } else { "shell-submenu" })
+    // A check item anywhere in the list insets every item to its label.
+    let inset = items.iter().any(|item| {
+        matches!(
+            item,
+            Item::Action {
+                checked: Some(_),
+                ..
+            }
+        )
+    });
+    let mut list = surface(div())
+        .id(if top { "menu" } else { "submenu" })
         .role(Role::Menu)
         .occlude()
-        .min_w(px(200.0))
-        .py(px(4.0))
-        .rounded(px(6.0))
-        .bg(theme::overlay())
-        .border_1()
-        .border_color(theme::border())
-        .shadow_md()
-        .text_size(px(13.0))
+        .min_w(px(MIN_WIDTH))
+        .p(px(PADDING))
+        .text_size(px(14.0))
+        .text_color(theme::text())
         .flex()
-        .flex_col();
-    if top {
-        list = list.on_mouse_down_out(cx.listener(|view, _, window, cx| {
-            close(view, false, window, cx);
-        }));
-    }
+        .flex_col()
+        .when(!top, |list| {
+            list.max_h(state.max_height)
+                .overflow_y_scroll()
+                .track_scroll(&state.sub_scroll)
+        });
+    list = if top {
+        list.on_mouse_down_out(cx.listener(|view, _, window, cx| {
+            if view.menu().is_some_and(|menu| !menu.in_submenu) {
+                close(view, false, window, cx);
+            }
+        }))
+    } else {
+        list.on_hover(cx.listener(|view, hovered: &bool, _, _| {
+            if let Some(menu) = view.menu() {
+                menu.in_submenu = *hovered;
+            }
+        }))
+    };
+    let cursor = if top { state.cursor } else { state.sub_cursor };
     for (index, item) in items.iter().enumerate() {
-        let current = cursor == Some(index);
+        let highlighted = cursor == Some(index) || (top && state.open == Some(index));
         match item {
             Item::Separator => {
-                list = list.child(div().my(px(4.0)).h(px(1.0)).bg(theme::border()));
+                list = list.child(
+                    div()
+                        .flex_none()
+                        .mx(px(8.0))
+                        .my(px(4.0))
+                        .h(px(1.0))
+                        .bg(line()),
+                );
             }
             Item::Action {
                 label,
+                shortcut,
                 enabled,
+                destructive,
                 checked,
                 run,
             } => {
                 let run = run.clone();
-                let mut row = div()
-                    .id(SharedString::from(format!("menu-{top}-{index}")))
+                let mut row = row(SharedString::from(format!("menu-{top}-{index}")), label)
                     .role(if checked.is_some() {
                         Role::MenuItemCheckBox
                     } else {
                         Role::MenuItem
                     })
-                    .aria_label(label.clone())
-                    .px(px(10.0))
-                    .h(px(26.0))
-                    .flex()
-                    .items_center()
-                    .gap(px(8.0))
-                    .when(current, |row| row.bg(theme::panel()))
-                    .child(
+                    .when(*destructive, |row| row.text_color(theme::danger()))
+                    .when(inset, |row| {
+                        row.child(div().flex_none().w(px(12.0)).flex().items_center().when(
+                            matches!(checked, Some(true)),
+                            |slot| {
+                                slot.child(div().flex_none().ml(px(-2.0)).child(icon(
+                                    Icon::Check,
+                                    16.0,
+                                    theme::text(),
+                                )))
+                            },
+                        ))
+                    })
+                    .child(label.clone())
+                    .children(shortcut.clone().map(|chord| {
                         div()
-                            .w(px(12.0))
-                            .flex()
-                            .items_center()
-                            .when(matches!(checked, Some(true)), |d| {
-                                d.child(icon(Icon::Check, 12.0, theme::text()))
-                            }),
-                    )
-                    .child(label.clone());
+                            .ml_auto()
+                            .pl(px(8.0))
+                            .text_size(px(12.0))
+                            .text_color(theme::muted())
+                            .child(chord)
+                    }));
                 if let Some(checked) = checked {
                     row = row.aria_toggled(if *checked {
                         Toggled::True
@@ -339,67 +523,87 @@ fn list<V: HasMenu>(
                 }
                 if *enabled {
                     row = row
-                        .cursor_pointer()
-                        .hover(|s| s.bg(theme::panel()))
+                        .when(highlighted, |row| row.bg(theme::row_active()))
+                        .on_mouse_move(
+                            cx.listener(move |view, _, _, cx| point_at(view, index, !top, cx)),
+                        )
+                        .on_hover(cx.listener(move |view, hovered: &bool, _, cx| {
+                            if !*hovered {
+                                point_out(view, index, !top, cx);
+                            }
+                        }))
                         .on_click(cx.listener(move |view, _, window, cx| {
                             choose(view, run.clone(), window, cx)
                         }));
                 } else {
-                    row = row.text_color(theme::muted());
-                }
-                if top {
-                    row = row.on_hover(cx.listener(|view, hovered: &bool, _, cx| {
-                        if *hovered
-                            && let Some(menu) = view.menu()
-                            && menu.open_submenu.is_some()
-                        {
-                            menu.open_submenu = None;
-                            menu.sub_cursor = None;
-                            cx.notify();
-                        }
-                    }));
+                    row = row.opacity(0.64);
                 }
                 list = list.child(row);
             }
             Item::Submenu { label, items } => {
-                let is_open = open == Some(index);
-                let mut row = div()
-                    .id(SharedString::from(format!("submenu-{index}")))
+                let is_open = top && state.open == Some(index);
+                let mut row = row(SharedString::from(format!("submenu-{index}")), label)
+                    .debug_selector({
+                        let label = label.clone();
+                        move || format!("submenu-{label}")
+                    })
                     .role(Role::MenuItem)
-                    .aria_label(label.clone())
                     .aria_expanded(is_open)
                     .relative()
-                    .px(px(10.0))
-                    .h(px(26.0))
-                    .flex()
-                    .items_center()
-                    .gap(px(8.0))
-                    .cursor_pointer()
-                    .when(current, |row| row.bg(theme::panel()))
-                    .hover(|s| s.bg(theme::panel()))
-                    .child(div().w(px(12.0)))
-                    .child(div().flex_1().child(label.clone()))
-                    .child(icon(Icon::ChevronRight, 12.0, theme::muted()))
-                    .on_hover(cx.listener(move |view, hovered: &bool, _, cx| {
-                        if *hovered && let Some(menu) = view.menu() {
-                            menu.open_submenu = Some(index);
-                            cx.notify();
-                        }
-                    }));
+                    .when(highlighted, |row| row.bg(theme::row_active()))
+                    .when(inset, |row| row.child(div().flex_none().w(px(12.0))))
+                    .child(label.clone())
+                    .child(div().ml_auto().mr(px(-2.0)).child(icon(
+                        Icon::ChevronRight,
+                        16.0,
+                        theme::text().opacity(0.8),
+                    )))
+                    .on_mouse_move(
+                        cx.listener(move |view, _, _, cx| point_at(view, index, false, cx)),
+                    )
+                    .on_click(cx.listener(move |view, _, _, cx| point_at(view, index, false, cx)));
                 if is_open {
-                    row = row.child(div().absolute().top(px(-4.0)).left_full().child(self::list(
-                        items,
-                        None,
-                        (sub_cursor, None),
-                        false,
-                        cx,
-                    )));
+                    // Beside the menu, clear of its edge (Base UI puts it
+                    // at the row's edge, over the menu's padding), its
+                    // first item level with the row, and kept inside the
+                    // window: the editor's Table submenu is taller than
+                    // the room below it.
+                    row = row.child(
+                        div()
+                            .absolute()
+                            .left_full()
+                            .pl(px(PADDING + BORDER + SUBMENU_GAP))
+                            .top(px(-(PADDING + BORDER)))
+                            .child(
+                                anchored()
+                                    .snap_to_window_with_margin(px(EDGE))
+                                    .child(self::list(items, state, false, cx)),
+                            ),
+                    );
                 }
                 list = list.child(row);
             }
         }
     }
     list
+}
+
+/// An item's row: 28 px, 8 px in from the popup's padding, rounded.
+fn row(id: SharedString, label: &SharedString) -> Stateful<Div> {
+    let selector = label.clone();
+    div()
+        .id(id)
+        .debug_selector(move || format!("menu-{selector}"))
+        .aria_label(label.clone())
+        .flex_none()
+        .h(px(ITEM_HEIGHT))
+        .px(px(8.0))
+        .rounded(px(ITEM_RADIUS))
+        .flex()
+        .items_center()
+        .gap(px(8.0))
+        .whitespace_nowrap()
+        .cursor_default()
 }
 
 #[cfg(test)]
@@ -409,14 +613,10 @@ mod tests {
     struct View;
 
     fn items() -> Vec<Item<View>> {
-        let mut disabled = Item::action("Paste", |_: &mut View, _, _| {});
-        if let Item::Action { enabled, .. } = &mut disabled {
-            *enabled = false;
-        }
         vec![
             Item::action("Cut", |_: &mut View, _, _| {}),
             Item::Separator,
-            disabled,
+            Item::action("Paste", |_: &mut View, _, _| {}).enabled(false),
             Item::action("Copy", |_: &mut View, _, _| {}),
         ]
     }
@@ -429,5 +629,18 @@ mod tests {
         assert_eq!(step(&items, Some(3), true), Some(0));
         assert_eq!(step(&items, None, false), Some(3));
         assert_eq!(step(&items, Some(0), false), Some(3));
+    }
+
+    #[test]
+    fn a_menu_opened_from_the_keyboard_highlights_its_first_item() {
+        let mut menu = Menu::new(Point::default(), items());
+        menu.highlight_first();
+        assert_eq!(menu.cursor, Some(0));
+        let mut first_disabled = items();
+        first_disabled.remove(0);
+        first_disabled.remove(0);
+        let mut menu = Menu::new(Point::default(), first_disabled);
+        menu.highlight_first();
+        assert_eq!(menu.cursor, Some(1), "Paste is skipped");
     }
 }

@@ -485,12 +485,7 @@ impl Editor {
             presets: image_presets_of(&image),
             actions: Vec::new(),
         };
-        self.menu = Some(ContextMenu {
-            position: at,
-            items: width_items(&menu),
-            open_submenu: None,
-            in_submenu: false,
-        });
+        self.menu = Some(ContextMenu::new(at, width_items(&menu)));
         cx.notify();
     }
 }

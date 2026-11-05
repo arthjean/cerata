@@ -793,7 +793,8 @@ pub fn file_menu(path: PathBuf, pinned: bool, conflicted: bool) -> Vec<Item<Side
         }),
         Item::action("Delete", move |_, _, cx: &mut Context<Sidebar>| {
             cx.emit(SidebarEvent::Delete(vec![delete.clone()]))
-        }),
+        })
+        .destructive(),
     ]);
     items
 }
@@ -829,7 +830,8 @@ pub fn folder_menu(path: PathBuf) -> Vec<Item<Sidebar>> {
         }),
         Item::action("Delete", move |_, _, cx: &mut Context<Sidebar>| {
             cx.emit(SidebarEvent::Delete(vec![delete.clone()]))
-        }),
+        })
+        .destructive(),
     ]
 }
 
@@ -849,7 +851,8 @@ pub fn bulk_menu(paths: Vec<PathBuf>) -> Vec<Item<Sidebar>> {
         Item::action(
             format!("Delete {n} items"),
             move |_, _, cx: &mut Context<Sidebar>| cx.emit(SidebarEvent::Delete(delete.clone())),
-        ),
+        )
+        .destructive(),
     ]
 }
 
@@ -906,10 +909,7 @@ pub fn surface_menu(
                 s.open_root_in_file_manager(cx)
             }),
             sep(),
-            Item::Submenu {
-                label: "Sort by".into(),
-                items: sort,
-            },
+            Item::submenu("Sort by", sort),
             sep(),
         ]);
     }
