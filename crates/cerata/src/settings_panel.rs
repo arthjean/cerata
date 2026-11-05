@@ -1,11 +1,3 @@
-//! The Settings screen, on Paneflow's layout: it replaces the sidebar with
-//! a navigation (Back to the app, a search field, pages in groups) and the
-//! main column with the active page. A page holds one or more cards of
-//! Writer's settings panel (`settings-panel/index.tsx:11-88`): one control
-//! per value type, and a Reset button in a slot every row reserves, so a
-//! value leaving its default never moves the controls. Writes go through
-//! the window, which applies them.
-
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -29,7 +21,6 @@ use crate::theme::{Mode, Preset};
 
 const BEFORE_THEMES: [&str; 3] = ["Appearance", SIDEBAR_CARD, "Typography"];
 const THEME_CATEGORY: &str = "Theme";
-/// The Appearance keys of the sidebar get a card (and a page) of their own.
 const SIDEBAR_PREFIX: &str = "appearance.sidebar-";
 const SIDEBAR_CARD: &str = "Sidebar";
 const PRIMARIES: [&str; 5] = [
@@ -40,26 +31,19 @@ const PRIMARIES: [&str; 5] = [
     "contrast",
 ];
 
-/// What the panel asks the window to do.
 #[derive(Clone, Debug, PartialEq)]
 pub enum PanelEvent {
     Set(String, ConfigValue),
-    /// Back to the schema default.
     Reset(String),
-    /// Back to the app.
     Close,
 }
 
-/// A card of the panel: its title and its keys, in order.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Section {
     pub title: String,
     pub keys: Vec<String>,
 }
 
-/// The cards in Writer's order: Appearance, Sidebar and Typography, the
-/// two theme cards (preset first, then the five primaries), then every
-/// other category in schema order.
 pub fn sections(definitions: &[SettingDef]) -> Vec<Section> {
     let mut categories: Vec<Section> = Vec::new();
     for def in definitions.iter().filter(|d| d.category != THEME_CATEGORY) {
@@ -99,7 +83,6 @@ pub fn sections(definitions: &[SettingDef]) -> Vec<Section> {
     ordered
 }
 
-/// A page of the navigation and the cards it shows, by title.
 pub struct NavPage {
     pub title: &'static str,
     pub icon: Icon,
@@ -111,7 +94,6 @@ pub struct NavGroup {
     pub pages: &'static [NavPage],
 }
 
-/// The navigation: every card of [`sections`] is on exactly one page.
 pub const NAV: &[NavGroup] = &[
     NavGroup {
         label: "Interface",
@@ -164,7 +146,6 @@ fn nav_pages() -> impl Iterator<Item = &'static NavPage> {
     NAV.iter().flat_map(|group| group.pages.iter())
 }
 
-/// The search field's text as it is matched: trimmed, lowercased.
 pub fn normalize(query: &str) -> String {
     query.trim().to_lowercase()
 }
@@ -173,9 +154,6 @@ fn matches(text: &str, query: &str) -> bool {
     text.to_lowercase().contains(query)
 }
 
-/// The cards `page` shows for a normalized `query`: all of them when the
-/// query is empty or names the page, a whole card when it names the card,
-/// else the rows whose label or description holds it. Empty cards drop.
 pub fn page_cards(
     page: &NavPage,
     cards: &[Section],
@@ -209,12 +187,8 @@ pub fn page_cards(
         .collect()
 }
 
-/// Telemetry was dropped from v1: its switch and address would promise a
-/// sharing that never happens, so the panel leaves them out.
 const HIDDEN_CATEGORY: &str = "Privacy";
 
-/// Installed families for the font picker (`fonts.rs:34-45`): no macOS
-/// internal names (leading dot), sorted ignoring case, no duplicates.
 pub fn font_families(names: impl IntoIterator<Item = String>) -> Vec<String> {
     let mut families: Vec<String> = names.into_iter().filter(|n| !n.starts_with('.')).collect();
     families.sort_by(|a, b| (a.to_lowercase(), a).cmp(&(b.to_lowercase(), b)));
@@ -231,13 +205,10 @@ fn strip_quotes(name: &str) -> &str {
     name
 }
 
-/// First family of a stack, unquoted (`font-stack.ts:10-12`).
 pub fn first_family(stack: &str) -> String {
     strip_quotes(stack.split(',').next().unwrap_or("").trim()).to_owned()
 }
 
-/// `stack` with its first family replaced by `family`; the tail stays,
-/// without a duplicate of `family` (`font-stack.ts:17-26`).
 pub fn stack_with_family(family: &str, stack: &str) -> String {
     let name = family.trim();
     let plain = name.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
@@ -260,12 +231,10 @@ pub fn stack_with_family(family: &str, stack: &str) -> String {
         .join(", ")
 }
 
-/// A typed color is kept only as `#RGB` or `#RRGGBB`, upper-cased.
 pub fn valid_color(text: &str) -> Option<String> {
     crate::theme::parse_hex(text.trim()).map(|_| text.trim().to_uppercase())
 }
 
-/// The value a slider at `fraction` of its track stands for.
 pub fn slider_value(fraction: f32, min: f64, max: f64, step: f64) -> f64 {
     let raw = min + f64::from(fraction.clamp(0.0, 1.0)) * (max - min);
     let step = if step > 0.0 { step } else { 1.0 };
@@ -292,7 +261,6 @@ pub struct SettingsPanel {
     state: Arc<WindowState>,
     definitions: Vec<SettingDef>,
     cards: Vec<Section>,
-    /// The title of the page on show.
     pub page: &'static str,
     pub search: Entity<TextField>,
     content_scroll: ScrollHandle,
@@ -301,15 +269,10 @@ pub struct SettingsPanel {
     pub fields: HashMap<String, Entity<TextField>>,
     lists: HashMap<String, Vec<Entity<TextField>>>,
     sliders: HashMap<String, Rc<Cell<Bounds<Pixels>>>>,
-    /// The slider being dragged and its value, written on release.
     dragging: Option<(String, f64)>,
     pub select: Option<SelectPopup>,
-    /// Each select trigger's bounds, where its popup opens.
     triggers: HashMap<String, Rc<Cell<Bounds<Pixels>>>>,
-    /// Each switch's motion, and the switch under a press.
     switches: HashMap<String, crate::switch::SwitchMotion>,
-    /// The select triggers' and switches' focus, by key: they draw coss
-    /// ui's ring for keyboard focus.
     control_focus: HashMap<String, FocusHandle>,
     pressed_switch: Option<String>,
     seen_revision: Option<u64>,
@@ -381,7 +344,6 @@ impl SettingsPanel {
         normalize(&self.search.read(cx).text)
     }
 
-    /// The cards a page shows for the current search.
     fn shown_cards(&self, page: &NavPage, cx: &App) -> Vec<Section> {
         page_cards(page, &self.cards, &self.definitions, &self.query(cx))
     }
@@ -393,8 +355,6 @@ impl SettingsPanel {
         cx.notify();
     }
 
-    /// A search that empties the page on show moves to the first page it
-    /// keeps, as Paneflow's does.
     pub fn query_changed(&mut self, cx: &mut Context<Self>) {
         let current = nav_pages().find(|page| page.title == self.page);
         if current.is_some_and(|page| self.shown_cards(page, cx).is_empty())
@@ -410,7 +370,6 @@ impl SettingsPanel {
         self.query_changed(cx);
     }
 
-    /// Escape clears the search, or leaves Settings when it is empty.
     fn on_search_event(
         &mut self,
         field: &Entity<TextField>,
@@ -433,7 +392,6 @@ impl SettingsPanel {
         self.state.settings().get(key)
     }
 
-    /// The value differs from the schema default: its Reset button shows.
     pub fn is_modified(&self, key: &str) -> bool {
         self.def(key)
             .is_some_and(|def| self.value(key).as_ref() != Some(&def.default))
@@ -480,13 +438,11 @@ impl SettingsPanel {
                 this.commit_field(&key, cx);
                 cx.notify();
             }));
-        // The frame shows the focus.
         self._subscriptions
             .push(cx.on_focus(&focus, window, |_, _, cx| cx.notify()));
         field
     }
 
-    /// Fields that are not being edited show the current values.
     fn sync_fields(&mut self, cx: &mut Context<Self>) {
         let revision = self.state.settings().revision();
         if self.seen_revision == Some(revision) {
@@ -504,8 +460,6 @@ impl SettingsPanel {
         }
     }
 
-    /// Enter or a lost focus: a valid value is written, an invalid color or
-    /// number turns red and is not.
     pub fn commit_field(&mut self, key: &str, cx: &mut Context<Self>) {
         let (Some(field), Some(def)) = (self.fields.get(key).cloned(), self.def(key)) else {
             return;
@@ -543,7 +497,6 @@ impl SettingsPanel {
         cx.notify();
     }
 
-    /// Choosing a preset writes its name and its five values for that mode.
     pub fn apply_preset(&mut self, mode: Mode, name: &str, cx: &mut Context<Self>) {
         let Some(preset) = self.presets.iter().find(|p| p.name == name).cloned() else {
             return;
@@ -574,7 +527,6 @@ impl SettingsPanel {
         self.seen_revision = None;
     }
 
-    /// Picking a font replaces the first family of the stack only.
     pub fn pick_font(&mut self, key: &str, family: &str, cx: &mut Context<Self>) {
         let current = self
             .value(key)
@@ -646,7 +598,6 @@ impl SettingsPanel {
         field
     }
 
-    /// The list's non-empty items, written when they changed.
     pub fn commit_list(&mut self, key: &str, cx: &mut Context<Self>) {
         let Some(fields) = self.lists.get(key) else {
             return;
@@ -683,9 +634,6 @@ impl SettingsPanel {
         cx.notify();
     }
 
-    /// A select's options and the one the setting holds: preset names, the
-    /// installed families (the stack's first one added when missing), or
-    /// the schema's options.
     pub fn select_options(&self, key: &str) -> (Vec<String>, Option<usize>) {
         let Some(def) = self.def(key) else {
             return (Vec::new(), None);
@@ -711,7 +659,6 @@ impl SettingsPanel {
         (options, selected)
     }
 
-    /// Opens `key`'s popup over its trigger; a second press closes it.
     pub fn toggle_select(&mut self, key: &str, cx: &mut Context<Self>) {
         if self.select.take().is_some_and(|open| open.key == key) {
             cx.notify();
@@ -728,8 +675,6 @@ impl SettingsPanel {
         cx.notify();
     }
 
-    /// A preset writes its six values, a family replaces the stack's first
-    /// one, any other option is the value.
     pub fn choose_option(&mut self, key: &str, option: &str, cx: &mut Context<Self>) {
         let font = self
             .def(key)
@@ -780,9 +725,6 @@ impl SettingsPanel {
     }
 }
 
-/// A control's accessible name: its label, with the theme it belongs to
-/// for the two theme cards, whose rows share their labels ("Preset",
-/// "Accent", ...).
 fn accessible_name(def: &SettingDef) -> String {
     let label = if preset_mode(&def.key).is_some() {
         "Preset"
@@ -807,8 +749,6 @@ fn preset_mode(key: &str) -> Option<Mode> {
         _ => None,
     }
 }
-
-// ---- Rendering ----
 
 impl SettingsPanel {
     fn control(
@@ -1085,8 +1025,6 @@ impl SettingsPanel {
                     .and_then(|v| v.as_str())
                     .and_then(crate::theme::parse_hex)
                     .unwrap_or(gpui::rgb(0x000000));
-                // The swatch sits inside the frame, as far from its edges
-                // as from the text.
                 crate::input::frame(&field, window, cx)
                     .w(px(176.0))
                     .pl(px(5.0))
@@ -1171,7 +1109,6 @@ impl SettingsPanel {
             .into_any_element()
     }
 
-    /// The Reset button's slot, as wide whether or not it shows.
     fn reset_slot(&self, def: &SettingDef, label: &str, cx: &mut Context<Self>) -> gpui::Div {
         let key = def.key.clone();
         div()
@@ -1201,11 +1138,8 @@ impl SettingsPanel {
     }
 }
 
-/// Width of the Reset slot: the button at 12 px with its padding.
 const RESET_SLOT: f32 = 52.0;
 
-// The navigation's measures are the sidebar's (Paneflow's rows): 8 px
-// margin, 32 px rows padded 7, radius 9, a 15 px icon 8 from a 14 px label.
 const NAV_MARGIN: f32 = 8.0;
 const NAV_PADDING: f32 = 7.0;
 
@@ -1429,7 +1363,6 @@ impl SettingsPanel {
                     card = card.child(self.row(def, ix == 0, window, cx));
                 }
             }
-            // The card that carries the page's own name needs no heading.
             let heading = (section.title != page.title).then(|| {
                 div()
                     .mb(px(12.0))
@@ -1488,8 +1421,6 @@ impl Render for SettingsPanel {
             .child(nav)
             .child(div().flex_none().w(px(1.0)).h_full().bg(theme::border()))
             .child(page);
-        // The release is always listened for: a click on a slider's track
-        // can press and release before the next frame draws.
         root = root
             .on_mouse_up(
                 MouseButton::Left,
@@ -1521,8 +1452,6 @@ mod tests {
     use super::*;
 
     const MONO_DEFAULT: &str = r#"ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace"#;
-
-    // Ported from Writer `tests/font-stack.test.ts`.
 
     #[test]
     fn first_family_is_the_unquoted_head_of_the_stack() {
@@ -1569,7 +1498,6 @@ mod tests {
 
     #[test]
     fn font_families_hide_internal_names_sort_and_dedupe() {
-        // Writer `fonts.rs:52-63`.
         assert_eq!(
             font_families(["Menlo", ".SF NS", "Arial", "menlo", "Menlo"].map(String::from)),
             ["Arial", "Menlo", "menlo"]

@@ -1,11 +1,3 @@
-//! Formatting commands and their registry (`markdown-formatting.ts`): one
-//! table of stable ids feeds the shortcuts and the menus.
-//!
-//! Shortcuts follow `docs/keyboard-shortcuts.md:50-98` on macOS. On Windows
-//! and Linux, Cmd becomes Ctrl, and no editor shortcut uses Ctrl+Alt: that
-//! chord is AltGr on European layouts (AZERTY types `~ # { [ | \ @ ] }` with
-//! it), so the headings move from Cmd+Alt+N to Ctrl+Shift+N there.
-
 use std::ops::Range;
 
 use crate::change::{Bias, Change, ChangeSet};
@@ -14,8 +6,6 @@ use crate::selection::{Selection, SelectionRange};
 use crate::state::{EditorState, Transaction};
 use crate::tree::NodeKind;
 
-/// Local date and time, supplied by the caller (the editor crate has no
-/// clock or time zone of its own).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Clock {
     pub year: i32,
@@ -32,10 +22,8 @@ pub enum Os {
     Linux,
 }
 
-/// A key chord: modifiers and the key (`b`, `1`, `.`, `Enter`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Chord {
-    /// Cmd on macOS.
     pub cmd: bool,
     pub ctrl: bool,
     pub alt: bool,
@@ -44,7 +32,6 @@ pub struct Chord {
 }
 
 impl Chord {
-    /// `Mod-Shift-x` style, `Mod` meaning Cmd on macOS and Ctrl elsewhere.
     fn parse(spec: &'static str, os: Os) -> Chord {
         let mut chord = Chord {
             cmd: false,
@@ -54,7 +41,6 @@ impl Chord {
             key: "",
         };
         let mut parts: Vec<&'static str> = spec.split('-').collect();
-        // `Mod-Shift--`would split oddly; no command binds `-`.
         chord.key = parts.pop().unwrap_or("");
         for part in parts {
             match part {
@@ -68,7 +54,6 @@ impl Chord {
         chord
     }
 
-    /// How menus show it: `Cmd+Shift+X`, `Ctrl+Alt+1`.
     pub fn label(&self) -> String {
         let mut parts = Vec::new();
         if self.cmd {
@@ -94,20 +79,15 @@ impl Chord {
 
 type Run = fn(&mut EditorState, &Clock) -> bool;
 
-/// One registry entry.
 pub struct EditorCommand {
-    /// Stable id (`format.bold`), used by menus, the palette and settings.
     pub id: &'static str,
     pub label: &'static str,
     mac: Option<&'static str>,
-    /// Windows and Linux, when it differs from `mac`.
     other: Option<&'static str>,
     run: Run,
 }
 
 impl EditorCommand {
-    /// The command applies to `state`: a table command needs the caret in
-    /// a drawn table, and some need a row or column to act on.
     pub fn enabled(&self, state: &EditorState) -> bool {
         if self.id.starts_with("table.") {
             crate::table_ops::enabled(state, self.id)
@@ -137,7 +117,6 @@ macro_rules! command {
     };
 }
 
-/// Every formatting command (`markdown-formatting.ts:421-448`).
 pub static COMMANDS: &[EditorCommand] = &[
     command!("format.bold", "Bold", Some("Mod-b"), None, |s, _| s
         .toggle_inline("**", NodeKind::StrongEmphasis)),
@@ -261,7 +240,6 @@ pub static COMMANDS: &[EditorCommand] = &[
         let time = format!("{:02}:{:02}", c.hour, c.minute);
         s.insert_at_head(time)
     }),
-    // Table structure (US-053): active with the caret in a drawn table.
     command!("table.rowAbove", "Insert row above", None, None, |s, _| {
         crate::table_ops::run(s, "table.rowAbove")
     }),
@@ -363,7 +341,6 @@ pub fn command(id: &str) -> Option<&'static EditorCommand> {
     COMMANDS.iter().find(|c| c.id == id)
 }
 
-/// The command a chord triggers on `os`, if any.
 pub fn command_for(chord: &Chord, os: Os) -> Option<&'static EditorCommand> {
     COMMANDS
         .iter()
@@ -384,20 +361,17 @@ fn leading_ws(s: &str) -> usize {
     s.len() - s.trim_start_matches([' ', '\t']).len()
 }
 
-/// `^(#{1,6})\s`: length of a heading prefix.
 fn heading_prefix(s: &str) -> Option<usize> {
     let hashes = s.bytes().take_while(|b| *b == b'#').count();
     ((1..=6).contains(&hashes) && s[hashes..].starts_with(char::is_whitespace))
         .then(|| hashes + s[hashes..].chars().next().map_or(0, char::len_utf8))
 }
 
-/// `^([ \t]*)- `: indent length of a bullet line.
 fn bullet(s: &str) -> Option<usize> {
     let ws = leading_ws(s);
     s[ws..].starts_with("- ").then_some(ws)
 }
 
-/// `^([ \t]*)- \[[ x]\] `: indent length of a task line.
 fn task(s: &str) -> Option<usize> {
     let ws = leading_ws(s);
     let rest = &s[ws..];
@@ -407,7 +381,6 @@ fn task(s: &str) -> Option<usize> {
     .then_some(ws)
 }
 
-/// `^\d+\.\s`: length of a numbered prefix.
 fn numbered(s: &str) -> Option<usize> {
     let digits = s.bytes().take_while(u8::is_ascii_digit).count();
     (digits > 0 && s[digits..].starts_with('.') && s[digits + 1..].starts_with(char::is_whitespace))
@@ -476,7 +449,6 @@ fn transform(command: LineCommand, line: &str, index: usize, lines: &[&str]) -> 
     }
 }
 
-/// The smallest single replacement turning `before` into `after`.
 pub(crate) fn minimal_edit(before: &str, after: &str) -> Option<(Range<usize>, String)> {
     if before == after {
         return None;
@@ -508,7 +480,6 @@ pub(crate) fn minimal_edit(before: &str, after: &str) -> Option<(Range<usize>, S
     ))
 }
 
-/// Word characters around `pos` (CodeMirror's `wordAt`).
 fn word_at(s: &str, pos: usize) -> Option<Range<usize>> {
     let is_word = |c: char| c.is_alphanumeric() || c == '_';
     let start = s[..pos]
@@ -525,8 +496,6 @@ fn word_at(s: &str, pos: usize) -> Option<Range<usize>> {
 }
 
 impl EditorState {
-    /// Runs the command `id`: `false` when it does not exist, did nothing,
-    /// or the document is still loading.
     pub fn run_command(&mut self, id: &str, clock: &Clock) -> bool {
         match command(id) {
             Some(command) if !self.is_loading() => (command.run)(self, clock),
@@ -534,9 +503,6 @@ impl EditorState {
         }
     }
 
-    /// Applies one edit per selection range: `f` returns the range's changes
-    /// (in the current document) and its new selection (in the document
-    /// after those changes alone), as CodeMirror's `changeByRange`.
     fn change_by_range(
         &mut self,
         event: UserEvent,
@@ -548,8 +514,6 @@ impl EditorState {
         let delta = |c: &Change| c.insert.len() as isize - (c.to - c.from) as isize;
         for range in self.selection().ranges().to_vec() {
             let (edits, new_range) = f(self, range);
-            // Two carets in one node or on one line ask for the same edit:
-            // made once, and not shifted past by itself.
             let (repeated, fresh): (Vec<Change>, Vec<Change>) =
                 edits.into_iter().partition(|c| changes.contains(c));
             let own = shift - repeated.iter().map(delta).sum::<isize>();
@@ -575,12 +539,8 @@ impl EditorState {
         .is_ok()
     }
 
-    /// Bold, italic, inline code, strikethrough: unwraps the node holding
-    /// the selection, else wraps the selection, the word under the caret, or
-    /// inserts empty markers with the caret between them.
     fn toggle_inline(&mut self, marker: &'static str, kind: NodeKind) -> bool {
         let len = marker.len();
-        // Consumed even when nothing changes, as Writer's commands are.
         let _ = self.change_by_range(UserEvent::Command, |state, range| {
             let node = state.tree().resolve(range.from(), -1);
             let existing = std::iter::once(node)
@@ -624,8 +584,6 @@ impl EditorState {
         true
     }
 
-    /// `[](url)` at the caret, or `[selection](url)`, with `url` selected; a
-    /// caret already in a link does nothing.
     fn insert_link(&mut self) -> bool {
         self.change_by_range(UserEvent::Command, |state, range| {
             let node = state.tree().resolve(range.from(), -1);
@@ -644,8 +602,6 @@ impl EditorState {
         })
     }
 
-    /// Rewrites each touched line's prefix with a minimal edit and maps the
-    /// selection through it, so the caret stays in its text.
     fn line_command(&mut self, command: LineCommand) -> bool {
         let _ = self.change_by_range(UserEvent::Command, |state, range| {
             let text = state.text();
@@ -668,8 +624,6 @@ impl EditorState {
             let Ok(set) = ChangeSet::new(text, edits.clone()) else {
                 return (Vec::new(), range);
             };
-            // Positions here are in the document after this range's edits;
-            // `change_by_range` shifts them past the earlier ranges' edits.
             let map = |p: usize| set.map_pos(p, Bias::Right);
             (
                 edits,
@@ -679,7 +633,6 @@ impl EditorState {
         true
     }
 
-    /// Strips `**`, `*`, `~~` and `` ` `` pairs inside each selection.
     fn clear_inline_formatting(&mut self) -> bool {
         static PATTERNS: std::sync::OnceLock<Vec<regex::Regex>> = std::sync::OnceLock::new();
         let patterns = PATTERNS.get_or_init(|| {
@@ -704,8 +657,6 @@ impl EditorState {
         })
     }
 
-    /// Wraps the main selection's lines in a fence, or unwraps them when
-    /// they already start and end with one.
     fn toggle_fenced_code_block(&mut self) -> bool {
         let main = self.selection().main();
         let text = self.text();
@@ -774,14 +725,11 @@ impl EditorState {
     }
 }
 
-/// A keyboard layout, for the shortcut checks: each key's character
-/// without and with Shift.
 pub struct Layout {
     pub name: &'static str,
     pub keys: &'static [(&'static str, &'static str)],
 }
 
-/// US QWERTY, the keys the registry binds.
 pub static QWERTY_US: Layout = Layout {
     name: "QWERTY (US)",
     keys: &[
@@ -806,7 +754,6 @@ pub static QWERTY_US: Layout = Layout {
     ],
 };
 
-/// French AZERTY: digits need Shift, `.` is Shift+`;`.
 pub static AZERTY_FR: Layout = Layout {
     name: "AZERTY (FR)",
     keys: &[
@@ -832,11 +779,6 @@ pub static AZERTY_FR: Layout = Layout {
 };
 
 impl Layout {
-    /// The chord fires from a key of this layout: a key whose character on
-    /// either layer is the chord's key. Shortcuts match the physical key, as
-    /// CodeMirror does by falling back to the key code when a modifier is
-    /// held, so `Ctrl+Shift+1` is Ctrl+Shift+`&` on AZERTY and
-    /// `Ctrl+Shift+.` is Ctrl+Shift+`;`.
     pub fn can_type(&self, chord: &Chord) -> bool {
         let key = chord.key.to_lowercase();
         self.keys

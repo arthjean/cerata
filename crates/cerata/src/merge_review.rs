@@ -1,10 +1,3 @@
-//! "Review Changes" (US-092) and "Review Conflict" (US-093): the blocks of
-//! a three-way merge, the overlapping ones side by side with "Keep Mine",
-//! "Keep Theirs" and "Keep Both". Blocks that merged cleanly show as a
-//! one-line summary. "Apply" writes the result once every overlap has a
-//! choice; for a sync service's conflict copy, "Keep Both" at the top keeps
-//! the copy as a note of its own instead.
-
 use std::path::PathBuf;
 
 use cerata_core::merge::{Block, Choice, Merge};
@@ -16,12 +9,9 @@ use gpui::{
 
 use crate::editor::theme;
 
-/// What is reviewed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Source {
-    /// The disk changed while the note had unsaved edits.
     Disk,
-    /// A sync service's conflict copy of the note.
     Copy(PathBuf),
 }
 
@@ -32,7 +22,6 @@ pub enum ReviewEvent {
         source: Source,
         text: String,
     },
-    /// Keep the conflict copy as a note of its own.
     KeepBothNotes {
         copy: PathBuf,
     },
@@ -44,7 +33,6 @@ pub struct MergeReview {
     pub path: PathBuf,
     pub source: Source,
     pub merge: Merge,
-    /// One per conflict, in order.
     pub choices: Vec<Option<Choice>>,
 }
 

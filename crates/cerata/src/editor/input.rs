@@ -1,7 +1,3 @@
-//! Text input from the OS: typed characters, dead keys and IME composition
-//! through GPUI's `EntityInputHandler` (US-002 measured the path on each
-//! backend). Positions cross this boundary in UTF-16; the buffer is UTF-8.
-
 use std::ops::Range;
 
 use cerata_markdown::{Change, Selection, Text, Transaction, UserEvent};
@@ -9,9 +5,7 @@ use gpui::{Bounds, Context, EntityInputHandler, Pixels, Point, UTF16Selection, W
 
 use super::{Composition, Editor};
 
-/// UTF-16 length of `s`.
 fn utf16_len(s: &str) -> usize {
-    // One unit per char, two for chars outside the BMP (4-byte UTF-8).
     s.bytes()
         .map(|b| match b {
             0x80..=0xbf => 0,
@@ -45,8 +39,6 @@ fn range_from_utf16(text: &Text, range: &Range<usize>) -> Range<usize> {
 }
 
 impl Editor {
-    /// Starts a composition: the state is saved so the composition never
-    /// reaches the undo history.
     fn begin_composition(&mut self, replaced: Range<usize>) {
         if self.composition.is_none() {
             self.composition = Some(Composition {
@@ -57,8 +49,6 @@ impl Editor {
         }
     }
 
-    /// Ends the composition: back to the saved state (a cancel), then the
-    /// committed text, if any, as one typed edit.
     fn end_composition(&mut self, committed: Option<&str>, cx: &mut Context<Self>) {
         self.marked_range = None;
         let Some(saved) = self.composition.take() else {
@@ -77,8 +67,6 @@ impl Editor {
         }
     }
 
-    /// Commits the IME composition in progress, as it stands; `true` when
-    /// there was one (Tab and Enter commit it and do nothing else).
     pub(crate) fn commit_composition(&mut self, cx: &mut Context<Self>) -> bool {
         let Some(range) = self.marked_range.clone() else {
             return false;
@@ -88,21 +76,16 @@ impl Editor {
         true
     }
 
-    /// Typed text at every selection range (or `range`, from the OS).
     fn type_text(&mut self, range: Option<Range<usize>>, text: &str, cx: &mut Context<Self>) {
         if range.is_none() && text == "-" && self.open_frontmatter(cx) {
             return;
         }
         self.typed = true;
-        // Escaped in a table cell, on its own line at a diagram's boundary.
         self.update_state(cx, |state| state.type_text(range, text, UserEvent::Type));
     }
 }
 
 impl Editor {
-    /// `---` typed on a first line holding `--`, in a note without
-    /// frontmatter, opens an empty properties panel instead of a rule
-    /// (`editor-clipboard.ts:57-78`).
     fn open_frontmatter(&mut self, cx: &mut Context<Self>) -> bool {
         let main = self.state.selection().main();
         let doc = self.state.doc();
@@ -115,8 +98,6 @@ impl Editor {
         {
             return false;
         }
-        // An empty block as Writer writes it; the caret after it, where
-        // the panel shows.
         let eol = if doc[2..].starts_with("\r\n") {
             "\r\n"
         } else {
@@ -177,7 +158,6 @@ impl EntityInputHandler for Editor {
             .map(|range| range_to_utf16(self.state.text(), range))
     }
 
-    /// The OS accepts the marked text as it is (macOS `unmarkText`).
     fn unmark_text(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         let committed = self
             .marked_range
@@ -194,8 +174,6 @@ impl EntityInputHandler for Editor {
         cx: &mut Context<Self>,
     ) {
         if self.marked_range.is_some() {
-            // The composition ends: committed text, or nothing on a cancel
-            // (Escape sends an empty commit).
             self.end_composition(Some(new_text), cx);
             return;
         }
@@ -230,8 +208,6 @@ impl EntityInputHandler for Editor {
         let inserted_utf16 = utf16_len(new_text);
         let new_text = new_text.to_owned();
         let marked = range.start..range.start + new_text.len();
-        // The marked text is in the buffer while composing, outside the
-        // history: the saved state is what `end_composition` restores.
         self.update_state(cx, |state| {
             let selection = Selection::cursor(marked.end);
             let _ = state.apply(
@@ -251,9 +227,6 @@ impl EntityInputHandler for Editor {
         self.marked_range = Some(marked);
     }
 
-    /// Bounds computed from the model, so they are right between an edit
-    /// and the next frame (macOS asks right after setting marked text). The
-    /// IME places its candidate window from these.
     fn bounds_for_range(
         &mut self,
         range_utf16: Range<usize>,

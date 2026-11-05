@@ -1,25 +1,9 @@
-//! Per-library sessions (open tabs with their back and forward history).
-//!
-//! Ported from Writer `commands/workspace.rs:851-918` and `lib/session.ts`.
-//! Writer's layout was `{root: {tabs: [{location, back, forward}],
-//! active_index}}`. Cerata keys it by library id instead (US-077), and a
-//! file tab's `path` is stored relative to the root with `/` separators,
-//! so a session survives a move and means the same on every machine. The
-//! file is written atomically under a process lock, and a corrupt file is
-//! set aside.
-//!
-//! An entry under an absolute root (Writer's key, or Cerata's before
-//! libraries) is converted the first time its library is read: paths in
-//! the root become relative, the others are dropped and logged.
-
 use crate::json_store::{JsonStore, StoreError};
 use crate::library::LibraryKey;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
-/// A tab location, kept opaque except for its kind (`file`, ...), as the
-/// shell owns its other fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SerializedLocation {
     pub kind: String,
@@ -45,7 +29,6 @@ pub struct SessionData {
 }
 
 impl SessionData {
-    /// The file of the active tab, if that tab shows a file.
     pub fn active_file(&self) -> Option<PathBuf> {
         let tab = self.tabs.get(self.active_index?)?;
         if tab.location.kind != "file" {
@@ -58,9 +41,6 @@ impl SessionData {
             .map(PathBuf::from)
     }
 
-    /// Every location rewritten by `map` (file locations only; others are
-    /// kept). A tab whose own location maps to `None` is dropped, as is a
-    /// history entry; the active index follows its tab.
     fn map_paths(&self, map: impl Fn(&str) -> Option<String>) -> Self {
         let convert = |location: &SerializedLocation| -> Option<SerializedLocation> {
             if location.kind != "file" {
@@ -92,8 +72,6 @@ impl SessionData {
     }
 }
 
-/// `path` relative to `root` with `/` separators; `None` outside the root
-/// or for the root itself.
 pub fn to_relative(root: &Path, path: &Path) -> Option<String> {
     let rest = path.strip_prefix(root).ok()?;
     let parts: Vec<String> = rest
@@ -106,11 +84,7 @@ pub fn to_relative(root: &Path, path: &Path) -> Option<String> {
     (!parts.is_empty()).then(|| parts.join("/"))
 }
 
-/// `root` joined with a stored relative path. `None` when the entry is not
-/// a plain relative path: absolute, empty, or with `.` or `..` components
-/// (a hand-edited `../x.md` never leaves the root).
 pub fn to_absolute(root: &Path, relative: &str) -> Option<PathBuf> {
-    // `\` is a separator on Windows only; elsewhere it may be in a name.
     let separators: &[char] = if cfg!(windows) { &['/', '\\'] } else { &['/'] };
     if relative.is_empty() || relative.starts_with(separators) {
         return None;
@@ -134,7 +108,6 @@ pub fn to_absolute(root: &Path, relative: &str) -> Option<PathBuf> {
 
 type Sessions = BTreeMap<String, SessionData>;
 
-/// `sessions.json` in the app data directory.
 #[derive(Debug, Clone)]
 pub struct SessionStore {
     store: JsonStore,
@@ -147,8 +120,6 @@ impl SessionStore {
         }
     }
 
-    /// The session of `library`, with absolute paths. Entries that escape
-    /// the root are rejected.
     pub fn load(&self, library: &LibraryKey) -> Result<Option<SessionData>, StoreError> {
         let mut sessions: Sessions = self.store.load()?;
         if !sessions.contains_key(&library.id) && sessions.contains_key(&legacy_key(&library.root))
@@ -163,8 +134,6 @@ impl SessionStore {
             .map(|session| absolute(session, &library.root)))
     }
 
-    /// Saves the session of `library` (absolute paths, stored relative); an
-    /// empty session removes the entry.
     pub fn save(&self, library: &LibraryKey, session: SessionData) -> Result<(), StoreError> {
         let session = relative(&session, &library.root);
         self.store.update(|sessions: &mut Sessions| {
@@ -198,7 +167,6 @@ fn relative(session: &SessionData, root: &Path) -> SessionData {
     })
 }
 
-/// Moves the entry under the library's absolute root, if any, to its id.
 fn migrate(sessions: &mut Sessions, library: &LibraryKey) {
     let Some(legacy) = sessions.remove(&legacy_key(&library.root)) else {
         return;
@@ -215,8 +183,6 @@ fn migrate(sessions: &mut Sessions, library: &LibraryKey) {
     sessions.insert(library.id.clone(), converted);
 }
 
-/// The key Writer and Cerata before libraries used: the canonical root
-/// without trailing `/` or `\` (Writer trimmed only `/`, defect 5).
 pub fn legacy_key(root: &Path) -> String {
     let canonical = dunce::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
     let text = canonical.to_string_lossy();

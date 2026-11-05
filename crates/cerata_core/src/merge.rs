@@ -1,20 +1,6 @@
-//! Three-way merge of a note changed outside Cerata while it had unsaved
-//! edits (US-092): base = what Cerata last read or wrote, ours = the
-//! buffer, theirs = the disk.
-//!
-//! The three texts are normalized first (BOM dropped, CRLF and CR turned
-//! into LF). A line diff (histogram, `imara-diff`, as Zed does) of each side
-//! against the base gives the changed regions; regions that touch or
-//! overlap form one block. A block one side alone changed takes that side.
-//! A block both sides changed the same way takes it once. Otherwise the
-//! block is merged again by words, and if the word changes still overlap
-//! it is a conflict for the user to resolve: keep mine, keep theirs, or
-//! keep both. Nothing is dropped silently.
-
 use imara_diff::{Algorithm, Diff, InternedInput};
 use std::ops::Range;
 
-/// The text with no BOM and LF line endings only.
 pub fn normalize(text: &str) -> String {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     if !text.contains('\r') {
@@ -23,12 +9,9 @@ pub fn normalize(text: &str) -> String {
     text.replace("\r\n", "\n").replace('\r', "\n")
 }
 
-/// One block of a merge.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Block {
-    /// Text both sides kept from the base, or a change applied cleanly.
     Merged(String),
-    /// Both sides changed this text differently.
     Conflict {
         base: String,
         ours: String,
@@ -36,20 +19,16 @@ pub enum Block {
     },
 }
 
-/// How a conflict is resolved.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Choice {
     Mine,
     Theirs,
-    /// Mine, then theirs.
     Both,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Merge {
     pub blocks: Vec<Block>,
-    /// The result ends without a final newline: the blocks were merged
-    /// with one, which the result drops (see [`merge`]).
     pub open_end: bool,
 }
 
@@ -65,13 +44,10 @@ impl Merge {
         self.conflicts() == 0
     }
 
-    /// The merged text, when nothing conflicts.
     pub fn text(&self) -> Option<String> {
         self.is_clean().then(|| self.resolve(&[]))
     }
 
-    /// The text with conflict `n` resolved by `choices[n]` (mine when
-    /// missing).
     pub fn resolve(&self, choices: &[Choice]) -> String {
         let mut text = String::new();
         let mut n = 0;
@@ -101,7 +77,6 @@ impl Merge {
     }
 }
 
-/// One line of a line diff.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DiffLine {
     Same(String),
@@ -109,8 +84,6 @@ pub enum DiffLine {
     Added(String),
 }
 
-/// The lines of `old` and `new` (normalized), changes marked, for "Show
-/// Changes" (US-091). Lines carry no line ending.
 pub fn line_diff(old: &str, new: &str) -> Vec<DiffLine> {
     let (old, new) = (normalize(old), normalize(new));
     let lines =
@@ -141,12 +114,8 @@ pub fn line_diff(old: &str, new: &str) -> Vec<DiffLine> {
     out
 }
 
-/// Merges `ours` and `theirs`, both derived from `base`.
 pub fn merge(base: &str, ours: &str, theirs: &str) -> Merge {
     let (base, ours, theirs) = (normalize(base), normalize(ours), normalize(theirs));
-    // A save ends the file with a newline that the buffer may lack: the
-    // final newline is merged on its own, so its absence alone overlaps no
-    // change of the last line.
     let open = |text: &str| !text.is_empty() && !text.ends_with('\n');
     let (base_open, theirs_open) = (open(&base), open(&theirs));
     let result_open = if open(&ours) == base_open {
@@ -178,7 +147,6 @@ pub fn merge(base: &str, ours: &str, theirs: &str) -> Merge {
                 ours: co,
                 theirs: ct,
             } => {
-                // Merge the block again, word by word.
                 let (wb, wo, wt) = (words(&cb), words(&co), words(&ct));
                 let refined = diff3(&wb, &wo, &wt, false);
                 if refined.iter().all(|r| matches!(r, Region::Merged(_))) {
@@ -203,8 +171,6 @@ pub fn merge(base: &str, ours: &str, theirs: &str) -> Merge {
     }
 }
 
-/// Words, runs of spaces and single other characters: their
-/// concatenation is the text.
 fn words(text: &str) -> Vec<String> {
     let mut tokens: Vec<String> = Vec::new();
     let mut current = String::new();
@@ -240,7 +206,6 @@ enum Region {
     },
 }
 
-/// A change of one side: `base` replaced by `side` (token ranges).
 #[derive(Debug, Clone)]
 struct Change {
     base: Range<usize>,
@@ -265,8 +230,6 @@ fn changes(base: &[String], side: &[String], lines: bool) -> Vec<Change> {
         .collect()
 }
 
-/// Where `base` position `at` falls in the side, given its changes, all
-/// of which end at or before `at` or start at or after it.
 fn map_position(changes: &[Change], at: usize) -> usize {
     let mut delta: isize = 0;
     for change in changes {
@@ -281,11 +244,9 @@ fn join(tokens: &[String]) -> String {
     tokens.concat()
 }
 
-/// The diff3 regions of `ours` and `theirs` against `base`.
 fn diff3(base: &[String], ours: &[String], theirs: &[String], lines: bool) -> Vec<Region> {
     let a = changes(base, ours, lines);
     let b = changes(base, theirs, lines);
-    // All changes by base start; group those that touch or overlap.
     let mut all: Vec<(usize, &Change)> = a
         .iter()
         .map(|c| (0, c))
@@ -320,7 +281,6 @@ fn diff3(base: &[String], ours: &[String], theirs: &[String], lines: bool) -> Ve
             }
             let start = map_position(all_changes, range.start);
             let end = map_position(all_changes, range.end);
-            // Pure insertions at the end of the range belong to it.
             let end = end.max(mine.iter().map(|c| c.side.end).max().unwrap_or(end));
             let start = start.min(mine.iter().map(|c| c.side.start).min().unwrap_or(start));
             join(&tokens[start.min(tokens.len())..end.min(tokens.len())])
@@ -420,13 +380,11 @@ mod tests {
             merge.resolve(&[Choice::Both]),
             "# Notes\n- mine\n- theirs\n"
         );
-        // The same addition on both sides: once.
         assert_eq!(merge_text(base, ours, ours), ours);
     }
 
     #[test]
     fn a_missing_final_newline_is_no_change() {
-        // The saved file ends with a newline, the buffer does not.
         let base = "Thanks.\nLove, A\n";
         let ours = "Thanks a lot.\nLove, A";
         let theirs = "Thanks.\nLove, A\n\nP.S. The beans too.\n";
@@ -435,7 +393,6 @@ mod tests {
             "Thanks a lot.\nLove, A\n\nP.S. The beans too."
         );
         assert_eq!(merge_text(base, ours, base), ours, "the buffer as it was");
-        // Also when the last block is a conflict.
         let merge = merge(base, "Thanks.\nLove, Arthur", "Thanks.\nCheers\n");
         assert_eq!(merge.conflicts(), 1);
         assert_eq!(merge.resolve(&[Choice::Mine]), "Thanks.\nLove, Arthur");
@@ -475,8 +432,6 @@ mod tests {
         assert_eq!(merge.resolve(&[Choice::Mine]), ours);
     }
 
-    /// Random edits of random texts: a side left as the base never
-    /// changes the other side's text, whatever the edits.
     #[test]
     fn a_side_left_unchanged_yields_the_other_side() {
         let mut state: u64 = 0x2545_f491_4f6c_dd1d;

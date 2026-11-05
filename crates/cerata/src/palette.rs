@@ -1,10 +1,3 @@
-//! The command palette (`command-palette/index.tsx`, `use-fuzzy-search.ts`):
-//! the window's commands filtered by substring, files from the index 50 ms
-//! after typing stops (20 results, matched characters highlighted), the
-//! global recents in a compact window, a create-note intent, and the
-//! library switcher (US-080): the registry's libraries, then the actions of
-//! one of them (Tab, or Enter on a library that is not found).
-
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -23,7 +16,6 @@ use gpui::{
 use crate::editor::text_field::{FieldEvent, TextField};
 use crate::editor::theme;
 
-/// File search waits this long after the last keystroke.
 pub const SEARCH_DEBOUNCE: Duration = Duration::from_millis(50);
 pub const SEARCH_LIMIT: usize = 20;
 
@@ -44,7 +36,6 @@ pub enum Intent {
     Libraries,
 }
 
-/// What can be done with one library from the switcher.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LibraryAction {
     Open,
@@ -63,8 +54,6 @@ impl LibraryAction {
         }
     }
 
-    /// The actions of `library`: a library that is not found can only be
-    /// located or removed.
     pub fn for_library(library: &Library) -> Vec<Self> {
         if !library.exists() {
             return vec![Self::Locate, Self::Remove];
@@ -78,7 +67,6 @@ impl LibraryAction {
     }
 }
 
-/// A command the palette offers (Writer's list, in order).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Command {
     ToggleSidebar,
@@ -87,7 +75,6 @@ pub enum Command {
     CloseTab,
     CloseAllTabs,
     OpenWorkspace,
-    /// The registry's libraries (US-080).
     SwitchLibrary,
     CloseWorkspace,
     ToggleTheme,
@@ -95,23 +82,13 @@ pub enum Command {
     ZoomOut,
     ResetZoom,
     Settings,
-    /// "Insert image…" in the active note (US-062), offered with a note.
     InsertImage,
-    /// "Image width: 50%" and the other presets, offered with the caret on
-    /// a block image or in its source (US-068).
     ImageWidth(crate::editor::resize::Preset),
-    /// "Copy image" and the other image actions, offered where they apply
-    /// with the caret on a block image or in its source (US-069).
     Image(crate::editor::image_actions::ImageAction),
-    /// An editor command of the registry, offered where it applies (the
-    /// table commands, with the caret in a drawn table: US-053).
     Editor(&'static str),
-    /// A history command (EP-018): the panel, and its actions while open.
     History(HistoryCommand),
 }
 
-/// The history's commands: those that open a view need a library, the
-/// panel's actions an open panel (US-091), "Review Conflict" a note.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HistoryCommand {
     ShowNoteHistory,
@@ -202,15 +179,12 @@ impl Command {
     }
 }
 
-/// What the window looks like when the palette opens, for the commands'
-/// availability (`index.tsx:129-236`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Availability {
     pub has_workspace: bool,
     pub compact: bool,
     pub has_active_file: bool,
     pub has_tabs: bool,
-    /// The history panel is open (its actions are offered).
     pub history_open: bool,
 }
 
@@ -235,8 +209,6 @@ impl Command {
     }
 }
 
-/// Commands whose label contains `query`, ignoring case (Writer filters by
-/// substring, not fuzzily).
 pub fn filter_commands(available: &[Command], query: &str) -> Vec<Command> {
     let query = query.trim().to_lowercase();
     available
@@ -246,7 +218,6 @@ pub fn filter_commands(available: &[Command], query: &str) -> Vec<Command> {
         .collect()
 }
 
-/// The note a create query names: trimmed, `.md` added unless present.
 pub fn note_file_name(query: &str) -> Option<String> {
     let name = query.trim();
     if name.is_empty() {
@@ -259,7 +230,6 @@ pub fn note_file_name(query: &str) -> Option<String> {
     })
 }
 
-/// Byte ranges of the characters at `indices` (char positions).
 pub fn char_ranges(text: &str, indices: &[u32]) -> Vec<Range<usize>> {
     text.char_indices()
         .enumerate()
@@ -274,7 +244,6 @@ pub enum Choice {
     File(PathBuf),
     Recent(PathBuf),
     Create(String),
-    /// A library of the switcher, by id: opened when chosen.
     Library(String),
     LibraryAction(String, LibraryAction),
 }
@@ -285,7 +254,6 @@ pub enum PaletteEvent {
     Dismissed,
 }
 
-/// A global recent file, as the compact window shows it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RecentFile {
     pub path: PathBuf,
@@ -293,12 +261,10 @@ pub struct RecentFile {
 }
 
 impl Palette {
-    /// The global recents listed (compact window).
     pub fn recents(&self) -> &[RecentFile] {
         &self.recents
     }
 
-    /// New labels for the recents, read in the background.
     pub fn relabel_recents(
         &mut self,
         labels: &std::collections::HashMap<PathBuf, String>,
@@ -320,9 +286,7 @@ pub struct Palette {
     runtime: Option<Arc<WorkspaceRuntime>>,
     compact: bool,
     recents: Vec<RecentFile>,
-    /// The switcher's libraries, most recently opened first.
     pub libraries: Vec<Library>,
-    /// The library whose actions are listed instead of the libraries.
     pub library_menu: Option<String>,
     pub files: Vec<SearchResult>,
     pub selected: usize,
@@ -429,8 +393,6 @@ impl Palette {
         cx.notify();
     }
 
-    /// The items shown, in order: commands, files, recents, or the note
-    /// to create.
     pub fn choices(&self, cx: &App) -> Vec<Choice> {
         let query = self.query(cx);
         if self.intent == Intent::CreateFile {
@@ -487,8 +449,6 @@ impl Palette {
         self.libraries.iter().find(|library| library.id == id)
     }
 
-    /// The libraries whose name or path holds `query` (ignoring case), or
-    /// the actions of the library whose menu is open.
     fn library_choices(&self, query: &str) -> Vec<Choice> {
         if let Some(id) = &self.library_menu {
             return self
@@ -514,7 +474,6 @@ impl Palette {
             .collect()
     }
 
-    /// Lists the actions of the selected library (Tab in the switcher).
     pub fn open_library_menu(&mut self, cx: &mut Context<Self>) {
         if self.intent != Intent::Libraries || self.library_menu.is_some() {
             return;
@@ -526,7 +485,6 @@ impl Palette {
         }
     }
 
-    /// A library that is not found is not opened: its actions show.
     pub fn choose(&mut self, choice: Choice, cx: &mut Context<Self>) {
         if let Choice::Library(id) = &choice
             && self.library(id).is_some_and(|library| !library.exists())
@@ -558,7 +516,6 @@ impl Palette {
         })
     }
 
-    /// The text under the list when it says nothing else.
     pub fn empty_text(&self, cx: &App) -> Option<&'static str> {
         let query = self.query(cx);
         if self.intent == Intent::CreateFile && query.trim().is_empty() {
@@ -577,8 +534,6 @@ impl Palette {
         }
     }
 
-    /// Without a workspace the palette offers commands only, and says so.
-    /// The switcher names its keys.
     pub fn no_workspace_hint(&self) -> Option<&'static str> {
         match self.intent {
             Intent::Libraries if self.library_menu.is_some() => Some("Escape to go back"),
@@ -715,8 +670,6 @@ impl Render for Palette {
             .id("palette")
             .role(gpui::Role::Dialog)
             .aria_label("Command palette")
-            // Tab stays in the palette (a modal) instead of reaching the
-            // controls behind it.
             .on_action(cx.listener(|this, _: &crate::a11y::FocusNext, _, cx| {
                 cx.stop_propagation();
                 this.open_library_menu(cx);
@@ -748,8 +701,6 @@ impl Render for Palette {
     }
 }
 
-/// Where a created note goes: the workspace root, else the active file's
-/// folder (`createBaseDir`).
 pub fn create_base(root: Option<&Path>, active: Option<&Path>) -> Option<PathBuf> {
     root.map(Path::to_path_buf)
         .or_else(|| active.and_then(Path::parent).map(Path::to_path_buf))

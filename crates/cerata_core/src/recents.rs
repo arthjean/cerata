@@ -1,10 +1,3 @@
-//! Recent files (30), app-wide.
-//!
-//! Ported from Writer `commands/recents.rs` (recent files, atomic, with the
-//! migration from a plain path list), through [`JsonStore`]. Writer's
-//! recent workspaces (`commands/workspace.rs:699-744`) became the library
-//! registry ([`crate::library`]), which migrates `recent_workspaces.json`.
-
 use crate::json_store::{JsonStore, StoreError};
 use crate::markdown::is_markdown_path;
 use serde::{Deserialize, Serialize};
@@ -16,8 +9,6 @@ pub const MAX_RECENT_FILES: usize = 30;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RecentEntry {
     pub path: String,
-    /// Seconds since the Unix epoch; 0 for entries migrated from Writer's
-    /// older path-only format.
     pub opened_at: u64,
 }
 
@@ -56,12 +47,10 @@ impl RecentsStore {
         }
     }
 
-    /// Most recent first.
     pub fn files(&self) -> Result<Vec<RecentEntry>, StoreError> {
         self.files.load_with(migrate_paths)
     }
 
-    /// Records an opened Markdown file; other paths are ignored.
     pub fn record_file(&self, path: &Path) -> Result<(), StoreError> {
         if !path.is_file() || !is_markdown_path(path) {
             return Ok(());
@@ -85,7 +74,6 @@ impl RecentsStore {
             })
     }
 
-    /// Paths of the recent files that still exist.
     pub fn existing_files(&self) -> Result<Vec<PathBuf>, StoreError> {
         Ok(self
             .files()?
@@ -100,8 +88,6 @@ impl RecentsStore {
 mod tests {
     use super::*;
     use tempfile::TempDir;
-
-    // Ported from Writer `commands/recents.rs` tests.
 
     #[test]
     fn push_recent_dedupes_and_moves_to_front() {

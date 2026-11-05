@@ -1,6 +1,3 @@
-//! The window's commands: the palette and what it runs, opening and
-//! closing workspaces, the compact window's recents, zoom and theme.
-
 use std::path::{Path, PathBuf};
 
 use cerata_core::fs::titles::{extract_title, title_from_text};
@@ -15,7 +12,6 @@ use crate::routing::{Chrome, OpenRequest};
 use crate::sidebar::tree::stem;
 use crate::zoom;
 
-/// Global recents a compact window lists (`use-global-recent-files.ts:27`).
 pub const COMPACT_RECENTS: usize = 30;
 
 impl WindowView {
@@ -29,10 +25,6 @@ impl WindowView {
         }
     }
 
-    /// Global recent files, newest first, without `exclude`; labeled by
-    /// title, else stem. No file is read here (US-083): a title comes from
-    /// the open document, the library's index or the titles read last time;
-    /// [`Self::refresh_recent_titles`] reads the others in the background.
     pub fn global_recents(&self, exclude: Option<&Path>, cx: &gpui::App) -> Vec<RecentFile> {
         let core = crate::app::core(cx);
         core.recents
@@ -53,7 +45,6 @@ impl WindowView {
             .collect()
     }
 
-    /// A note's title without reading its file, if one is known.
     pub fn known_title(&self, path: &Path) -> Option<String> {
         if let Some(doc) = self
             .docs
@@ -71,8 +62,6 @@ impl WindowView {
         self.recent_titles.get(path).cloned().flatten()
     }
 
-    /// Reads the titles of `recents` off the UI thread, then relabels the
-    /// recents shown (the compact picker, the palette).
     pub fn refresh_recent_titles(&mut self, recents: &[RecentFile], cx: &mut Context<Self>) {
         let paths: Vec<PathBuf> = recents.iter().map(|recent| recent.path.clone()).collect();
         if paths.is_empty() {
@@ -169,9 +158,6 @@ impl WindowView {
             self._palette_events = None;
             self.active_editor = None;
             self.sync_active(window, cx);
-            // Without an editor, `sync_active` changes nothing: the focus
-            // would stay on the dropped palette field and no shortcut
-            // would reach the shell.
             self.focus_page(window, cx);
             cx.notify();
         }
@@ -188,7 +174,6 @@ impl WindowView {
         }
     }
 
-    /// Routes `request` from this window, after the current update.
     pub fn open_elsewhere(
         &mut self,
         request: OpenRequest,
@@ -199,7 +184,6 @@ impl WindowView {
         if self.chrome == Chrome::Compact
             && let OpenRequest::File(path) = &request
         {
-            // A compact window navigates to the file it is asked for.
             let path = path.clone();
             if let Err(error) = self.make_compact(&path, window, cx) {
                 self.show_notice(format!("Cannot open: {error}"), cx);
@@ -261,9 +245,6 @@ impl WindowView {
         }
     }
 
-    /// The active note's commands: "Insert image…" (US-062), the preset
-    /// widths and the actions of the block image at its caret (US-068,
-    /// US-069), then the table commands that apply at its caret (US-053).
     pub(super) fn editor_commands(&self, cx: &gpui::App) -> Vec<Command> {
         let super::Page::Editor(editor) = self.page(cx) else {
             return Vec::new();
@@ -295,8 +276,6 @@ impl WindowView {
             .collect()
     }
 
-    /// "Create: name.md" in the workspace root (or the active file's
-    /// folder), then opened.
     fn create_note(&mut self, name: &str, window: &mut Window, cx: &mut Context<Self>) {
         let Some(fs) = self.fs() else { return };
         let Some(base) =
@@ -324,7 +303,6 @@ impl WindowView {
         }
     }
 
-    /// "Open Workspace" and the welcome screen's "Add Folder".
     pub fn pick_workspace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: false,
@@ -345,8 +323,6 @@ impl WindowView {
         .detach();
     }
 
-    /// The welcome screen's "Open File…": see
-    /// [`super::libraries::open_picked_file`].
     pub fn pick_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: true,
@@ -367,8 +343,6 @@ impl WindowView {
         .detach();
     }
 
-    /// "Close Workspace": the session is saved and the window shows the
-    /// welcome screen, with the libraries read again.
     pub fn close_workspace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(root) = self.workspace_root().map(Path::to_path_buf) else {
             return;
@@ -398,7 +372,6 @@ impl WindowView {
         cx.notify();
     }
 
-    /// Back to the app: the active tab gets the focus again.
     pub fn close_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !std::mem::take(&mut self.settings_open) {
             return;
@@ -407,8 +380,6 @@ impl WindowView {
         self.focus_page(window, cx);
         cx.notify();
     }
-
-    // ---- Zoom and theme ----
 
     pub fn zoom(&self) -> f64 {
         zoom::normalize(
@@ -419,8 +390,6 @@ impl WindowView {
         )
     }
 
-    /// Writes `editor.zoom` only (the font size is untouched) unless it is
-    /// already the value.
     pub fn set_zoom(&mut self, value: f64, cx: &mut Context<Self>) {
         if (value - self.zoom()).abs() < f64::EPSILON {
             return;
@@ -429,7 +398,6 @@ impl WindowView {
         self.settings_applied(cx);
     }
 
-    /// "Toggle Dark Mode": system, then light, then dark.
     pub fn cycle_theme(&mut self, cx: &mut Context<Self>) {
         let next = crate::theme::Preference::parse(
             self.core
@@ -448,7 +416,6 @@ impl WindowView {
     }
 }
 
-/// "Add Folder" once a folder is picked: it opens as the workspace.
 pub fn open_picked_folder(
     cx: &mut gpui::App,
     root: PathBuf,

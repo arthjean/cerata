@@ -1,13 +1,3 @@
-//! A select on coss ui's (https://coss.com/ui/docs/components/select),
-//! re-implemented from its measures and behavior over Base UI: a 32 px
-//! trigger with an up-down chevron; a popup that puts the chosen option
-//! over the trigger, its text on the trigger's text; 28 px options with the
-//! check in a 16 px column; scroll arrows at the ends of a long list.
-//!
-//! The open popup holds the keyboard focus: Up, Down, Home and End move,
-//! letters jump to the next option that starts with them, Enter and Space
-//! choose, Escape and Tab close. A press outside closes it.
-
 use std::time::{Duration, Instant};
 
 use gpui::{
@@ -24,28 +14,19 @@ const ITEM_HEIGHT: f32 = 28.0;
 const PADDING: f32 = 4.0;
 const BORDER: f32 = 1.0;
 const RADIUS: f32 = crate::input::RADIUS;
-/// What the popup keeps clear of the window's edges.
 const EDGE: f32 = 8.0;
-/// The option's text starts 37 px into the popup (border 1, padding 4,
-/// option padding 8, check column 16, gap 8), the trigger's 12 px into
-/// it: the popup starts 25 px left of the trigger to line them up.
 const TEXT_SHIFT: f32 = 25.0;
-/// Pixels an arrow scrolls per frame while the pointer is on it.
 const ARROW_SPEED: f32 = 4.0;
 const TYPEAHEAD_RESET: Duration = Duration::from_millis(700);
 
-/// coss ui's `accent`, the highlighted option: the text at 4 %.
 pub(crate) fn highlight() -> Hsla {
     theme::text().opacity(0.04)
 }
 
-/// coss ui's `border`: the text at 8 % (6 % in dark mode).
 pub(crate) fn line() -> Hsla {
     theme::text().opacity(if theme::palette().dark { 0.06 } else { 0.08 })
 }
 
-/// coss ui's popup surface, shared with the menu (`crate::menu`): a 10 px
-/// radius, a [`line`] border and `shadow-lg` at 5 %.
 pub(crate) fn surface<E: Styled>(el: E) -> E {
     el.rounded(px(RADIUS))
         .border_1()
@@ -57,8 +38,6 @@ pub(crate) fn surface<E: Styled>(el: E) -> E {
         ])
 }
 
-/// The trigger around `value`, `width` wide, focused through `focus`; the
-/// caller opens the popup. Keyboard focus draws the input's ring.
 pub fn trigger(
     el: Stateful<Div>,
     label: impl Into<SharedString>,
@@ -71,7 +50,6 @@ pub fn trigger(
     let ring = focus.is_focused(window) && window.last_input_was_keyboard();
     crate::a11y::control(el, Role::ComboBox, label)
         .track_focus(focus)
-        // The ring below replaces the shell's focus border.
         .focus_visible(|s| s)
         .aria_expanded(open)
         .relative()
@@ -114,8 +92,6 @@ pub fn trigger(
         .child(icon(Icon::UnfoldMore, 16.0, theme::text().opacity(0.8)).mr(px(-4.0)))
 }
 
-/// Where the popup goes: its top-left corner, its height, and the scroll
-/// that puts the chosen option over the trigger.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Placement {
     pub origin: Point<Pixels>,
@@ -123,11 +99,6 @@ pub struct Placement {
     pub scroll: f32,
 }
 
-/// Base UI's `alignItemWithTrigger`: the chosen option (the first when
-/// none is) lands on the trigger. The popup is cut where it would leave
-/// the window, and a cut above is scrolled away so the option stays on the
-/// trigger. With less than three options' room left, it takes the whole
-/// height and keeps the option in view instead.
 pub fn place(
     anchor: Bounds<Pixels>,
     viewport: Size<Pixels>,
@@ -170,8 +141,6 @@ enum Arrow {
     Down,
 }
 
-/// An open popup: whose it is (`key`), its options and the trigger's
-/// bounds.
 pub struct SelectPopup {
     pub key: String,
     pub options: Vec<SharedString>,
@@ -183,7 +152,6 @@ pub struct SelectPopup {
     arrow: Option<Arrow>,
     typed: String,
     typed_at: Option<Instant>,
-    /// Taken on the first frame; the focus to give back on close.
     focus: Option<FocusHandle>,
     restore: Option<FocusHandle>,
 }
@@ -211,7 +179,6 @@ impl SelectPopup {
         }
     }
 
-    /// The highlight `step` options on, kept in the list (no wrap).
     fn step(&mut self, step: isize) {
         let last = self.options.len().saturating_sub(1);
         let next = match self.highlighted {
@@ -229,8 +196,6 @@ impl SelectPopup {
         }
     }
 
-    /// Typeahead: the keys typed within 700 ms of each other make a prefix,
-    /// matched from the highlighted option on (a repeated letter cycles).
     pub fn type_char(&mut self, ch: &str, now: Instant) {
         if self
             .typed_at
@@ -248,8 +213,6 @@ impl SelectPopup {
         };
         let count = self.options.len();
         let from = self.highlighted.unwrap_or(0);
-        // A new prefix may match the highlighted option itself; a repeated
-        // letter moves past it.
         let skip = usize::from(repeated && self.highlighted.is_some());
         let found = (0..count)
             .map(|offset| (from + skip + offset) % count.max(1))
@@ -260,15 +223,11 @@ impl SelectPopup {
     }
 }
 
-/// A view that shows one of these popups.
 pub trait HasSelect: Sized + 'static {
     fn select(&mut self) -> &mut Option<SelectPopup>;
-    /// `option` was chosen in the popup opened for `key`.
     fn choose(&mut self, key: &str, option: &str, window: &mut Window, cx: &mut Context<Self>);
 }
 
-/// Closes the popup; `restore` gives the focus back to where it was when
-/// it opened (the trigger).
 pub fn close<V: HasSelect>(view: &mut V, restore: bool, window: &mut Window, cx: &mut Context<V>) {
     if let Some(popup) = view.select().take()
         && restore
@@ -353,7 +312,6 @@ fn arrow<V: HasSelect>(direction: Arrow, cx: &mut Context<V>) -> AnyElement {
         .justify_center()
         .when(up, |d| d.items_start())
         .when(!up, |d| d.items_end())
-        // Solid on the arrow's 24 px, then fading over the options.
         .bg(linear_gradient(
             if up { 180.0 } else { 0.0 },
             linear_color_stop(surface, 0.6),
@@ -377,8 +335,6 @@ fn arrow<V: HasSelect>(direction: Arrow, cx: &mut Context<V>) -> AnyElement {
         .into_any_element()
 }
 
-/// Draws `popup`; on its first frame it places itself and takes the
-/// keyboard focus.
 pub fn render<V: HasSelect>(
     popup: &mut SelectPopup,
     window: &mut Window,
@@ -407,7 +363,6 @@ pub fn render<V: HasSelect>(
                 .scroll
                 .set_offset(point(px(0.0), px(-placement.scroll)));
             popup.placement = Some(placement);
-            // The scroll arrows need the list's laid-out height.
             window.request_animation_frame();
             placement
         }
@@ -494,7 +449,6 @@ pub fn render<V: HasSelect>(
                 on_key(view, event, window, cx)
             }),
         )
-        // A press on the trigger is the trigger's: it closes the popup.
         .on_mouse_down_out(
             cx.listener(move |view: &mut V, event: &MouseDownEvent, window, cx| {
                 if !anchor.contains(&event.position) {
@@ -538,8 +492,6 @@ mod tests {
 
     #[test]
     fn the_chosen_option_lands_on_the_trigger() {
-        // Third of five: its row (1 + 4 + 2 * 28 = 61) sits 2 px into the
-        // trigger, so the popup starts 59 px above the trigger's top.
         let placed = place(anchor(300.0), window(), 5, Some(2));
         assert_eq!(placed.origin, point(px(375.0), px(300.0 + 2.0 - 61.0)));
         assert_eq!(placed.height, 5.0 * 28.0 + 10.0);
@@ -550,14 +502,12 @@ mod tests {
     fn near_the_top_the_popup_is_cut_and_scrolled_to_stay_aligned() {
         let placed = place(anchor(60.0), window(), 12, Some(6));
         assert_eq!(placed.origin.y, px(EDGE));
-        // Row 6 (1 + 4 + 168 = 173) still meets the trigger (60 + 2).
         assert_eq!(f32::from(placed.origin.y) + 173.0 - placed.scroll, 62.0);
         assert_eq!(placed.height, 12.0 * 28.0 + 10.0 - placed.scroll);
     }
 
     #[test]
     fn without_room_for_three_options_the_popup_takes_the_whole_height() {
-        // Near the bottom, the first option would leave the popup 1 row.
         let placed = place(anchor(740.0), window(), 5, Some(0));
         assert_eq!(placed.height, 5.0 * 28.0 + 10.0);
         assert_eq!(placed.origin.y, px(800.0 - EDGE - placed.height));

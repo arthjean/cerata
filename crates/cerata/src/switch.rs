@@ -1,10 +1,3 @@
-//! A switch on coss ui's (https://coss.com/ui/docs/components/switch),
-//! re-implemented from its measures and motion over Base UI: a 30 by 18
-//! pill with a 1 px inset, a 16 px thumb that slides 12 px in 150 ms, the
-//! track fading from the input tint to the accent (coss ui's primary) in
-//! 200 ms, and the thumb stretching 10 % toward the center while pressed.
-//! Reduced motion jumps to the end state.
-
 use std::time::{Duration, Instant};
 
 use gpui::{
@@ -17,16 +10,12 @@ use crate::editor::theme;
 use crate::sidebar::reveal::Reveal;
 
 const THUMB: f32 = 16.0;
-/// The thumb's travel: the 28 px inside less the thumb's 16, less coss
-/// ui's 4 px overlap (`translate-x: thumb - 4px`).
 const TRAVEL: f32 = THUMB - 4.0;
 const STRETCH: f32 = THUMB * 0.1;
 const SLIDE: Duration = Duration::from_millis(150);
 const FADE: Duration = Duration::from_millis(200);
 const PRESS: Duration = Duration::from_millis(100);
 
-/// A switch's motion: the thumb's travel, the track's tint and the press
-/// stretch, each from 0 to 1.
 #[derive(Clone, Copy, Debug)]
 pub struct SwitchMotion {
     on: bool,
@@ -47,8 +36,6 @@ impl SwitchMotion {
         }
     }
 
-    /// Follows the value and the pointer: a change animates, or lands at
-    /// once under reduced motion.
     pub fn sync(&mut self, on: bool, pressed: bool, now: Instant, reduce: bool) {
         if on != self.on {
             self.on = on;
@@ -74,9 +61,6 @@ impl SwitchMotion {
         self.thumb.animating(now) || self.track.animating(now) || self.press.animating(now)
     }
 
-    /// The thumb's left edge and width inside the track at `now`. The
-    /// stretch grows from the left edge when off and from the right when
-    /// on, toward the center either way.
     pub fn thumb(&self, now: Instant) -> (f32, f32) {
         let travel = self.thumb.amount(now);
         let stretch = STRETCH * self.press.amount(now);
@@ -84,8 +68,6 @@ impl SwitchMotion {
     }
 }
 
-/// The switch for a value `on`, drawn as `motion` stands at `now`; the
-/// caller toggles it on click.
 pub fn switch(
     el: Stateful<Div>,
     label: impl Into<SharedString>,
@@ -102,18 +84,15 @@ pub fn switch(
     let (left, width) = motion.thumb(now);
     crate::a11y::control(el, Role::Switch, label)
         .track_focus(focus)
-        // The ring below replaces the shell's focus border.
         .focus_visible(|s| s)
         .aria_toggled(if on { Toggled::True } else { Toggled::False })
         .relative()
         .flex_none()
-        // 30 by 18; the thumb sits 1 px in, coss ui's `p-px`.
         .border_0()
         .w(px(2.0 * THUMB - 2.0))
         .h(px(THUMB + 2.0))
         .rounded_full()
         .bg(input)
-        // coss ui's `ring-2` 1 px off the pill.
         .when(ring, |d| {
             d.child(crate::input::halo(
                 3.0,

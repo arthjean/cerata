@@ -1,6 +1,3 @@
-//! GPUI interaction tests on the test platform (deterministic monospace
-//! `NoopTextSystem`: every BMP character advances 0.6 em).
-
 use std::path::PathBuf;
 
 use gpui::{
@@ -75,7 +72,6 @@ fn rendering_is_virtualized_on_a_large_note(cx: &mut TestAppContext) {
     editor.update_in(cx, |editor, window, _| {
         assert!(editor.laid_out.start > 500, "{:?}", editor.laid_out);
         assert!(editor.laid_out.len() < 120);
-        // Hit-testing through the height map lands on the line drawn there.
         let ix = editor.scroll_line + 3;
         let top = editor.line_screen_top(ix);
         let viewport = editor.viewport.expect("painted");
@@ -105,8 +101,6 @@ fn block_image_is_exactly_as_tall_as_the_image(cx: &mut TestAppContext) {
             );
             let top = editor.line_screen_top(ix);
             let next = editor.line_screen_top(ix + 1);
-            // Screen positions are f32 sums of f64 prefix sums: compare
-            // them at sub-pixel tolerance; the item height itself is exact.
             assert!((next - top - px(expected)).abs() < px(1e-3));
             tops.push((ix, top, expected));
         }
@@ -156,8 +150,6 @@ fn drag_across_hidden_marks_and_an_image_selects_the_buffer_range(cx: &mut TestA
     cx.simulate_mouse_move(over_image, MouseButton::Left, Modifiers::none());
     editor.update_in(cx, |editor, window, _| {
         assert_eq!(editor.selected_range, 0..image_end);
-        // Frozen while dragging: the selection touches every node of line 0
-        // but nothing reflows under the pointer.
         let line = editor.layout_line(0, window);
         assert_eq!(line.display.text, "plain bold and link end");
         assert_eq!(
@@ -173,7 +165,6 @@ fn drag_across_hidden_marks_and_an_image_selects_the_buffer_range(cx: &mut TestA
             &editor.buffer.text()[editor.selected_range.clone()],
             &format!("{line0}\n![a](a.svg)\nafter")
         );
-        // Released: the selection now touches the nodes, so they reveal.
         assert_eq!(editor.layout_line(0, window).display.text, line0);
         assert_eq!(
             editor.layout_line(1, window).block.map(|b| b.mode),
@@ -190,7 +181,6 @@ fn ime_composition_marks_text_at_the_caret_then_commits(cx: &mut TestAppContext)
         editor.move_to(caret, window, cx);
         let caret_utf16 = editor.buffer.offset_to_utf16(caret);
 
-        // What MS-IME, macOS and fcitx5/ibus do while composing.
         editor.replace_and_mark_text_in_range(None, "k", Some(1..1), window, cx);
         assert_eq!(editor.buffer.line_text(1), "hello kworld");
         assert_eq!(
@@ -212,7 +202,6 @@ fn ime_composition_marks_text_at_the_caret_then_commits(cx: &mut TestAppContext)
             Some(caret_utf16 + 2..caret_utf16 + 2)
         );
 
-        // Marked text is drawn underlined.
         let line = editor.layout_line(1, window);
         let marked = editor
             .marked_range
@@ -229,7 +218,6 @@ fn ime_composition_marks_text_at_the_caret_then_commits(cx: &mut TestAppContext)
         }
         assert_eq!(underlined, vec![6..6 + "かん".len()]);
 
-        // The candidate window is positioned from the caret bounds.
         let selection = editor
             .selected_text_range(false, window, cx)
             .expect("selection")
@@ -246,7 +234,6 @@ fn ime_composition_marks_text_at_the_caret_then_commits(cx: &mut TestAppContext)
         assert_eq!(bounds.origin.y, editor.line_screen_top(1));
         assert_eq!(bounds.size.height, px(30.0));
 
-        // Commit.
         editor.replace_text_in_range(None, "漢", window, cx);
         assert_eq!(editor.buffer.line_text(1), "hello 漢world");
         assert_eq!(editor.marked_text_range(window, cx), None);
@@ -262,12 +249,10 @@ fn dead_key_sequences_produce_the_composed_character(cx: &mut TestAppContext) {
     let (editor, cx) = open(cx, "x\n");
     editor.update_in(cx, |editor, window, cx| {
         editor.move_to(1, window, cx);
-        // macOS and Linux show the dead key as marked text, then commit.
         editor.replace_and_mark_text_in_range(None, "^", Some(1..1), window, cx);
         assert_eq!(editor.buffer.line_text(0), "x^");
         editor.replace_text_in_range(None, "ê", window, cx);
         assert_eq!(editor.buffer.line_text(0), "xê");
-        // Windows delivers WM_CHAR 'ê' after WM_DEADCHAR: one plain insert.
         editor.replace_text_in_range(None, "ê", window, cx);
         assert_eq!(editor.buffer.line_text(0), "xêê");
         assert_eq!(editor.marked_range, None);

@@ -1,24 +1,3 @@
-//! Workspace file watcher.
-//!
-//! Ported from Writer `watcher.rs` (`start_watcher`, event grouping,
-//! `spawn_ignore_rebuild`, membership updates) with these fixes:
-//! - echoes of Cerata's own saves are recognized by canonical path and
-//!   BLAKE3 hash ([`SelfWriteLog`]), not by a 2 s blind window, so an
-//!   external change right after a save is still reported (defect 7), and
-//!   an event whose content hash is the one the index knows is no change;
-//! - a note removed and one created in the same batch with the same hash,
-//!   or a similar content, are reported as one rename (US-085);
-//! - a watch error asks for a reconciliation (US-084), which catches what
-//!   the dropped events missed;
-//! - the index is updated in place, at a cost proportional to the changed
-//!   paths ([`LiveIndex`]); Writer cloned the whole index per event;
-//! - the same ignore model and Markdown predicate as index and sidebar;
-//! - a `.gitignore` change rebuilds the matcher and the index off the
-//!   watcher thread; a `.cerata/config` change reloads the settings;
-//! - on Linux, hitting `max_user_watches` degrades to watching the folders of
-//!   open files, with a single notice naming the `sysctl` fix;
-//! - deleting the watched root closes the workspace instead of crashing.
-
 use crate::epoch::EpochToken;
 use crate::history::{Cause, History, Request, conflict_version};
 use crate::ignore::{WorkspaceIgnore, is_gitignore_path};
@@ -36,33 +15,20 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant};
 
-/// Events are grouped over this window before being processed.
 pub const BATCH_WINDOW: Duration = Duration::from_millis(300);
 
-/// How often an idle watcher checks that the workspace root still exists.
 pub const ROOT_CHECK_INTERVAL: Duration = Duration::from_secs(1);
 
-/// What changed. Every event is delivered inside a [`WatchEnvelope`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WatchEvent {
-    /// A Markdown file changed on disk through another program.
     FileChanged { path: PathBuf, change: FileChange },
-    /// The listing of a folder changed (entries added, removed or renamed).
     DirectoryChanged { path: PathBuf },
-    /// `{root}/.cerata/config` changed; the settings were reloaded.
     SettingsChanged,
-    /// A `.gitignore` changed; matcher and index were rebuilt.
     IgnoreRebuilt,
-    /// The workspace root was deleted or moved away. The watcher stopped.
     RootRemoved,
-    /// The first index of the workspace is complete.
     IndexComplete { file_count: usize },
-    /// The OS watch limit was reached; only open files' folders are watched.
     WatchLimited { message: String },
-    /// A note was renamed or moved outside Cerata (same content, or
-    /// similar enough): its tabs and pins follow it.
     Renamed { from: PathBuf, to: PathBuf },
-    /// Something to tell the user about the library (its store).
     Notice { message: String },
 }
 
@@ -73,7 +39,6 @@ pub enum FileChange {
     Removed,
 }
 
-/// An event tagged with the workspace it belongs to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WatchEnvelope {
     pub root: PathBuf,
@@ -82,33 +47,22 @@ pub struct WatchEnvelope {
 }
 
 impl WatchEnvelope {
-    /// `false` for events of a workspace the window has since left: the
-    /// receiver must drop them.
     pub fn is_for(&self, root: &Path, epoch: u64) -> bool {
         self.root == root && self.epoch == epoch
     }
 }
 
-/// Shared workspace state the watcher keeps current.
 #[derive(Clone)]
 pub struct WatchContext {
-    /// Canonical workspace root.
     pub root: PathBuf,
     pub token: EpochToken,
     pub index: Arc<Mutex<LiveIndex>>,
     pub ignore: Arc<RwLock<Arc<WorkspaceIgnore>>>,
     pub self_writes: Arc<SelfWriteLog>,
-    /// The library's store, kept current with what the watcher sees.
     pub store: Option<Store>,
-    /// The library's history: a change made outside Cerata becomes a
-    /// version (US-089).
     pub history: Option<History>,
-    /// How notes are read (and offline placeholders recognized).
     pub files: Arc<dyn FileAccess>,
-    /// Called on the watcher thread when `.cerata/config` changes.
     pub reload_settings: Option<Arc<dyn Fn() + Send + Sync>>,
-    /// Called on the watcher thread after a watch error or when watching
-    /// becomes limited: events may have been lost.
     pub on_error: Option<Arc<dyn Fn() + Send + Sync>>,
     pub events: Sender<WatchEnvelope>,
 }
@@ -132,8 +86,6 @@ impl WatchContext {
     }
 }
 
-/// The OS watching primitive, behind a trait so the degraded mode can be
-/// tested without exhausting a real inotify limit.
 pub trait WatchBackend: Send {
     fn watch(&mut self, path: &Path, recursive: bool) -> notify::Result<()>;
     fn unwatch(&mut self, path: &Path) -> notify::Result<()>;
@@ -154,8 +106,6 @@ impl<W: Watcher + Send> WatchBackend for W {
     }
 }
 
-/// A running watcher. Dropping it stops the OS watch; the processing thread
-/// ends once the OS side hangs up.
 pub struct WorkspaceWatcher {
     backend: Mutex<Box<dyn WatchBackend>>,
     limited: bool,
@@ -163,7 +113,6 @@ pub struct WorkspaceWatcher {
 }
 
 impl WorkspaceWatcher {
-    /// Starts watching `ctx.root` recursively with the OS backend.
     pub fn start(ctx: WatchContext) -> notify::Result<Self> {
         let (sender, receiver) = std::sync::mpsc::channel();
         let backend = notify::recommended_watcher(move |result| {
@@ -201,13 +150,10 @@ impl WorkspaceWatcher {
         })
     }
 
-    /// `true` when the OS limit forced watching only open files' folders.
     pub fn is_limited(&self) -> bool {
         self.limited
     }
 
-    /// In limited mode, watches exactly the folders of `open_files`
-    /// (non-recursively). A no-op when the whole workspace is watched.
     pub fn set_open_files(&self, open_files: &[PathBuf]) {
         if !self.limited {
             return;
@@ -230,8 +176,6 @@ impl WorkspaceWatcher {
     }
 }
 
-/// Linux reports an exhausted inotify watch budget as `MaxFilesWatch`
-/// (ENOSPC from `inotify_add_watch`).
 pub fn is_watch_limit(error: &notify::Error) -> bool {
     match &error.kind {
         notify::ErrorKind::MaxFilesWatch => true,
@@ -240,7 +184,6 @@ pub fn is_watch_limit(error: &notify::Error) -> bool {
     }
 }
 
-/// The one-time notice shown when the watch limit is reached.
 pub fn watch_limit_message() -> String {
     "This workspace has more folders than Linux allows Cerata to watch, so \
      only the folders of open files are watched. To watch everything, raise \
@@ -250,7 +193,6 @@ pub fn watch_limit_message() -> String {
         .to_owned()
 }
 
-/// Collects the events that arrive within [`BATCH_WINDOW`] of `first`.
 pub(crate) fn collect_batch<T>(
     first: T,
     receiver: &Receiver<T>,
@@ -274,8 +216,6 @@ fn run(ctx: &WatchContext, receiver: &Receiver<notify::Result<Event>>) {
     loop {
         let first = match receiver.recv_timeout(ROOT_CHECK_INTERVAL) {
             Ok(first) => first,
-            // Some backends (ReadDirectoryChangesW) report nothing when the
-            // watched folder itself is renamed or deleted, so poll for it.
             Err(RecvTimeoutError::Timeout) => {
                 if ctx.token.is_stale() {
                     return;
@@ -304,7 +244,6 @@ struct PathChange {
     folder_hint: bool,
 }
 
-/// Applies one batch. Returns `false` when the watcher must stop.
 fn process_batch(ctx: &WatchContext, batch: Vec<notify::Result<Event>>) -> bool {
     let mut order: Vec<PathBuf> = Vec::new();
     let mut changes: std::collections::HashMap<PathBuf, PathChange> = Default::default();
@@ -399,7 +338,6 @@ fn process_batch(ctx: &WatchContext, batch: Vec<notify::Result<Event>>) -> bool 
                 dirs_changed.extend(parent);
             }
         } else if exists {
-            // A non-Markdown file can still change a folder's visibility.
             if change.membership {
                 ctx.index.lock().add_other(&path);
                 dirs_changed.extend(parent);
@@ -437,25 +375,17 @@ fn process_batch(ctx: &WatchContext, batch: Vec<notify::Result<Event>>) -> bool 
     true
 }
 
-/// The Markdown changes of one batch: removals and creations are held
-/// until the batch ends, so a rename is told as one.
 #[derive(Default)]
 struct NoteEvents {
     gone: Vec<Gone>,
     appeared: Vec<Appeared>,
-    /// The bytes of each appeared note, unless Cerata wrote them.
     appeared_bytes: Vec<Option<Vec<u8>>>,
-    /// Versions of the notes changed outside Cerata.
     versions: Vec<Request>,
-    /// Appeared notes that could not be read: never rename candidates.
     unread: Vec<PathBuf>,
     changes: Vec<NoteChange>,
 }
 
 impl NoteEvents {
-    /// A Markdown file exists at `file.path`. Reads it unless it is an
-    /// offline placeholder; an echo of Cerata's own write or a content the
-    /// index already knows is no change. Returns `true` if it is new.
     fn seen(
         &mut self,
         ctx: &WatchContext,
@@ -541,7 +471,6 @@ impl NoteEvents {
         });
     }
 
-    /// Tells the renames, removals and creations, and updates the store.
     fn finish(mut self, ctx: &WatchContext) {
         let matches = if self.gone.is_empty() || self.appeared.is_empty() {
             Default::default()
@@ -566,7 +495,6 @@ impl NoteEvents {
             renamed_gone.insert(*g);
             renamed_appeared.insert(*a);
             let (from, to) = (&self.gone[*g], &self.appeared[*a]);
-            // Renamed and changed: the new content is a version.
             if from.hash != Some(to.hash)
                 && let Some(bytes) = self.appeared_bytes.get_mut(*a).and_then(Option::take)
             {
@@ -580,8 +508,6 @@ impl NoteEvents {
                     sketch: Some(to.sketch.clone()),
                 });
             }
-            // A rename Cerata made keeps the note's id, and the window
-            // already followed it.
             if !ctx.self_writes.is_own_move(&from.path, &to.path) {
                 ctx.send(WatchEvent::Renamed {
                     from: from.path.clone(),
@@ -605,8 +531,6 @@ impl NoteEvents {
             if renamed_appeared.contains(&a) {
                 continue;
             }
-            // A note created outside Cerata, unless empty (a new note); a
-            // sync service's conflict copy is a branch of its original.
             if let Some(bytes) = self
                 .appeared_bytes
                 .get_mut(a)
@@ -637,10 +561,8 @@ impl NoteEvents {
         if let Some(store) = &ctx.store
             && !self.changes.is_empty()
         {
-            // Not waited for: the watcher thread moves on.
             let _ = store.apply(&ctx.token, std::mem::take(&mut self.changes));
         }
-        // After the index rows they belong to.
         if let Some(history) = &ctx.history {
             for request in self.versions.drain(..) {
                 history.record(request);
@@ -649,13 +571,10 @@ impl NoteEvents {
     }
 }
 
-/// Rebuilds matcher and index on a separate thread; publishes both only if
-/// the workspace epoch is unchanged.
 fn spawn_rebuild(ctx: WatchContext) {
     let spawned = std::thread::Builder::new()
         .name("cerata-ignore-rebuild".into())
         .spawn(move || {
-            // A canceled walk means the workspace changed: nothing to publish.
             let Ok(index) = index_workspace(&ctx.root, &ctx.token) else {
                 return;
             };
@@ -665,7 +584,6 @@ fn spawn_rebuild(ctx: WatchContext) {
             *ctx.ignore.write() = index.ignore.clone();
             let mut rebuilt = LiveIndex::from_index(&index);
             {
-                // Contents already read stay known while the file is unchanged.
                 let mut live = ctx.index.lock();
                 for file in index.files.iter() {
                     if let (Some(old), Some(new)) =
@@ -718,7 +636,6 @@ mod tests {
             let counter = EpochCounter::new();
             let index = index_workspace_with_global(&root, None, &counter.token()).unwrap();
             let mut live = LiveIndex::from_index(&index);
-            // As after a first pass: every note's content is known.
             for file in &index.files {
                 if let (Ok(bytes), Some(entry)) = (fs::read(&file.path), live.get_mut(&file.path)) {
                     entry.hash = Some(crate::store::content_hash(&bytes));
@@ -753,14 +670,10 @@ mod tests {
 
         fn start(mut self) -> Self {
             self.watcher = Some(WorkspaceWatcher::start(self.ctx.clone()).unwrap());
-            // FSEvents can deliver the setup writes after the stream starts;
-            // drain until the watcher has been quiet for two batch windows so
-            // they never land in the test's own expectations.
             while self.events.recv_timeout(2 * BATCH_WINDOW).is_ok() {}
             self
         }
 
-        /// Waits for an event matching `pred`, failing after [`WAIT`].
         fn expect(&self, what: &str, pred: impl Fn(&WatchEvent) -> bool) -> WatchEnvelope {
             let deadline = Instant::now() + WAIT;
             loop {
@@ -823,7 +736,6 @@ mod tests {
         h.ctx.self_writes.record(&path, b"ours");
         crate::fs::atomic::atomic_write(&path, b"ours").unwrap();
         h.expect_silence_about(&path, Duration::from_millis(800));
-        // Within the 2 s Writer would have swallowed.
         fs::write(&path, "theirs").unwrap();
         h.expect("external edit after a save", |e| {
             matches!(
@@ -836,8 +748,6 @@ mod tests {
         });
     }
 
-    /// US-086: after an outside edit, a return to the bytes Cerata last
-    /// wrote (an undo, a checkout) is reported, not dropped as an echo.
     #[test]
     fn an_outside_return_to_our_last_write_is_reported() {
         let h = Harness::new(|root| fs::write(root.join("a.md"), "ours").unwrap()).start();
@@ -859,8 +769,6 @@ mod tests {
         h.expect("the return to our last write", modified);
     }
 
-    /// US-085: a note renamed outside Cerata is one event, not a removal
-    /// and a creation, and keeps what the index knew of it.
     #[test]
     fn a_rename_outside_cerata_is_reported_as_one() {
         let h =
@@ -879,7 +787,6 @@ mod tests {
         assert_eq!(index.title(&h.root.join("new.md")), Some("Kept title"));
     }
 
-    /// US-084: an error from the OS watcher (lost events) asks for a pass.
     #[test]
     fn a_watch_error_asks_for_a_reconciliation() {
         struct Quiet;
@@ -913,7 +820,6 @@ mod tests {
     fn rename_moves_index_membership() {
         let h = Harness::new(|root| fs::write(root.join("old.md"), "x").unwrap()).start();
         fs::rename(h.root.join("old.md"), h.root.join("new.md")).unwrap();
-        // One rename, not a removal and a creation (US-085).
         h.expect(
             "rename of the old name",
             |e| matches!(e, WatchEvent::Renamed { from, .. } if *from == h.root.join("old.md")),
@@ -934,7 +840,6 @@ mod tests {
     fn folder_moved_in_is_walked() {
         let h = Harness::new(|_| {}).start();
         let target = h.root.join("batch");
-        // Copy then rename inside the root: a single folder appears.
         let temp = h.root.join("staging-copy");
         fs::create_dir_all(temp.join("deep")).unwrap();
         fs::write(temp.join("one.md"), "x").unwrap();
@@ -1000,8 +905,6 @@ mod tests {
     #[test]
     fn deleting_the_root_stops_the_watcher_with_a_notice() {
         let h = Harness::new(|root| fs::write(root.join("a.md"), "one").unwrap()).start();
-        // Some platforms refuse to delete a watched folder; rename it away,
-        // which is what moving a vault to the trash does.
         let moved = h.root.with_extension("moved");
         fs::rename(&h.root, &moved).unwrap();
         h.expect("root removal", |e| *e == WatchEvent::RootRemoved);
@@ -1012,7 +915,6 @@ mod tests {
     fn batches_group_events_within_the_window() {
         let (sender, receiver) = mpsc::channel();
         let feeder = std::thread::spawn(move || {
-            // Wide margins: CI timers (macOS runners) overshoot short sleeps.
             for (delay, value) in [(0, 1), (100, 2), (100, 3), (1500, 4)] {
                 std::thread::sleep(Duration::from_millis(delay));
                 sender.send(value).unwrap();

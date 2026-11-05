@@ -1,19 +1,3 @@
-//! A library's local store (ADR 0009, EP-017): `store.sqlite` in
-//! `data_local_dir()/cerata/libraries/<id>/`, never in the notes folder nor
-//! in a folder a cloud service syncs.
-//!
-//! The `.md` files stay the only source of truth: the store keeps what can
-//! be rebuilt from them (path, size, modified time, BLAKE3 hash and title of
-//! every note) and the history of the notes (`crate::history`), so deleting
-//! it loses nothing but history.
-//!
-//! One writer connection lives on its own thread; reads open their own
-//! connection on the calling thread (`Connection` is `Send`, not `Sync`).
-//! Every call blocks on SQLite, so none is made on the UI thread. Each
-//! write runs in one transaction that commits only while its
-//! [`EpochToken`] is current: a write of a closed library leaves nothing
-//! partial behind.
-
 use crate::epoch::EpochToken;
 use crate::similarity::Sketch;
 use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, TransactionBehavior, params};
@@ -22,22 +6,15 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender};
 use std::time::{Duration, SystemTime};
 
-/// File name of the store in its library folder.
 pub const STORE_FILE: &str = "store.sqlite";
 
-/// BLAKE3 hash of a file's bytes.
 pub type ContentHash = [u8; 32];
 
 pub fn content_hash(bytes: &[u8]) -> ContentHash {
     *blake3::hash(bytes).as_bytes()
 }
 
-/// Schema migrations, applied in order; the schema version is their count.
 const MIGRATIONS: &[&str] = &[
-    // 1: the note index (US-083). A deleted note keeps its row, marked by
-    // `deleted_at`, so its id survives for history; only live paths are
-    // unique. `sketch` holds the line chunks of the last known content
-    // (similarity of renames, US-085).
     "CREATE TABLE note (
         id INTEGER PRIMARY KEY,
         path TEXT NOT NULL,
@@ -50,12 +27,9 @@ const MIGRATIONS: &[&str] = &[
         deleted_at INTEGER
     );
     CREATE UNIQUE INDEX note_live_path ON note(path) WHERE deleted_at IS NULL;",
-    // 2: the history (EP-018): blobs, versions, devices, and the state of
-    // the retention passes and purges.
     crate::history::SCHEMA,
 ];
 
-/// The schema version this build writes.
 pub const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;
 
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -76,12 +50,9 @@ pub enum StoreError {
     NotADatabase(PathBuf),
 }
 
-/// What opening the store tells the user.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StoreNotice {
-    /// The store's schema is newer than this build: left untouched.
     Newer,
-    /// The store was corrupt: set aside at `set_aside`, a new one started.
     Rebuilt { set_aside: PathBuf },
 }
 
@@ -99,7 +70,6 @@ impl StoreNotice {
     }
 }
 
-/// Result of [`Store::open`]. Without a store the library still opens.
 pub enum StoreOpen {
     Ready {
         store: Store,
@@ -110,8 +80,6 @@ pub enum StoreOpen {
     },
 }
 
-/// One note as the store knows it. `path` is relative to the library
-/// root, `/`-separated.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NoteRecord {
     pub path: String,
@@ -119,40 +87,33 @@ pub struct NoteRecord {
     pub mtime_ns: u64,
     pub hash: Option<ContentHash>,
     pub title: Option<String>,
-    /// A cloud placeholder whose content is not on this device.
     pub offline: bool,
 }
 
-/// A live row of the `note` table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredNote {
     pub id: i64,
     pub record: NoteRecord,
 }
 
-/// One change of the `note` table.
 #[derive(Debug, Clone)]
 pub enum NoteChange {
-    /// Inserts or updates the live note at `record.path`. A `sketch` of
-    /// `None` keeps the stored one.
     Upsert {
         record: NoteRecord,
         sketch: Option<Sketch>,
     },
-    /// The live note at `from` now lives at `record.path`, keeping its id.
     Rename {
         from: String,
         record: NoteRecord,
         sketch: Option<Sketch>,
     },
-    /// Marks the live note at `path` deleted, keeping its row.
-    Delete { path: String },
+    Delete {
+        path: String,
+    },
 }
 
 type Job = Box<dyn FnOnce(&mut Connection) + Send>;
 
-/// Handle on a library's store; clones share the writer thread, which
-/// ends once the last clone is dropped.
 #[derive(Clone)]
 pub struct Store {
     path: PathBuf,
@@ -165,16 +126,11 @@ impl std::fmt::Debug for Store {
     }
 }
 
-/// `data_local_dir()/cerata/libraries/<id>`, given `local_data_dir()/cerata`.
 pub fn library_store_dir(local_data_dir: &Path, library_id: &str) -> PathBuf {
     local_data_dir.join("libraries").join(library_id)
 }
 
 impl Store {
-    /// Opens or creates the store in `dir`. `synced_by` names the cloud
-    /// service syncing a folder ([`crate::cloud::synced_by`]): a synced
-    /// `dir` gets no store. A store of a newer schema is left untouched; a
-    /// corrupt one is set aside with its `-wal` and `-shm` and replaced.
     pub fn open(dir: &Path, synced_by: &dyn Fn(&Path) -> Option<String>) -> StoreOpen {
         if let Some(service) = synced_by(dir) {
             log::warn!(
@@ -188,8 +144,6 @@ impl Store {
             return StoreOpen::Unavailable { notice: None };
         }
         let path = dir.join(STORE_FILE);
-        // SQLite discards the `-wal` of a file that is not a database: such
-        // a file is set aside before SQLite sees it.
         let opened = if has_foreign_header(&path) {
             Err(StoreError::NotADatabase(path.clone()))
         } else {
@@ -254,7 +208,6 @@ impl Store {
         &self.path
     }
 
-    /// Runs `read` on a new read-only connection, on the calling thread.
     pub fn read<T>(
         &self,
         read: impl FnOnce(&Connection) -> rusqlite::Result<T>,
@@ -265,9 +218,6 @@ impl Store {
         Ok(read(&connection)?)
     }
 
-    /// Runs `change` in one transaction on the writer thread. It commits
-    /// only if `token` is still current before and after `change`; the
-    /// answer is `true` once committed. Drop the receiver not to wait.
     pub fn write(
         &self,
         token: &EpochToken,
@@ -284,7 +234,6 @@ impl Store {
                     connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
                 change(&transaction)?;
                 if token.is_stale() {
-                    // Dropping the transaction rolls it back.
                     return Ok(false);
                 }
                 transaction.commit()?;
@@ -303,8 +252,6 @@ impl Store {
         receiver
     }
 
-    /// Runs `job` on the writer connection outside any transaction (a
-    /// `VACUUM`, a checkpoint), after the writes queued before it.
     pub fn maintain<T: Send + 'static>(
         &self,
         job: impl FnOnce(&mut Connection) -> rusqlite::Result<T> + Send + 'static,
@@ -325,8 +272,6 @@ impl Store {
         receiver
     }
 
-    /// Applies `changes` in one transaction (deletions, then renames, then
-    /// upserts), committed only while `token` is current.
     pub fn apply(
         &self,
         token: &EpochToken,
@@ -337,7 +282,6 @@ impl Store {
         })
     }
 
-    /// Every live note.
     pub fn live_notes(&self) -> Result<Vec<StoredNote>, StoreError> {
         self.read(|connection| {
             let mut statement = connection.prepare(
@@ -349,7 +293,6 @@ impl Store {
         })
     }
 
-    /// The live note at `path`.
     pub fn note(&self, path: &str) -> Result<Option<StoredNote>, StoreError> {
         self.read(|connection| {
             connection
@@ -363,7 +306,6 @@ impl Store {
         })
     }
 
-    /// Ids and deletion times of the deleted rows that were at `path`.
     pub fn deleted_at_path(&self, path: &str) -> Result<Vec<(i64, i64)>, StoreError> {
         self.read(|connection| {
             let mut statement = connection.prepare(
@@ -374,7 +316,6 @@ impl Store {
         })
     }
 
-    /// Stored sketches of the live notes at `paths`.
     pub fn sketches(&self, paths: &[String]) -> Result<HashMap<String, Sketch>, StoreError> {
         if paths.is_empty() {
             return Ok(HashMap::new());
@@ -395,14 +336,12 @@ impl Store {
         })
     }
 
-    /// The schema version recorded in the file.
     pub fn schema_version(&self) -> Result<i64, StoreError> {
         self.read(|connection| {
             connection.pragma_query_value(None, "user_version", |row| row.get(0))
         })
     }
 
-    /// Waits until every write queued so far has run.
     pub fn sync(&self) -> Result<(), StoreError> {
         let (done, wait) = std::sync::mpsc::channel();
         let job: Job = Box::new(move |_| {
@@ -423,8 +362,6 @@ enum Opened {
     Newer(i64),
 }
 
-/// Opens the writer connection: reads the schema version first, so a
-/// newer store is never modified, then sets the pragmas and migrates.
 fn open_writer(path: &Path) -> Result<Opened, StoreError> {
     let mut connection = Connection::open(path)?;
     connection.busy_timeout(BUSY_TIMEOUT)?;
@@ -444,7 +381,6 @@ fn open_writer(path: &Path) -> Result<Opened, StoreError> {
     Ok(Opened::Ready(connection))
 }
 
-/// Applies the migrations after `from` in one transaction.
 fn migrate(connection: &mut Connection, from: i64) -> rusqlite::Result<()> {
     if from >= SCHEMA_VERSION {
         return Ok(());
@@ -469,7 +405,6 @@ fn is_corruption(error: &StoreError) -> bool {
     }
 }
 
-/// `true` for a non-empty file that does not start with SQLite's header.
 fn has_foreign_header(path: &Path) -> bool {
     use std::io::Read;
     let Ok(mut file) = std::fs::File::open(path) else {
@@ -482,8 +417,6 @@ fn has_foreign_header(path: &Path) -> bool {
     }
 }
 
-/// Moves `path`, `-wal` and `-shm` to `{name}.corrupt-{YYYYMMDD-HHMMSS}`
-/// (UTC), without replacing an earlier quarantine. Returns the new path.
 fn quarantine(path: &Path) -> Result<PathBuf, StoreError> {
     let stamp = crate::json_store::utc_stamp(SystemTime::now());
     let named = |suffix: &str, n: u32| {
@@ -519,7 +452,6 @@ fn quarantine(path: &Path) -> Result<PathBuf, StoreError> {
     Ok(target)
 }
 
-/// Creates `dir` and its parents; on Unix the store folders are `0700`.
 fn create_private_dir(dir: &Path) -> std::io::Result<()> {
     let mut builder = std::fs::DirBuilder::new();
     builder.recursive(true);
@@ -531,7 +463,6 @@ fn create_private_dir(dir: &Path) -> std::io::Result<()> {
     builder.create(dir)?;
     #[cfg(unix)]
     {
-        // `mode` is masked by the umask and leaves existing folders alone.
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
     }
@@ -691,7 +622,6 @@ mod tests {
             .read(|c| c.pragma_query_value(None, "journal_mode", |r| r.get::<_, String>(0)))
             .unwrap();
         assert_eq!(mode, "wal");
-        // The other pragmas are per connection: checked on the writer.
         let (answer, wait) = std::sync::mpsc::channel();
         let token = EpochCounter::new().token();
         let _ = store.write(&token, move |t| {
@@ -701,7 +631,6 @@ mod tests {
             let _ = answer.send((sync, keys, secure));
             Ok(())
         });
-        // NORMAL is 1.
         assert_eq!(wait.recv().unwrap(), (1, 1, 1));
     }
 
@@ -756,7 +685,6 @@ mod tests {
         assert_eq!(store.note("a.md").unwrap(), None);
         assert_eq!(store.note("b.md").unwrap(), None);
         assert_eq!(store.deleted_at_path("b.md").unwrap().len(), 1);
-        // A new note at a deleted note's path gets a new id.
         store
             .apply(&token, vec![upsert(record("b.md", "B2"))])
             .recv()
@@ -800,7 +728,6 @@ mod tests {
     fn an_older_schema_is_migrated_in_place() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join(STORE_FILE);
-        // A version-0 file: an empty SQLite database.
         Connection::open(&path)
             .unwrap()
             .execute_batch("CREATE TABLE unrelated (x);")
@@ -838,7 +765,6 @@ mod tests {
     fn a_corrupt_store_is_set_aside_with_its_journal_and_rebuilt() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join(STORE_FILE);
-        // Random bytes: SQLITE_NOTADB.
         let mut state: u64 = 0x2545_f491_4f6c_dd1d;
         let garbage: Vec<u8> = (0..8192)
             .map(|_| {
@@ -902,7 +828,6 @@ mod tests {
                 .unwrap()
                 .unwrap()
         );
-        // Canceled mid-transaction: the rows already written roll back.
         let token = counter.token();
         let canceler = counter.clone();
         let committed = store

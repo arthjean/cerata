@@ -1,8 +1,3 @@
-//! Line layout: one document line, its decorations and its inline syntax,
-//! turned into a display line shaped at the line's own font size, with the
-//! chrome drawn around it (list marker, quote bars, code background) and
-//! the block widget it holds.
-
 use std::ops::Range;
 
 use cerata_markdown::list::{ListDecoration, ListDecorations, PrefixKind, list_decorations_in};
@@ -17,7 +12,6 @@ use super::config::{EditorConfig, LineMetrics};
 use super::display::DisplayLine;
 use super::theme;
 
-/// Inline styles from the syntax tree, applied over line ranges.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Span {
     Bold,
@@ -25,24 +19,17 @@ pub enum Span {
     Code,
     Strike,
     Link,
-    /// Revealed syntax: marks, URLs, fences.
     Muted,
 }
 
-/// Everything a run of lines needs, gathered once per frame for the range
-/// the frame shows, so each line does not walk the tree again.
 pub struct FrameInputs {
     pub range: Range<usize>,
     pub decorations: Vec<Decoration>,
-    /// The short decorations' starts and indices, by start, and the long
-    /// ones' indices: a line finds its own without scanning them all, which
-    /// a long table's folded lines would make quadratic (US-057).
     by_start: Vec<(usize, usize)>,
     long: Vec<usize>,
     pub lists: ListDecorations,
     pub spans: Vec<(Range<usize>, Span)>,
     pub highlights: Vec<HighlightSpan>,
-    /// The drawn tables whose content was left out ([`Self::collect_frame`]).
     drawn_tables: Vec<Range<usize>>,
 }
 
@@ -56,8 +43,6 @@ impl FrameInputs {
         Self::from_decorations(state, range, decorations, Vec::new(), highlight)
     }
 
-    /// [`Self::collect`] without the content of the tables drawn as grids:
-    /// a table's layout gathers what the cells it lays out need (US-057).
     pub fn collect_frame(
         state: &EditorState,
         range: Range<usize>,
@@ -80,7 +65,6 @@ impl FrameInputs {
         let mut skipped = drawn_tables.iter().peekable();
         for node in state.tree().iter_range(range.clone()) {
             use NodeKind as K;
-            // The nodes of a drawn table follow it, inside its range.
             while skipped.peek().is_some_and(|t| t.end < node.from()) {
                 skipped.next();
             }
@@ -135,7 +119,6 @@ impl FrameInputs {
             if let Some(span) = span {
                 spans.push((node.range(), span));
             }
-            // A Url inside a link is syntax once revealed.
             if node.kind() == K::Url && node.parent().is_some_and(|p| p.kind() != K::Autolink) {
                 spans.push((node.range(), Span::Muted));
             }
@@ -154,7 +137,6 @@ impl FrameInputs {
         inputs
     }
 
-    /// The decorations and spans of every node in `range` are here.
     pub fn covers_content(&self, range: &Range<usize>) -> bool {
         self.covers(range)
             && !self
@@ -177,13 +159,11 @@ impl FrameInputs {
         self.by_start.sort_unstable();
     }
 
-    /// No decorations at all (source-only editors).
     pub fn clear_decorations(&mut self) {
         self.decorations.clear();
         self.index();
     }
 
-    /// The decorations overlapping `line` (bounds included), in their order.
     pub fn line_decorations(&self, line: &Range<usize>) -> Vec<&Decoration> {
         let from = line.start.saturating_sub(SHORT_DECORATION);
         let lo = self.by_start.partition_point(|(s, _)| *s < from);
@@ -203,52 +183,31 @@ impl FrameInputs {
     }
 }
 
-/// Decorations longer than this many bytes are scanned for every line;
-/// shorter ones are found by their start.
 const SHORT_DECORATION: usize = 1024;
 
-/// Fonts resolved for this editor.
 #[derive(Clone, Debug)]
 pub struct Fonts {
     pub body: SharedString,
     pub mono: SharedString,
 }
 
-/// A block widget held by a line.
 #[derive(Clone, Debug, PartialEq)]
 pub enum BlockKind {
-    Image {
-        url: String,
-    },
+    Image { url: String },
     Rule,
-    /// A rich block (`blocks::is_rich`): drawn by `RichBlocks`. A block
-    /// spanning several lines sits on its first line; the others are hidden.
     Rich(Widget),
-    /// A drawn table, laid out with its cells (`table.rs`); like a rich
-    /// block, it sits on its first line.
     Table(std::rc::Rc<super::table::TableLayout>),
 }
 
-/// What sizes the block widgets of a line.
 pub trait BlockSizer {
-    /// The box of the image at `url` in a column `width` wide, at the
-    /// width its source asks for, if any (US-064).
     fn image_box(&mut self, url: &str, requested: Option<f32>, width: f32) -> ImageBox;
-    /// The box of an image embed (`![[target]]`), found by the host.
     fn embed_box(&mut self, target: &str, requested: Option<f32>, width: f32) -> ImageBox;
-    /// The render of a formula (US-036).
     fn math(&mut self, tex: &str, display: bool) -> super::math::MathState;
-    /// Height of a rich block in a column `width` wide.
     fn rich_height(&mut self, widget: &Widget, width: f32) -> f32;
-    /// The table already laid out on line `ix` for this state and this
-    /// horizontal scroll, if any.
     fn table(&mut self, ix: usize, scroll: f32) -> Option<std::rc::Rc<super::table::TableLayout>>;
     fn keep_table(&mut self, ix: usize, table: std::rc::Rc<super::table::TableLayout>);
-    /// The column widths kept for the table the caret edits (US-058).
     fn frozen_widths(&mut self) -> &mut Option<super::table::FrozenWidths>;
 
-    /// The layout of the table at line `ix` for the state before, when
-    /// every edit since was inside it, with that state's edit ranges.
     fn previous_table(
         &mut self,
         ix: usize,
@@ -258,30 +217,18 @@ pub trait BlockSizer {
 #[derive(Clone, Debug, PartialEq)]
 pub struct LineBlock {
     pub kind: BlockKind,
-    /// Left of the widget, relative to the column: a block image narrower
-    /// than the column is centered (US-064).
     pub left: f32,
-    /// Top of the widget, relative to the line top.
     pub top: f32,
     pub width: f32,
     pub height: f32,
-    /// The widget replaces the line's source (else it sits below it).
     pub replaces: bool,
-    /// The end of an atomic block (a diagram): the caret there is drawn
-    /// on the block's right edge (`cerata_markdown::atomic`).
     pub atomic_end: Option<usize>,
 }
 
-/// What a block image measures to, as the widget host reports it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ImageBox {
-    /// A local file that does not exist, or a scheme that is never
-    /// loaded: the source stays, muted.
     Unavailable,
-    Sized {
-        width: f32,
-        height: f32,
-    },
+    Sized { width: f32, height: f32 },
 }
 
 #[derive(Clone, Debug)]
@@ -294,13 +241,9 @@ pub enum Marker {
 #[derive(Clone, Debug)]
 pub struct ListPrefix {
     pub marker: Marker,
-    /// Column-relative x of the marker's `LIST_UNIT_CH` column.
     pub x: f32,
     pub width: f32,
-    /// Column-relative x where the whole prefix starts, indentation
-    /// included (Writer's `.cm-list-prefix` box, for clicks).
     pub left: f32,
-    /// Buffer range of the source prefix (for clicks).
     pub range: Range<usize>,
 }
 
@@ -308,46 +251,32 @@ pub struct ListPrefix {
 pub struct CodeChrome {
     pub first: bool,
     pub last: bool,
-    /// Start of the code block, which keys its horizontal scroll offset.
     pub block_start: usize,
     pub scroll_x: f32,
-    /// Width of the widest shaped text of this line, for the scroll bound.
     pub text_width: f32,
 }
 
 pub struct LaidLine {
     pub ix: usize,
-    /// Absolute byte offset of the line start.
     pub start: usize,
     pub len: usize,
     pub metrics: LineMetrics,
     pub display: DisplayLine,
-    /// `None` when the line is hidden or a block widget replaces it.
-    /// Shared so a table cell's unchanged line is reused (US-057).
     pub wrapped: Option<std::rc::Rc<WrappedLine>>,
-    /// Display offsets where each wrapped row starts.
     pub row_starts: Vec<usize>,
-    /// Column-relative x of the text.
     pub text_left: f32,
     pub text_top: f32,
     pub prefix: Option<ListPrefix>,
-    /// Column-relative x of each quote bar.
     pub quote_bars: Vec<f32>,
     pub code: Option<CodeChrome>,
-    /// A revealed table's line (first, last): the code background, with
-    /// wrapping text.
     pub table_source: Option<(bool, bool)>,
     pub block: Option<LineBlock>,
-    /// Formulas flowing in the text: drawn over the space reserved for
-    /// them, or their source in red with the error.
     pub inline_math: Vec<InlineMath>,
     pub height: f32,
 }
 
-/// A formula in a line of text.
 #[derive(Clone, Debug)]
 pub struct InlineMath {
-    /// Line-relative buffer range of its source.
     pub range: Range<usize>,
     pub state: super::math::MathState,
 }
@@ -366,20 +295,13 @@ impl LaidLine {
     }
 }
 
-/// What laying out a line needs besides its inputs.
 pub struct LayoutCx<'a> {
     pub config: &'a EditorConfig,
     pub fonts: &'a Fonts,
-    /// Width of `0` in the body font, CSS's `ch`.
     pub ch: f32,
-    /// Width of the text column.
     pub column_width: f32,
-    /// IME marked text, underlined.
     pub marked: Option<Range<usize>>,
-    /// Horizontal scroll offset of the code block starting at an offset.
     pub code_scroll: &'a dyn Fn(usize) -> f32,
-    /// The width a resize gesture shows for the block image starting at
-    /// an offset (US-067): the view's, the text still says the old one.
     pub image_preview: Option<(usize, f32)>,
 }
 
@@ -404,7 +326,6 @@ fn overlaps(range: &Range<usize>, line: &Range<usize>) -> bool {
     range.start <= line.end && range.end >= line.start
 }
 
-/// Lays out document line `ix` of `state` from `inputs`.
 pub fn layout_line(
     state: &EditorState,
     ix: usize,
@@ -443,8 +364,6 @@ pub fn layout_line(
     let metrics = cx.config.metrics(style);
     let em = metrics.font_size;
 
-    // Whole-line hides (setext underline), the lines under a rich block
-    // after its first, and block widgets.
     let hidden_line = decorations.iter().any(|d| match d {
         Decoration::Hide {
             range: r,
@@ -532,15 +451,10 @@ pub fn layout_line(
                 });
             }
             Widget::Table { grid, .. } => {
-                // Laid out once per state of the editor: hit-testing, the
-                // caret's row and the paint all ask for it (US-048).
-                // Scrolled like a code block, keyed by its first line.
                 let scroll = (cx.code_scroll)(grid.range.start);
                 let laid = match sizer.table(ix, scroll) {
                     Some(laid) => laid,
                     None => {
-                        // After an edit in the table, the cells it left
-                        // alone are taken as they were (US-057).
                         let previous = sizer.previous_table(ix);
                         let ranges = super::table::edit_ranges(
                             state.selection(),
@@ -565,8 +479,6 @@ pub fn layout_line(
                             }
                             _ => inputs,
                         };
-                        // The caret's table keeps the widths it had when
-                        // the caret entered it (US-058).
                         let head = state.selection().main().head;
                         let zone = grid.zone();
                         let editing = zone.start <= head && head <= zone.end;
@@ -622,7 +534,6 @@ pub fn layout_line(
         }
     }
 
-    // Inline replacements, line-relative, sorted and disjoint.
     let mut replacements: Vec<(Range<usize>, String)> = Vec::new();
     let mut inline_math: Vec<InlineMath> = Vec::new();
     let mut errors: Vec<Range<usize>> = Vec::new();
@@ -649,7 +560,6 @@ pub fn layout_line(
                         widget.glyph().map(str::to_owned)
                     }
                     Widget::Tab => Some("\u{2007}".repeat(cerata_markdown::decorate::TAB_WIDTH_CH)),
-                    // A formula keeps figure spaces as wide as its image.
                     Widget::Math { tex, display } => {
                         let state = sizer.math(tex, *display);
                         let width = match &state {
@@ -670,7 +580,6 @@ pub fn layout_line(
                             "\u{2007}".repeat((w / cx.ch.max(1.0)).ceil().max(1.0) as usize)
                         })
                     }
-                    // Inline images keep their source (block images fold).
                     _ => None,
                 };
                 if let Some(glyph) = glyph {
@@ -681,7 +590,6 @@ pub fn layout_line(
         }
     }
 
-    // List geometry.
     let mut text_left = 0.0;
     let mut prefix = None;
     let mut hanging = 0.0;
@@ -728,8 +636,6 @@ pub fn layout_line(
             ListDecoration::OrderedMarker { range: r }
                 if r.start >= line.from && r.start <= line.to =>
             {
-                // Drawn in the hanging indent; the source (and the space
-                // after it) leaves the text.
                 let end = (r.end + 1).min(line.to);
                 replacements.push((local(&(r.start..end)), String::new()));
                 let label = SharedString::from(text.slice(r.clone()).to_owned());
@@ -905,8 +811,6 @@ fn text_run(len: usize, family: &SharedString, bold: bool, color: Hsla) -> TextR
     }
 }
 
-/// Text runs of the display line: one per stretch of uniform style. A
-/// table's header cell (`header`) is set in the heading weight.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn runs(
     display: &DisplayLine,
@@ -987,8 +891,6 @@ pub(super) fn runs(
                 .find(|(r, _)| r.start <= offset && offset < r.end)
                 .map(|(_, c)| *c);
         }
-        // A formula MathJax rejected: its source, red, as code
-        // (`.cm-math-error`).
         if errors.iter().any(|r| r.start <= offset && offset < r.end) {
             s.code = true;
             s.color = Some(theme::danger());

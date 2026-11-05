@@ -1,12 +1,3 @@
-//! Sections and folders opening and closing.
-//!
-//! A section's rows grow from their header and fade in over the filter's
-//! 180 ms cubic ease-out, and shrink back the same way; a toggle mid-flight
-//! retargets from what is shown. Reduced motion keeps the fade and drops the
-//! growth. A folder is opened often, so its rows only fade in, over 150 ms,
-//! once its listing is read; it closes at once. Its glyph crossfades
-//! between closed and open over the section's motion, as in Paneflow.
-
 use std::time::{Duration, Instant};
 
 use super::filter::{MOTION, ease_out_cubic};
@@ -15,7 +6,6 @@ pub const SECTION_MOTION: Duration = MOTION;
 pub const FOLDER_MOTION: Duration = Duration::from_millis(150);
 pub const GLYPH_MOTION: Duration = MOTION;
 
-/// How far content is shown, from 0 (gone) to 1 (open).
 #[derive(Clone, Copy, Debug)]
 pub struct Reveal {
     from: f32,
@@ -25,7 +15,6 @@ pub struct Reveal {
 }
 
 impl Reveal {
-    /// Settled open or closed.
     pub fn new(open: bool, duration: Duration) -> Self {
         let at = if open { 1. } else { 0. };
         Self {
@@ -55,7 +44,6 @@ impl Reveal {
         self.to == 1.
     }
 
-    /// Heads open or closed from what is shown at `now`.
     pub fn retarget(&mut self, open: bool, now: Instant) {
         self.from = self.amount(now);
         self.to = if open { 1. } else { 0. };
@@ -73,7 +61,6 @@ mod tests {
         let mut reveal = Reveal::new(false, SECTION_MOTION);
         reveal.retarget(true, now);
         assert_eq!(reveal.amount(now), 0.);
-        // Halfway in time, the ease is 7/8 of the way.
         assert!((reveal.amount(now + SECTION_MOTION / 2) - 0.875).abs() < 0.001);
         assert!(reveal.animating(now + SECTION_MOTION / 2));
         assert_eq!(reveal.amount(now + SECTION_MOTION), 1.);

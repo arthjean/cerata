@@ -1,11 +1,3 @@
-//! One Cerata process per user: a second launch hands its arguments and
-//! working directory to the running instance over a local socket (a named
-//! pipe on Windows) and exits.
-//!
-//! Replaces `tauri-plugin-single-instance` (Writer `lib.rs:461-493`), with
-//! Writer's defect fixed: the second launch's working directory is sent and
-//! relative paths resolve against it (Writer ignored it, line 495).
-
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -16,17 +8,13 @@ use interprocess::local_socket::{
 };
 use serde::{Deserialize, Serialize};
 
-/// Largest request accepted, far above any real argument list.
 const MAX_REQUEST: u64 = 64 * 1024;
-/// How long a second launch waits for the running instance.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 const ACK: &[u8] = b"ok\n";
 
-/// What a launch asks the running instance to open.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LaunchRequest {
     pub cwd: PathBuf,
-    /// The launch's arguments after the program name, in order.
     pub args: Vec<String>,
 }
 
@@ -41,22 +29,17 @@ impl LaunchRequest {
         }
     }
 
-    /// Each argument as a path, relative ones joined to the launch's
-    /// working directory.
     pub fn paths(&self) -> Vec<PathBuf> {
         self.args.iter().map(|arg| self.cwd.join(arg)).collect()
     }
 }
 
-/// Where the instances of one user meet: a socket file in the data
-/// directory, or a named pipe whose name derives from it on Windows.
 #[derive(Clone, Debug)]
 pub struct Endpoint(PathBuf);
 
 impl Endpoint {
     pub fn for_data_dir(data_dir: &Path) -> Self {
         if cfg!(windows) {
-            // FNV-1a of the data directory: per user, stable, no separators.
             let hash = data_dir
                 .to_string_lossy()
                 .bytes()
@@ -70,18 +53,12 @@ impl Endpoint {
     }
 }
 
-/// The outcome of [`claim`].
 pub enum Claim {
-    /// This process is the instance; it serves later launches.
     Primary(Listener),
-    /// A running instance took the request; this process should exit.
     Forwarded,
 }
 
-/// Hands `request` to the running instance, or becomes the instance.
 pub fn claim(endpoint: &Endpoint, request: &LaunchRequest) -> io::Result<Claim> {
-    // Two attempts: a listener that appears between our failed connect and
-    // our bind wins, and the second connect reaches it.
     for _ in 0..2 {
         if forward(endpoint, request).is_ok() {
             return Ok(Claim::Forwarded);
@@ -131,17 +108,12 @@ fn listen(endpoint: &Endpoint) -> io::Result<Listener> {
     Ok(listener)
 }
 
-/// A socket file left by a crashed instance refuses connections; removing
-/// it lets this launch become the instance. Named pipes vanish with their
-/// process, so Windows has nothing to clean.
 fn remove_stale(endpoint: &Endpoint) {
     if cfg!(unix) {
         let _ = std::fs::remove_file(&endpoint.0);
     }
 }
 
-/// Serves later launches on a background thread: each request reaches
-/// `deliver`, in arrival order, before its sender is acknowledged.
 pub fn serve(
     listener: Listener,
     deliver: impl Fn(LaunchRequest) + Send + 'static,

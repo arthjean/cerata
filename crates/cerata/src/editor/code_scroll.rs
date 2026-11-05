@@ -1,13 +1,7 @@
-//! Horizontal scroll of code blocks (`codeFenceScroll.ts:32-134`, `:203-392`):
-//! code lines never wrap; each block (fenced, indented, frontmatter) has one
-//! offset, kept across edits and bounded by its widest line.
-
 use std::collections::HashMap;
 
 use cerata_markdown::LineSplice;
 
-/// Thumb thickness, gap to the block's bottom edge, and shortest width
-/// (`codeFenceScroll.ts:44-46`).
 pub const THUMB_HEIGHT: f32 = 6.0;
 pub const THUMB_INSET: f32 = 3.0;
 pub const MIN_THUMB_WIDTH: f32 = 24.0;
@@ -16,15 +10,12 @@ pub const MIN_THUMB_WIDTH: f32 = 24.0;
 pub struct Thumb {
     pub left: f32,
     pub width: f32,
-    /// Offset moved per pixel the thumb is dragged.
     pub per_pixel: f32,
 }
 
 #[derive(Default, Debug)]
 pub struct CodeScroll {
-    /// Offset per block, keyed by the block's first line.
     offsets: HashMap<usize, f32>,
-    /// Widest laid-out text and visible width per block, this frame.
     widths: HashMap<usize, (f32, f32)>,
 }
 
@@ -33,20 +24,16 @@ impl CodeScroll {
         self.offsets.get(&first_line).copied().unwrap_or(0.0)
     }
 
-    /// Forgets the widths of the previous frame.
     pub fn begin_frame(&mut self) {
         self.widths.clear();
     }
 
-    /// A laid-out line of the block starting on `first_line`, `text_width`
-    /// wide in a visible width.
     pub fn measure(&mut self, first_line: usize, text_width: f32, visible: f32) {
         let entry = self.widths.entry(first_line).or_insert((0.0, visible));
         entry.0 = entry.0.max(text_width);
         entry.1 = visible;
     }
 
-    /// Largest offset of a block: its widest line past the visible width.
     pub fn max(&self, first_line: usize) -> f32 {
         self.widths
             .get(&first_line)
@@ -64,8 +51,6 @@ impl CodeScroll {
         offset != current
     }
 
-    /// Bounds every offset by its block's measured width: a block that got
-    /// narrower than the visible width goes back to 0.
     pub fn clamp_measured(&mut self) {
         let widths = &self.widths;
         self.offsets.retain(|line, offset| match widths.get(line) {
@@ -77,8 +62,6 @@ impl CodeScroll {
         });
     }
 
-    /// Remaps the blocks through line splices; `is_block_start(line)` drops
-    /// those that no longer start a code block.
     pub fn remap(&mut self, splices: &[LineSplice], is_block_start: impl Fn(usize) -> bool) {
         if self.offsets.is_empty() {
             return;
@@ -99,8 +82,6 @@ impl CodeScroll {
             .collect();
     }
 
-    /// The bar of a block that overflows by a pixel or more: offsets are
-    /// whole pixels, so less cannot scroll (a table's rounded columns).
     pub fn thumb(&self, first_line: usize) -> Option<Thumb> {
         let (_, visible) = *self.widths.get(&first_line)?;
         let max = self.max(first_line);
@@ -112,8 +93,6 @@ pub fn clamp_offset(offset: f32, max: f32) -> f32 {
     offset.round().clamp(0.0, max.max(0.0))
 }
 
-/// The smallest move of `offset` that brings `caret_x` inside
-/// `[left, right]` (`revealOffset`).
 pub fn reveal_offset(offset: f32, caret_x: f32, left: f32, right: f32) -> f32 {
     if caret_x < left {
         offset - (left - caret_x)
@@ -124,8 +103,6 @@ pub fn reveal_offset(offset: f32, caret_x: f32, left: f32, right: f32) -> f32 {
     }
 }
 
-/// `thumbGeometry`: the thumb's share of the track is the visible share of
-/// the content.
 pub fn thumb_geometry(offset: f32, max: f32, track: f32) -> Thumb {
     let width = track.min((track * track / (track + max)).max(MIN_THUMB_WIDTH));
     let travel = track - width;
@@ -140,7 +117,6 @@ pub fn thumb_geometry(offset: f32, max: f32, track: f32) -> Thumb {
     }
 }
 
-/// A wheel gesture scrolls a code block only when mostly horizontal.
 pub fn is_horizontal(dx: f32, dy: f32) -> bool {
     dx.abs() > dy.abs()
 }
@@ -159,7 +135,6 @@ mod tests {
             300.0,
             "bounded by the widest line"
         );
-        // Two lines inserted above: the block moves down with its offset.
         scroll.remap(
             &[LineSplice {
                 first: 1,
@@ -169,7 +144,6 @@ mod tests {
             |line| line == 6,
         );
         assert_eq!(scroll.offset_of_line(6), 300.0);
-        // The block is no longer a block start: dropped.
         scroll.remap(&[], |_| false);
         assert_eq!(scroll.offset_of_line(6), 0.0);
     }

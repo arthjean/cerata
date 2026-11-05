@@ -1,9 +1,3 @@
-//! Sidebar file operations and menus (US-027): the file, folder, bulk and
-//! empty-area menus (`file-context-menu.ts`, `folder-context-menu.ts`,
-//! `bulk-context-menu.ts`, `sidebar-surface-context-menu.ts`), inline
-//! rename, creation, moves by drag (`use-tree-drag.ts`, `tree-move.ts`),
-//! "Reveal in Sidebar" and "Open in Terminal".
-
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
@@ -19,7 +13,6 @@ use super::{Sidebar, SidebarEvent};
 use crate::editor::text_field::{FieldEvent, TextField};
 use crate::menu::{Item, Menu};
 
-/// A drag starts once the pointer moves this far (`use-tree-drag.ts:32`).
 pub const DRAG_THRESHOLD: f32 = 4.0;
 
 pub fn reveal_label() -> &'static str {
@@ -38,10 +31,6 @@ pub fn open_folder_label() -> &'static str {
     }
 }
 
-// ---- Moves (`tree-move.ts`) ----
-
-/// Where a drop lands: a folder itself, a file's folder, the root for the
-/// empty area.
 pub fn drop_dest(target: Option<&DirEntry>, root: &Path) -> PathBuf {
     match target {
         Some(entry) if entry.is_dir => entry.path.clone(),
@@ -53,9 +42,6 @@ pub fn drop_dest(target: Option<&DirEntry>, root: &Path) -> PathBuf {
     }
 }
 
-/// `false` for a move into the folder the item is already in, or of a
-/// folder into itself or one of its descendants (whole components, so a
-/// sibling sharing a name prefix is fine).
 pub fn can_move(source: &Path, source_is_dir: bool, dest: &Path) -> bool {
     if source.parent() == Some(dest) {
         return false;
@@ -67,9 +53,6 @@ pub fn move_path(dest: &Path, source: &Path) -> Option<PathBuf> {
     Some(dest.join(source.file_name()?))
 }
 
-/// The rows of `dest`'s subtree: the folder's row and its visible
-/// descendants (the Unfiled header and its files for the root), `None` if
-/// `dest` is not shown. Highlighted under a drag, faded in as it opens.
 pub fn subtree_range(rows: &[Row], dest: &Path) -> Option<Range<usize>> {
     let start = rows.iter().position(|row| row.entry.path == dest)?;
     let depth = rows[start].depth;
@@ -80,14 +63,11 @@ pub fn subtree_range(rows: &[Row], dest: &Path) -> Option<Range<usize>> {
     Some(start..end)
 }
 
-/// A drag in progress.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Drag {
     pub start: Point<Pixels>,
     pub paths: Vec<PathBuf>,
-    /// Past the threshold.
     pub active: bool,
-    /// The row under the pointer; `None` is the empty area (the root).
     pub over: Option<DirEntry>,
 }
 
@@ -95,8 +75,6 @@ pub struct Renaming {
     pub path: PathBuf,
     pub field: Entity<TextField>,
     pub error: Option<String>,
-    /// Just made by "New File": committing names its empty heading, and
-    /// Enter opens it.
     pub created: bool,
     _events: Subscription,
 }
@@ -112,10 +90,6 @@ impl Sidebar {
             .cloned()
     }
 
-    // ---- Menus ----
-
-    /// The menu of a row: the bulk menu inside a selection of two or more,
-    /// otherwise the row's own (the selection clears).
     pub fn open_row_menu(
         &mut self,
         entry: &DirEntry,
@@ -177,8 +151,6 @@ impl Sidebar {
         cx.emit(SidebarEvent::SettingsChanged);
     }
 
-    // ---- Clipboard, reveal, terminal ----
-
     pub fn copy_paths(&mut self, paths: &[PathBuf], relative: bool, cx: &mut Context<Self>) {
         let Some(root) = self.root().map(Path::to_path_buf) else {
             return;
@@ -226,7 +198,6 @@ impl Sidebar {
         }
     }
 
-    /// Opens a terminal in `dir` (the root when `None`), off the main thread.
     pub fn open_terminal(&mut self, dir: Option<PathBuf>, cx: &mut Context<Self>) {
         let state = self.window_state().clone();
         let task = cx.spawn(async move |this, cx| {
@@ -247,11 +218,6 @@ impl Sidebar {
         task.detach();
     }
 
-    // ---- Create and rename ----
-
-    /// "New File" or "New Folder" in `parent` (the root when `None`): the
-    /// folder expands, the entry is created and renamed in place, unless
-    /// the workspace changed meanwhile (`create-sidebar-entry-and-rename.ts`).
     pub fn create_entry(
         &mut self,
         parent: Option<PathBuf>,
@@ -266,7 +232,6 @@ impl Sidebar {
         if parent != runtime.root {
             self.expand(&parent, cx);
         } else if kind == EntryKind::File {
-            // Its row, renamed in place, is under Unfiled.
             self.open_unfiled();
         }
         let generation = self.generation;
@@ -303,8 +268,6 @@ impl Sidebar {
         task.detach();
     }
 
-    /// Starts renaming `path` in place: the full name of a folder, the stem
-    /// of a file, selected.
     pub fn start_rename(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
         let Some(entry) = self.entry_for(path) else {
             return;
@@ -359,7 +322,6 @@ impl Sidebar {
     pub fn cancel_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(renaming) = self.renaming.take() {
             if renaming.created {
-                // The new file joins Recents.
                 self.refresh_sections(cx);
             }
             window.focus(&self.focus_handle, cx);
@@ -367,11 +329,6 @@ impl Sidebar {
         }
     }
 
-    /// Enter or blur: the trimmed name, with a file's extension put back.
-    /// An empty or unchanged name does nothing; a taken one shows an error
-    /// in place and leaves the file alone. A file just made by "New File"
-    /// gets the name as its heading. Returns the entry's path once the
-    /// rename is over, `None` while it stays open or was dropped.
     pub fn commit_rename(
         &mut self,
         window: &mut Window,
@@ -403,7 +360,6 @@ impl Sidebar {
             }
             return Some(entry.path);
         }
-        // A typed separator or `..` would move the entry, not rename it.
         if let Err(FsError::InvalidName { reason, .. }) = cerata_core::fs::validate_file_name(&name)
         {
             if let Some(renaming) = &mut self.renaming {
@@ -453,9 +409,6 @@ impl Sidebar {
         committed
     }
 
-    /// Writes `# {title}` and a blank line into `path` while it still holds
-    /// only the new-file template, so the note opens titled after the name
-    /// just typed, ready for its first paragraph.
     fn name_heading(&self, path: &Path, title: &str) {
         let Some(runtime) = self.runtime() else {
             return;
@@ -474,9 +427,6 @@ impl Sidebar {
         }
     }
 
-    /// [`Self::after_move`] for a note and the assets folder that followed
-    /// it, the folder first; the note's event carries the rewrite of its
-    /// links (EP-015).
     fn after_note_move(&mut self, old: &Path, done: &NoteOperation, cx: &mut Context<Self>) {
         if let AssetsOutcome::Followed { from, to } = &done.assets {
             self.after_move(from, to, None, cx);
@@ -484,14 +434,10 @@ impl Sidebar {
         self.after_move(old, &done.path, done.links(old), cx);
     }
 
-    /// A note moved outside Cerata (US-085): the same bookkeeping as a
-    /// move made here, with no link to rewrite and nothing written.
     pub fn moved_outside(&mut self, old: &Path, new: &Path, cx: &mut Context<Self>) {
         self.after_move(old, new, None, cx);
     }
 
-    /// Bookkeeping once `old` became `new` on disk: expanded folders,
-    /// pins, listings, and the window's tabs (through the event).
     fn after_move(
         &mut self,
         old: &Path,
@@ -513,10 +459,6 @@ impl Sidebar {
                 reopened.push(new.join(rest));
             }
         }
-        // Listings under `old` hold the old paths: they go, any read still
-        // running for them goes stale (versions only grow, so a later read
-        // of the same path never matches it), and the reopened folders are
-        // read again.
         self.listings.retain(|dir, _| !dir.starts_with(old));
         for (dir, version) in &mut self.read_versions {
             if dir.starts_with(old) {
@@ -544,7 +486,6 @@ impl Sidebar {
         });
     }
 
-    /// The window deleted `path`: its pins go, its folder is re-read.
     pub fn removed(&mut self, path: &Path, cx: &mut Context<Self>) {
         self.expanded.retain(|dir| !dir.starts_with(path));
         if let Some(library) = self.library() {
@@ -558,8 +499,6 @@ impl Sidebar {
         }
         self.refresh_sections(cx);
     }
-
-    // ---- Drag and drop ----
 
     pub fn begin_drag(&mut self, path: &Path, position: Point<Pixels>) {
         let paths = if self.selection.len() >= 2 && self.selection.contains(path) {
@@ -598,8 +537,6 @@ impl Sidebar {
         subtree_range(&self.rows, &dest)
     }
 
-    /// The release: an active drag moves its items; a press that never
-    /// passed the threshold was a click. Returns `true` for a drop.
     pub fn end_drag(&mut self, cx: &mut Context<Self>) -> bool {
         let Some(drag) = self.drag.take() else {
             return false;
@@ -615,7 +552,6 @@ impl Sidebar {
         let mut moved: Vec<(PathBuf, NoteOperation)> = Vec::new();
         let mut notices = Vec::new();
         for source in &drag.paths {
-            // An assets folder dragged with its note already moved with it.
             if moved.iter().any(|(_, done)| {
                 matches!(&done.assets, AssetsOutcome::Followed { from, .. } if from == source)
             }) {
@@ -678,10 +614,6 @@ impl Sidebar {
         }
     }
 
-    // ---- Reveal in Sidebar ----
-
-    /// Expands the parents of `path` and scrolls to its row. A newer call
-    /// cancels an older one still waiting for folders to load.
     pub fn reveal_in_sidebar(&mut self, path: &Path, cx: &mut Context<Self>) {
         let Some(root) = self.root().map(Path::to_path_buf) else {
             return;
@@ -713,7 +645,6 @@ impl Sidebar {
         self.finish_reveal(cx);
     }
 
-    /// Scrolls to the pending reveal once its row exists.
     pub fn finish_reveal(&mut self, cx: &mut Context<Self>) {
         let Some((path, version)) = self.revealing.clone() else {
             return;
@@ -730,8 +661,6 @@ impl Sidebar {
     }
 }
 
-/// On case-insensitive file systems, renaming `a.md` to `A.md` finds the
-/// "new" path already existing: it is the same file.
 fn same_entry_ignoring_case(old: &Path, new: &Path) -> bool {
     old.to_string_lossy().to_lowercase() == new.to_string_lossy().to_lowercase()
 }
@@ -934,11 +863,6 @@ pub fn surface_menu(
     items
 }
 
-/// Renames or moves `old` to `new`: a Markdown file with its assets folder
-/// (EP-015), anything else alone. The move is recorded as Cerata's, so the
-/// watcher keeps the note's identity without telling it as an outside
-/// rename (US-085). An autosave being written finishes first: one written
-/// after the move would recreate `old`.
 fn move_entry(
     runtime: &WorkspaceRuntime,
     old: &Path,
@@ -946,8 +870,6 @@ fn move_entry(
     is_dir: bool,
 ) -> Result<NoteOperation, FsError> {
     let _gate = runtime.self_writes.write_gate();
-    // The notes moved keep their pending versions under their old path,
-    // where the store still knows them (US-089).
     let flushed = if is_dir {
         runtime.flush_history(None, Some(cerata_core::workspace::HISTORY_FLUSH))
     } else {
@@ -1027,8 +949,6 @@ mod tests {
         assert_eq!(drop_dest(None, root), PathBuf::from("/v"));
     }
 
-    /// Ports Writer `tree-move.test.ts:61`: a move joins the destination
-    /// folder with the entry's name, for a file and for a folder.
     #[test]
     fn a_move_joins_the_destination_with_the_entry_name() {
         let p = Path::new;

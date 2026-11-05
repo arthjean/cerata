@@ -1,16 +1,9 @@
-//! The sidebar tree as plain data: sort modes, labels, the flattened rows
-//! of the expanded folders and the selection.
-//!
-//! Ported from Writer `sidebar-sort.ts:13-89`, `use-file-tree-label.ts`,
-//! `flatten-tree.ts` and the selection half of `file-tree.tsx:113-191`.
-
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use cerata_core::fs::DirEntry;
 
-/// The six orders of `appearance.sidebar-sort`, in menu order.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SortMode {
     #[default]
@@ -54,7 +47,6 @@ impl SortMode {
         }
     }
 
-    /// An unknown or missing mode sorts by name.
     pub fn parse(id: Option<&str>) -> Self {
         Self::ALL
             .into_iter()
@@ -104,8 +96,6 @@ pub fn stem(name: &str) -> &str {
         .unwrap_or(name)
 }
 
-/// A row's text: a folder's name, a file's stem in filename mode, else its
-/// title, falling back to the stem.
 pub fn label(entry: &DirEntry, mode: LabelMode) -> String {
     if entry.is_dir {
         return entry.name.clone();
@@ -116,7 +106,6 @@ pub fn label(entry: &DirEntry, mode: LabelMode) -> String {
     }
 }
 
-/// Case- and accent-insensitive key, digits kept for the natural compare.
 fn fold(text: &str) -> Vec<char> {
     text.chars().flat_map(fold_char).collect()
 }
@@ -154,8 +143,6 @@ fn fold_char(c: char) -> impl Iterator<Item = char> {
     folded.into_iter()
 }
 
-/// Natural order: digit runs compare by value ("2" before "10"), the rest
-/// ignores case and accents (`Intl.Collator` with `numeric`, `base`).
 fn natural_cmp_folded(a: &[char], b: &[char]) -> Ordering {
     let (mut i, mut j) = (0, 0);
     while i < a.len() && j < b.len() {
@@ -197,7 +184,6 @@ fn trim_zeros(digits: &[char]) -> &[char] {
     &digits[first..]
 }
 
-/// An entry with its folded label, computed once per sort.
 struct Keyed<'a> {
     entry: &'a DirEntry,
     label: Vec<char>,
@@ -220,8 +206,6 @@ fn compare(a: &Keyed<'_>, b: &Keyed<'_>, mode: SortMode) -> Ordering {
     }
 }
 
-/// A sorted copy of one folder's entries. With folders first, folders lead
-/// and always go A to Z; only files follow `mode`.
 pub fn sort_entries(entries: &[DirEntry], options: SortOptions) -> Vec<DirEntry> {
     let mut keyed: Vec<Keyed<'_>> = entries
         .iter()
@@ -245,25 +229,18 @@ pub fn sort_entries(entries: &[DirEntry], options: SortOptions) -> Vec<DirEntry>
     keyed.into_iter().map(|k| k.entry.clone()).collect()
 }
 
-/// What the sidebar knows about a folder's listing.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Listing {
     Loading,
     Loaded(Vec<DirEntry>),
-    /// The read failed; the next expansion tries again.
     Failed(String),
 }
 
-/// The title of the section holding the workspace root's own files.
 pub const UNFILED: &str = "Unfiled";
 
-/// What a row of the tree stands for. Headers sit at depth 0, every file
-/// and subfolder below them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RowKind {
-    /// A folder of the workspace root, shown as a section header.
     Project,
-    /// The header of the root's own files; its entry is the root.
     Unfiled,
     Item,
 }
@@ -273,14 +250,10 @@ pub struct Row {
     pub entry: DirEntry,
     pub depth: usize,
     pub expanded: bool,
-    /// The folder's read failed (shown on its row).
     pub error: Option<String>,
     pub kind: RowKind,
 }
 
-/// The rows of the root listing: each root folder as a project header with
-/// its expanded content right after it, then the Unfiled header and the
-/// root's own files when it has any, every level sorted (`flatten-tree.ts`).
 pub fn flatten(
     root_dir: &Path,
     root: &[DirEntry],
@@ -353,7 +326,6 @@ fn push_level(
     }
 }
 
-/// Multi-selection with an anchor (`file-tree.tsx:113-191`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Selection {
     pub paths: Vec<PathBuf>,
@@ -373,19 +345,16 @@ impl Selection {
         self.paths.is_empty()
     }
 
-    /// Escape, or a plain click.
     pub fn clear(&mut self) {
         self.paths.clear();
         self.anchor = None;
     }
 
-    /// A plain press: the anchor moves here, nothing stays selected.
     pub fn press(&mut self, path: &Path) {
         self.paths.clear();
         self.anchor = Some(path.to_path_buf());
     }
 
-    /// Cmd or Ctrl: toggles `path`, which becomes the anchor.
     pub fn toggle(&mut self, path: &Path) {
         if let Some(ix) = self.paths.iter().position(|p| p == path) {
             self.paths.remove(ix);
@@ -395,8 +364,6 @@ impl Selection {
         self.anchor = Some(path.to_path_buf());
     }
 
-    /// Shift: the rows from the anchor (or the first row) to `path`
-    /// replace the selection, headers left out; the anchor stays.
     pub fn extend(&mut self, path: &Path, rows: &[Row]) {
         let rows: Vec<&Row> = rows
             .iter()
@@ -421,15 +388,12 @@ impl Selection {
             .collect();
     }
 
-    /// Selected paths that are still shown.
     pub fn retain_visible(&mut self, rows: &[Row]) {
         let visible: HashSet<&Path> = rows.iter().map(|row| row.entry.path.as_path()).collect();
         self.paths.retain(|path| visible.contains(path.as_path()));
     }
 }
 
-/// Bounds of the sidebar width (`app-layout.tsx`): at least 220 px, at most
-/// `max(280, min(420, 35 % of the window))`.
 pub fn clamp_width(width: f32, window_width: f32) -> f32 {
     let max = 280.0_f32.max(420.0_f32.min((window_width * 0.35).floor()));
     220.0_f32.max(max.min(width.round()))
@@ -665,8 +629,6 @@ mod tests {
         assert_eq!(SortMode::default(), SortMode::ALL[0]);
     }
 
-    /// Ports Writer `flatten-tree.test.ts:178` and `:187`: the folders-first
-    /// default and the sort modes come from the settings schema itself.
     #[test]
     fn the_sort_registry_and_folders_first_follow_the_schema() {
         use cerata_core::settings::{ConfigValue, Schema};
@@ -913,12 +875,9 @@ mod tests {
             true,
         );
         let elapsed = started.elapsed();
-        // The Unfiled header, then the files.
         assert_eq!(rows.len(), 50_001);
         assert_eq!(rows[2].entry.name, "Note 1 \u{e9}t\u{e9}.md");
         assert_eq!(rows[3].entry.name, "Note 2 \u{e9}t\u{e9}.md");
-        // Debug-build budget. Rows are rebuilt only when the tree changes,
-        // never per frame: scrolling lays out the visible rows only.
         assert!(elapsed.as_millis() < 1500, "{elapsed:?}");
     }
 

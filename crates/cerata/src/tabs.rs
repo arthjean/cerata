@@ -1,17 +1,8 @@
-//! Tabs and their own back and forward history, as plain data.
-//!
-//! Ported from Writer `editor-store.ts:342-1106` (tab half; the documents
-//! are in [`crate::documents`]): there is always at least one tab, opening a
-//! file replaces a launcher or navigates the active tab, closing activates
-//! the right neighbor, and path rewrites and removals match whole path
-//! components, so `/a` never touches `/a-b`.
-
 use std::path::{Path, PathBuf};
 
 use cerata_core::session::{SerializedLocation, SessionData, SessionTab};
 use serde::{Deserialize, Serialize};
 
-/// What a tab shows. Serialized with a `kind` tag, Writer's session format.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Location {
@@ -37,20 +28,16 @@ impl Location {
             .ok()
     }
 
-    /// `None` for a kind this version does not know (dropped on restore,
-    /// `page-kinds/index.ts:13-47`).
     fn from_serialized(location: &SerializedLocation) -> Option<Self> {
         serde_json::to_value(location)
             .and_then(serde_json::from_value)
             .ok()
     }
 
-    /// `path` itself or anything under it, by whole components.
     fn is_under(&self, prefix: &Path) -> bool {
         self.path().is_some_and(|path| path.starts_with(prefix))
     }
 
-    /// Moves `old` (or anything under it) to `new`; `true` if it matched.
     fn rewrite(&mut self, old: &Path, new: &Path) -> bool {
         let Self::File { path } = self else {
             return false;
@@ -73,8 +60,6 @@ pub struct Tab {
     pub location: Location,
     pub back: Vec<Location>,
     pub forward: Vec<Location>,
-    /// Increases on every navigation of this tab: a load that finishes
-    /// after a newer navigation may not roll it back.
     pub version: u64,
 }
 
@@ -88,13 +73,10 @@ impl Tab {
     }
 }
 
-/// The state of a tab before a navigation, to put back if the file of the
-/// navigation cannot be read.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Undo {
     pub id: u64,
     pub version: u64,
-    /// `None`: the tab did not exist before (it is closed on failure).
     pub previous: Option<Tab>,
 }
 
@@ -112,7 +94,6 @@ impl Default for Tabs {
 }
 
 impl Tabs {
-    /// One launcher tab.
     pub fn new() -> Self {
         let mut tabs = Self {
             tabs: Vec::new(),
@@ -132,7 +113,6 @@ impl Tabs {
     }
 
     pub fn active(&self) -> &Tab {
-        // Invariant: never empty, `active` always in range.
         &self.tabs[self.active.min(self.tabs.len() - 1)]
     }
 
@@ -177,7 +157,6 @@ impl Tabs {
         self.tabs.iter().position(|tab| tab.id == id)
     }
 
-    /// Ctrl+Tab and Ctrl+Shift+Tab, wrapping around.
     pub fn cycle(&mut self, forward: bool) -> bool {
         let len = self.tabs.len();
         if len < 2 {
@@ -191,9 +170,6 @@ impl Tabs {
         true
     }
 
-    /// Opens `path` the way a click does: replaces an active launcher (the
-    /// tab keeps its id), navigates an active file tab, and adds a tab next
-    /// to anything else. `None` when the active tab already shows `path`.
     pub fn open(&mut self, path: &Path) -> Option<Undo> {
         let location = Location::file(path);
         match &self.active().location {
@@ -213,7 +189,6 @@ impl Tabs {
         }
     }
 
-    /// "Open in new tab": always a fresh tab, even for an open file.
     pub fn open_in_new_tab(&mut self, path: &Path) -> Undo {
         let mut tab = self.tab(Location::file(path));
         tab.version = 1;
@@ -278,8 +253,6 @@ impl Tabs {
         })
     }
 
-    /// Puts a tab back as it was before a navigation whose file failed to
-    /// load, unless the tab navigated again since. `true` if applied.
     pub fn rollback(&mut self, undo: &Undo) -> bool {
         let Some(ix) = self.index_of(undo.id) else {
             return false;
@@ -302,8 +275,6 @@ impl Tabs {
         true
     }
 
-    /// Closes the tab at `index`. The active tab passes to the right
-    /// neighbor, else the left one; closing the last tab leaves a launcher.
     pub fn close(&mut self, index: usize) -> Option<Tab> {
         if index >= self.tabs.len() {
             return None;
@@ -332,7 +303,6 @@ impl Tabs {
         self.ensure_launcher();
     }
 
-    /// Replaces every tab with one tab on `path` (compact windows).
     pub fn replace_all(&mut self, path: &Path) {
         let mut tab = self.tab(Location::file(path));
         tab.version = 1;
@@ -340,13 +310,10 @@ impl Tabs {
         self.active = 0;
     }
 
-    /// `true` if only launchers are open (Cmd+W then closes the window).
     pub fn only_launchers(&self) -> bool {
         self.tabs.len() <= 1 && self.active().location == Location::Launcher
     }
 
-    /// A file or folder was renamed or moved: rewrites tab locations and
-    /// histories at `old` or under it. Returns `true` if anything changed.
     pub fn rewrite_prefix(&mut self, old: &Path, new: &Path) -> bool {
         let mut changed = false;
         for tab in &mut self.tabs {
@@ -358,8 +325,6 @@ impl Tabs {
         changed
     }
 
-    /// A file or folder is gone: closes the tabs showing it or anything
-    /// under it and strips it from every history. `true` if anything changed.
     pub fn remove_prefix(&mut self, prefix: &Path) -> bool {
         let before = self.clone();
         let active_id = self.active().id;
@@ -373,7 +338,6 @@ impl Tabs {
         *self != before
     }
 
-    /// Every file a tab shows or can go back or forward to.
     pub fn referenced_paths(&self) -> impl Iterator<Item = &Path> {
         self.tabs.iter().flat_map(|tab| {
             std::iter::once(&tab.location)
@@ -387,8 +351,6 @@ impl Tabs {
         self.referenced_paths().any(|p| p == path)
     }
 
-    /// The session to save: launchers are left out, and the active index
-    /// is `None` when the active tab is a launcher.
     pub fn to_session(&self) -> SessionData {
         let mut tabs = Vec::new();
         let mut active_index = None;
@@ -419,7 +381,6 @@ impl Tabs {
         SessionData { tabs, active_index }
     }
 
-    /// Tabs from a saved session, with fresh ids; unknown kinds dropped.
     pub fn from_session(session: &SessionData) -> Self {
         let mut tabs = Self {
             tabs: Vec::new(),
@@ -705,7 +666,6 @@ mod tests {
                 forward: Vec::new(),
             },
         );
-        // Settings were a tab before they became a screen of their own.
         session.tabs.push(SessionTab {
             location: SerializedLocation {
                 kind: "settings".into(),
@@ -725,8 +685,6 @@ mod tests {
         assert_eq!(Tabs::from_session(&SessionData::default()), Tabs::new());
     }
 
-    /// Ports Writer `stores.test.ts:426`: back and forward on a launcher
-    /// change nothing.
     #[test]
     fn back_and_forward_on_a_launcher_change_nothing() {
         let mut tabs = Tabs::new();
@@ -739,8 +697,6 @@ mod tests {
         assert_eq!(tabs.active_path(), None);
     }
 
-    /// Ports Writer `stores.test.ts:438` (`setActiveFile`): Cerata activates
-    /// a tab by index; activating another tab switches the active file.
     #[test]
     fn activating_a_tab_switches_the_active_file() {
         let mut tabs = with_files(&["/a.md", "/b.md"]);

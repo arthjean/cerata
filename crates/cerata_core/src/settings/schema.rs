@@ -1,10 +1,3 @@
-//! The embedded settings schema: 43 keys with their types, defaults, bounds
-//! and scopes.
-//!
-//! Ported from Writer `config.rs` (`SettingDef`, `settings_schema`) and
-//! `apps/desktop/shared/settings.schema.json`, copied to
-//! `crates/cerata_core/assets/settings.schema.json`.
-
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::OnceLock;
@@ -15,21 +8,16 @@ use super::{ConfigValue, SettingsError};
 
 const SCHEMA_JSON: &str = include_str!("../../assets/settings.schema.json");
 
-/// Value type of a setting, as declared by the schema's `type` field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ValueType {
     String,
     Number,
     Boolean,
-    /// A string restricted to [`SettingDef::options`].
     Enum,
-    /// Repeated `key = item` lines.
     List,
     Color,
-    /// A number clamped to [`SettingDef::min`] and [`SettingDef::max`].
     Range,
-    /// A CSS-style font family stack.
     Font,
 }
 
@@ -47,23 +35,18 @@ impl fmt::Display for ValueType {
     }
 }
 
-/// Normalization applied to a string value before it is stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Normalization {
     Trim,
 }
 
-/// Where a setting may be overridden. Absent means any layer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Scope {
-    /// App-level: a workspace config cannot override it.
     Global,
 }
 
-/// One schema entry. Writer's web-only `cssVar` and `cssFormat` fields are
-/// not read.
 #[derive(Debug, Clone, Deserialize)]
 pub struct SettingDef {
     pub key: String,
@@ -90,21 +73,16 @@ pub struct SettingDef {
 }
 
 impl SettingDef {
-    /// True when the key is app-level and a workspace cannot override it.
     pub fn is_global_only(&self) -> bool {
         self.scope == Some(Scope::Global)
     }
 
-    /// Clamps `value` into `[min, max]` when the schema declares bounds.
     pub(crate) fn clamp(&self, value: f64) -> f64 {
         let value = self.min.map_or(value, |min| value.max(min));
         self.max.map_or(value, |max| value.min(max))
     }
 }
 
-/// A font default for this OS: outside macOS the San Francisco families
-/// and Apple's system aliases are dropped, so the stack starts with a font
-/// the system has.
 pub fn platform_font_stack(stack: &str, macos: bool) -> String {
     if macos {
         return stack.to_owned();
@@ -122,7 +100,6 @@ pub fn platform_font_stack(stack: &str, macos: bool) -> String {
         .join(", ")
 }
 
-/// The parsed schema, in file order.
 #[derive(Debug)]
 pub struct Schema {
     definitions: Vec<SettingDef>,
@@ -135,7 +112,6 @@ struct SchemaFile {
 }
 
 impl Schema {
-    /// The schema embedded in the binary, parsed once per process.
     pub fn embedded() -> Result<&'static Schema, SettingsError> {
         static SCHEMA: OnceLock<Result<Schema, String>> = OnceLock::new();
         SCHEMA
@@ -166,17 +142,14 @@ impl Schema {
         })
     }
 
-    /// Every definition, in schema order.
     pub fn definitions(&self) -> &[SettingDef] {
         &self.definitions
     }
 
-    /// The definition of `key`, if the schema declares it.
     pub fn get(&self, key: &str) -> Option<&SettingDef> {
         self.position(key).map(|index| &self.definitions[index])
     }
 
-    /// Index of `key` in schema order.
     pub(crate) fn position(&self, key: &str) -> Option<usize> {
         self.positions.get(key).copied()
     }

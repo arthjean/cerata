@@ -1,10 +1,5 @@
-//! Inline Markdown rendered for a widget that shows text without its
-//! syntax: table cells (US-032) and the text of HTML blocks (US-035).
-//! Ported from `table-decorations.ts:207-343` (`renderMarkdownNode`).
-
 use crate::tree::{MarkdownTree, Node, NodeKind};
 
-/// A rendered inline node.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Inline {
     Text(String),
@@ -13,25 +8,21 @@ pub enum Inline {
     Emphasis(Vec<Inline>),
     Code(Vec<Inline>),
     Strike(Vec<Inline>),
-    /// A Markdown link, autolink or bare URL; `href` is its destination.
     Link {
         href: Option<String>,
         children: Vec<Inline>,
     },
-    /// A wiki link: `target` is the raw text between the brackets.
     Wiki {
         target: String,
         children: Vec<Inline>,
     },
 }
 
-/// Renders `markdown` as inline content. HTML stays text.
 pub fn render(markdown: &str) -> Vec<Inline> {
     let tree = MarkdownTree::parse(markdown);
     node(markdown, tree.root())
 }
 
-/// The plain text of rendered nodes, for measuring and tests.
 pub fn plain_text(nodes: &[Inline]) -> String {
     let mut out = String::new();
     for n in nodes {
@@ -171,8 +162,6 @@ fn node(text: &str, n: Node<'_>) -> Vec<Inline> {
     }
 }
 
-/// `decodeMarkdownEntity`: numeric references and the six names Writer
-/// knows; anything else stays as written.
 pub fn decode_entity(entity: &str) -> String {
     let from_code = |code: Option<u32>| {
         code.and_then(char::from_u32)
@@ -209,7 +198,6 @@ mod tests {
         Text(s.to_owned())
     }
 
-    /// `table-decorations.test.ts:67-95`.
     #[test]
     fn renders_inline_markdown_for_cells() {
         assert_eq!(
@@ -232,7 +220,6 @@ mod tests {
         );
     }
 
-    /// `table-decorations.test.ts:97-125`.
     #[test]
     fn renders_wiki_links_with_escaped_aliases_and_inside_emphasis() {
         assert_eq!(
@@ -251,7 +238,6 @@ mod tests {
         );
     }
 
-    /// `table-decorations.test.ts:127-132`.
     #[test]
     fn keeps_inline_html_as_text() {
         assert_eq!(

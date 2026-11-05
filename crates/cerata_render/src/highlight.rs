@@ -1,39 +1,26 @@
-//! Code highlighting with tree-sitter grammars (US-014), in the color roles
-//! of Writer's `generalSyntaxHighlights` (`syntaxHighlighting.ts:214-273`).
-//! A fence whose language has no grammar renders in monospace without
-//! colors: [`highlight`] returns `None`, never an error.
-
 use std::ops::Range;
 use std::sync::OnceLock;
 
 use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
 
-/// Writer's code color roles.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum HighlightKind {
     Link,
     Keyword,
-    /// Atoms, booleans, URLs, labels.
     Atom,
-    /// Numbers and other literals.
     Literal,
     String,
-    /// Regular expressions, escapes, special strings.
     Regexp,
     DefinitionVariable,
     LocalVariable,
-    /// Types and namespaces.
     TypeName,
     ClassName,
-    /// Built-in variables and macros.
     Macro,
     DefinitionProperty,
     Comment,
     Invalid,
 }
 
-/// Tree-sitter capture names, most specific first where they share a
-/// prefix, and the role each one takes.
 const CAPTURES: &[(&str, HighlightKind)] = &[
     ("comment", HighlightKind::Comment),
     ("keyword", HighlightKind::Keyword),
@@ -76,13 +63,11 @@ const CAPTURES: &[(&str, HighlightKind)] = &[
     ("error", HighlightKind::Invalid),
 ];
 
-/// The capture names handed to every configuration.
 fn capture_names() -> Vec<&'static str> {
     CAPTURES.iter().map(|(name, _)| *name).collect()
 }
 
 struct Grammar {
-    /// Canonical name, then the fence aliases that select it.
     names: &'static [&'static str],
     load: fn() -> Option<HighlightConfiguration>,
 }
@@ -109,7 +94,6 @@ macro_rules! grammar {
     };
 }
 
-/// The 34 languages, most common in Markdown notes first.
 static GRAMMARS: &[Grammar] = &[
     grammar!(
         &["javascript", "js", "jsx", "mjs", "cjs", "node"],
@@ -283,7 +267,6 @@ static GRAMMARS: &[Grammar] = &[
     ),
 ];
 
-/// TypeScript's query extends JavaScript's.
 static TYPESCRIPT_HIGHLIGHTS: OnceLock<String> = OnceLock::new();
 fn typescript_highlights() -> String {
     format!(
@@ -293,7 +276,6 @@ fn typescript_highlights() -> String {
     )
 }
 
-/// C++'s query extends C's.
 static CPP_HIGHLIGHTS: OnceLock<String> = OnceLock::new();
 fn cpp_highlights() -> String {
     format!(
@@ -303,7 +285,6 @@ fn cpp_highlights() -> String {
     )
 }
 
-/// Compiled configurations, built on first use.
 fn configuration(index: usize) -> Option<&'static HighlightConfiguration> {
     static CONFIGS: OnceLock<Vec<OnceLock<Option<HighlightConfiguration>>>> = OnceLock::new();
     let configs = CONFIGS.get_or_init(|| GRAMMARS.iter().map(|_| OnceLock::new()).collect());
@@ -313,12 +294,10 @@ fn configuration(index: usize) -> Option<&'static HighlightConfiguration> {
         .as_ref()
 }
 
-/// Every language with a grammar, by canonical name.
 pub fn languages() -> impl Iterator<Item = &'static str> {
     GRAMMARS.iter().map(|g| g.names[0])
 }
 
-/// The grammar a fence's info string selects (`rust`, `RS`, `js title=x`).
 fn grammar_index(info: &str) -> Option<usize> {
     let name = info
         .split_whitespace()
@@ -330,7 +309,6 @@ fn grammar_index(info: &str) -> Option<usize> {
         .position(|g| g.names.contains(&name.as_str()))
 }
 
-/// The canonical language a fence's info string selects, if it has a grammar.
 pub fn language_for(info: &str) -> Option<&'static str> {
     grammar_index(info).map(|i| GRAMMARS[i].names[0])
 }
@@ -341,8 +319,6 @@ pub struct HighlightSpan {
     pub kind: HighlightKind,
 }
 
-/// Colored spans of `code` (offsets into `code`), or `None` when `info`
-/// names no known language or the grammar fails on this input.
 pub fn highlight(info: &str, code: &str) -> Option<Vec<HighlightSpan>> {
     let config = configuration(grammar_index(info)?)?;
     let mut highlighter = Highlighter::new();
@@ -381,8 +357,6 @@ pub fn highlight(info: &str, code: &str) -> Option<Vec<HighlightSpan>> {
     Some(spans)
 }
 
-/// Colored spans of every fenced code block of the document, in document
-/// offsets: what the renderer paints over the code lines.
 pub fn highlight_code_blocks(state: &cerata_markdown::EditorState) -> Vec<HighlightSpan> {
     let mut out = Vec::new();
     for block in cerata_markdown::code::code_blocks(state.tree(), state.text()) {

@@ -1,10 +1,3 @@
-//! Messages from background threads (save threads, the watcher) to the
-//! main thread: a queue, and a wake-up that tells a GPUI task to drain it.
-//!
-//! GPUI's test scheduler rejects wake-ups from foreign threads, so in test
-//! builds the wake-up is off and tests drain the queue themselves; the
-//! queue and the draining code are the same in both.
-
 use std::sync::Arc;
 
 use futures::StreamExt as _;
@@ -16,8 +9,6 @@ pub struct Inbox<T> {
     wake: Option<UnboundedSender<()>>,
 }
 
-/// The receiving end: resolves once per wake-up, `None` once every sender
-/// is gone. Never resolves in test builds.
 pub struct Wakeups(Option<UnboundedReceiver<()>>);
 
 impl Wakeups {
@@ -51,7 +42,6 @@ impl<T> Inbox<T> {
         }
     }
 
-    /// Everything queued since the last call, oldest first.
     pub fn take(&self) -> Vec<T> {
         std::mem::take(&mut *self.queue.lock())
     }

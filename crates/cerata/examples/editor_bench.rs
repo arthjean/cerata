@@ -1,35 +1,3 @@
-//! EP-003 benchmark of the real editor in a real window
-//! (`docs/adr/0001-editor-engine.md`, retained latency criterion): opening a
-//! 1 MB note, typing, and scrolling, timed on the platform's own frames.
-//!
-//! ```text
-//! cargo run -p cerata --example editor_bench --release
-//! ```
-//!
-//! Timestamps per event (keystroke, scroll jump, or the open):
-//! - `input`: right before the event is applied. A keystroke goes through
-//!   `EntityInputHandler::replace_text_in_range`, the entry point of every
-//!   keyboard and IME path; its cost is reported on its own.
-//! - `frame`: the next frame callback starts (a `Window::on_next_frame`
-//!   callback, which GPUI runs right before `draw`).
-//! - `render`: the root view renders, proof that this frame draws.
-//! - `presented`: a task spawned from the frame callback, which runs once
-//!   the callback has drawn and returned from `present` (DXGI, Metal, wgpu).
-//!
-//! App work is `presented - frame`; the wait for the refresh is excluded.
-//! Each keystroke must be drawn by the first frame after it.
-//!
-//! A second scenario (US-048, ADR 0007) types 200 characters in a cell in
-//! the middle of a drawn table of 200 rows and 8 columns: the editor lays
-//! the whole table out in the frame of each keystroke. US-057 adds, on the
-//! same table, 60 column insertions ("Insert column right", each undone
-//! off the clock), then 200 characters typed in the last cell of a table of
-//! 1 000 rows.
-//!
-//! US-066 resizes an image in the middle of the 1 MB note: 3 x 60 widths
-//! of the preview of a handle's gesture, the buffer untouched, each
-//! drawn by the frame after it (the lines below reflow in it).
-
 #![allow(clippy::single_range_in_vec_init)]
 
 #[allow(dead_code)]
@@ -82,20 +50,13 @@ struct Timings {
     handler: Vec<Duration>,
     typing: Vec<Duration>,
     scrolling: Vec<Duration>,
-    /// Keystrokes in a cell of the 200 x 8 table.
     table: Vec<Duration>,
-    /// "Insert column right" in the 200 x 8 table.
     column: Vec<Duration>,
-    /// Keystrokes in the last cell of the 1 000 x 8 table.
     big: Vec<Duration>,
-    /// Width changes of an image's resize preview.
     resize: Vec<Duration>,
-    /// Events whose first frame after them did not render.
     missed: usize,
 }
 
-/// A note holding a table of `rows` body rows and `TABLE_COLUMNS`
-/// columns, with inline marks in some cells.
 fn table_note(rows: usize) -> String {
     let mut out = format!("# Table\n\nA table of {rows} rows.\n\n|");
     for c in 0..TABLE_COLUMNS {
@@ -131,8 +92,6 @@ struct Root {
 
 impl Render for Root {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        // The first render after an event: later frames (an image that
-        // finished loading) must not hide a missed one.
         self.rendered.borrow_mut().get_or_insert_with(Instant::now);
         div().size_full().children(self.editor.clone())
     }
@@ -143,10 +102,8 @@ enum Event {
     Open,
     Key(char),
     Scroll,
-    /// A registry command, from the caret.
     Command(&'static str),
     Undo,
-    /// The resize gesture in flight moves to this window x.
     ResizeTo(f32),
 }
 
@@ -161,7 +118,6 @@ struct Bench {
 }
 
 impl Bench {
-    /// Uniform in [0, 16.7 ms): events land at every phase of the refresh.
     fn next_delay(&mut self) -> Duration {
         self.rng ^= self.rng << 13;
         self.rng ^= self.rng >> 7;
@@ -170,8 +126,6 @@ impl Bench {
     }
 }
 
-/// Applies `event`, then waits for the frame that shows it; returns the
-/// app work of that frame (`presented - frame`).
 async fn measure(bench: &Rc<RefCell<Bench>>, event: Event, cx: &mut AsyncApp) -> Option<Duration> {
     let (window, root) = {
         let b = bench.borrow();
@@ -263,7 +217,6 @@ async fn measure(bench: &Rc<RefCell<Bench>>, event: Event, cx: &mut AsyncApp) ->
     Some(presented - frame)
 }
 
-/// A one-shot slot the frame task fills after `present`.
 fn slot() -> (Slot, Slot) {
     let slot = Slot(Rc::new(RefCell::new(None)));
     (Slot(slot.0.clone()), slot)
@@ -276,8 +229,6 @@ impl Slot {
         *self.0.borrow_mut() = Some(value);
     }
 
-    /// Polls the slot on a short timer: the timestamps are taken by the
-    /// frame task, so how soon this notices does not matter.
     async fn recv(self, cx: &AsyncApp) -> Option<(Instant, Instant)> {
         for _ in 0..10_000 {
             if let Some(value) = self.0.borrow_mut().take() {
@@ -313,7 +264,6 @@ fn summary(name: &str, values: &[Duration]) -> String {
 }
 
 async fn run(bench: Rc<RefCell<Bench>>, cx: &mut AsyncApp) -> anyhow::Result<String> {
-    // Let the empty window present its first frame.
     cx.background_executor()
         .timer(Duration::from_millis(500))
         .await;
@@ -321,7 +271,6 @@ async fn run(bench: Rc<RefCell<Bench>>, cx: &mut AsyncApp) -> anyhow::Result<Str
         .await
         .context("no frame after the open")?;
 
-    // Caret at the end of a long paragraph in the middle of the note.
     let root = bench.borrow().root.clone();
     let window = bench.borrow().window;
     window.update(cx, |_, _, cx| {
@@ -365,7 +314,6 @@ async fn run(bench: Rc<RefCell<Bench>>, cx: &mut AsyncApp) -> anyhow::Result<Str
         bench.borrow_mut().timings.scrolling.push(work);
     }
 
-    // US-066: a gesture on the figure nearest the middle of the note.
     let missed_before_resize = bench.borrow().timings.missed;
     let started = window.update(cx, |_, window, cx| {
         let editor = root.read(cx).editor.clone()?;
@@ -403,8 +351,6 @@ async fn run(bench: Rc<RefCell<Bench>>, cx: &mut AsyncApp) -> anyhow::Result<Str
         .await;
     for run in 0..RESIZE_RUNS {
         for step in 0..RESIZE_STEPS {
-            // Narrower then back (a move is half the width change, the
-            // image staying centered); every step changes the width.
             let half = RESIZE_STEPS as f32 / 2.0;
             let s = (step + 1) as f32;
             let triangle = if s <= half {
@@ -441,7 +387,6 @@ async fn run(bench: Rc<RefCell<Bench>>, cx: &mut AsyncApp) -> anyhow::Result<Str
             .is_some_and(|editor| editor.read(cx).state.doc().contains(&typed))
     })?;
 
-    // US-048: the caret at the end of a cell in the middle of the table.
     let handled = bench.borrow().timings.handler.len();
     let missed_before_table = bench.borrow().timings.missed;
     window.update(cx, |_, _, cx| {
@@ -485,8 +430,6 @@ async fn run(bench: Rc<RefCell<Bench>>, cx: &mut AsyncApp) -> anyhow::Result<Str
         })
     })?;
 
-    // US-057: "Insert column right" from that cell, each one undone off
-    // the clock, so every insertion meets the same 200 x 8 table.
     for _ in 0..COLUMN_INSERTS {
         let delay = bench.borrow_mut().next_delay();
         cx.background_executor().timer(delay).await;
@@ -507,7 +450,6 @@ async fn run(bench: Rc<RefCell<Bench>>, cx: &mut AsyncApp) -> anyhow::Result<Str
     })?;
     let missed_columns = bench.borrow().timings.missed;
 
-    // US-057: 200 characters in the last cell of a 1 000-row table.
     window.update(cx, |_, _, cx| {
         if let Some(editor) = root.read(cx).editor.clone() {
             editor.update(cx, |editor, cx| {

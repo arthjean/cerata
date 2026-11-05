@@ -1,12 +1,3 @@
-//! Workspace generator and indexing benchmark (US-005, docs/benchmarks.md).
-//!
-//! cargo run -p cerata_core --release --example index_bench -- generate <dir> <files>
-//! cargo run -p cerata_core --release --example index_bench -- index <dir> [runs]
-//!
-//! `generate` writes `<files>` Markdown notes, 100 per folder, two folder
-//! levels deep, plus a `.gitignore`, an ignored folder and non-Markdown
-//! files, so the walk exercises the same rules as a real vault.
-
 #[path = "support/corpus.rs"]
 mod corpus;
 

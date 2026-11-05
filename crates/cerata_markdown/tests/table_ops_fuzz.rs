@@ -1,9 +1,3 @@
-//! US-057: 10 000 random operations on drawn tables (typing, pasting text
-//! and cells, structure commands, rectangles of cells, undo and redo),
-//! quoted and listed tables included, never panic and always leave a GFM
-//! table with the expected number of columns; undoing the whole run gives
-//! the text back to the byte (ADR 0007, decisions 5, 6, 9 and 10).
-
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use cerata_markdown::commands::Clock;
@@ -11,7 +5,6 @@ use cerata_markdown::table::{CellKind, Grid};
 use cerata_markdown::table_clip::CellBlock;
 use cerata_markdown::{EditorState, NodeKind, Selection, UserEvent, cells, table_ops};
 
-/// Deterministic xorshift, so a failure replays.
 struct Rng(u64);
 
 impl Rng {
@@ -54,8 +47,6 @@ const TABLES: &[&str] = &[
     "| a<br>b | `c` |\n| - | - |\n| **d** | [e](f) |\n| short |",
 ];
 
-/// Structure commands the run draws from: all but "Edit as Markdown",
-/// which leaves the table as source, and "Delete table".
 fn structure() -> Vec<&'static str> {
     table_ops::IDS
         .iter()
@@ -81,7 +72,6 @@ fn caret_in_cell(rng: &mut Rng, state: &EditorState, grid: &Grid) -> usize {
     pos
 }
 
-/// A random cell of `grid`, as `(row, column)` in `Grid::rows`.
 fn random_cell(rng: &mut Rng, grid: &Grid) -> (usize, usize) {
     let rows: Vec<usize> = grid.text_rows().map(|(r, _)| r).collect();
     (rows[rng.below(rows.len())], rng.below(grid.columns()))
@@ -112,18 +102,14 @@ fn random_table_operations_keep_a_valid_table_and_undo_to_the_byte() {
     for (t, doc) in TABLES.iter().enumerate() {
         let mut state = EditorState::new(*doc);
         let mut columns = grid(&state).expect("a table").columns();
-        // Column counts before each undo step, and before each redo one.
         let mut undo: Vec<usize> = Vec::new();
         let mut redo: Vec<usize> = Vec::new();
         for step in 0..2_500 {
             let g = grid(&state).unwrap_or_else(|| panic!("table {t} lost at {step}"));
-            // A second apart: every edit is its own undo step.
             state.set_time(step as u64 * 1_000 + 1);
             let depth = state.history().undo_depth();
             let before = columns;
             let mut next = columns;
-            // Bounded growth keeps the run fast: a big table takes
-            // deletions instead of insertions.
             let big = g.columns() >= 8 || g.rows.len() >= 14;
             let pos = caret_in_cell(&mut rng, &state, &g);
             state.select(Selection::cursor(pos)).unwrap();
@@ -166,7 +152,6 @@ fn random_table_operations_keep_a_valid_table_and_undo_to_the_byte() {
                     state.run_command(id, &CLOCK);
                 }
                 6 | 7 => {
-                    // A rectangle, then something done to it.
                     let anchor = random_cell(&mut rng, &g);
                     let head = random_cell(&mut rng, &g);
                     state.select_cells(&g, anchor, head);

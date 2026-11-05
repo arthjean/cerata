@@ -1,18 +1,3 @@
-//! `--bench-typing`: types characters through
-//! `EntityInputHandler::replace_text_in_range` (the entry point every
-//! platform IME and keyboard path calls) at a random phase relative to the
-//! display refresh, one per frame, and records when the frame that shows
-//! each one has been presented.
-//!
-//! Timestamps per keystroke:
-//! - `injected`: right before `replace_text_in_range`.
-//! - `render`: the editor view's `render`, the start of the frame's work.
-//! - `paint_end`: end of the editor element's `paint`.
-//! - `presented`: a foreground task spawned at `paint_end`. GPUI's frame
-//!   callback draws, then calls `present` (DXGI `Present` on Windows)
-//!   before returning to the message loop, so this task runs after the
-//!   present call has returned. It does not include compositor latency.
-
 use std::{
     cell::RefCell,
     rc::Rc,
@@ -37,8 +22,6 @@ struct Pending {
     paint_end: Option<Instant>,
 }
 
-/// Scroll jumps measured after the typing run: each lands on lines never
-/// shaped before (cold layout of a whole viewport).
 const SCROLL_JUMPS: usize = 60;
 
 pub struct BenchState {
@@ -92,8 +75,6 @@ impl BenchState {
         }
     }
 
-    /// Delay before the next keystroke: uniform in [0, 16.7 ms) so input
-    /// lands at every phase of the refresh cycle, like real typing.
     fn next_delay(&mut self) -> Duration {
         self.rng ^= self.rng << 13;
         self.rng ^= self.rng >> 7;
@@ -154,8 +135,6 @@ pub fn on_paint_end(bench: &Rc<RefCell<BenchState>>, cx: &mut App) {
     .detach();
 }
 
-/// Types the next character, or once all are typed, jumps the scroll
-/// position 2.5 viewports down.
 pub fn inject(bench: &Rc<RefCell<BenchState>>, cx: &mut AsyncApp) {
     let (window, editor, ch) = {
         let mut state = bench.borrow_mut();

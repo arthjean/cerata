@@ -1,10 +1,3 @@
-//! Themes (`lib/theme.ts`, `App.css:52-94`): five values per mode (accent,
-//! background, foreground, translucency, contrast) from which every color
-//! token derives; the preference is system, light or dark, and system
-//! follows the OS. The four presets of Writer's `shared/themes` are loaded
-//! and selectable (Writer never offered them); Writer's own preset is
-//! renamed Cerata.
-
 use cerata_core::settings::Settings;
 use gpui::{Hsla, Rgba, WindowAppearance};
 use serde::Deserialize;
@@ -20,7 +13,6 @@ pub enum Preference {
 }
 
 impl Preference {
-    /// An invalid value is `system`.
     pub fn parse(id: Option<&str>) -> Self {
         match id {
             Some("light") => Self::Light,
@@ -37,7 +29,6 @@ impl Preference {
         }
     }
 
-    /// "Toggle Dark Mode": system, light, dark, system (`use-theme.ts:7`).
     pub fn next(self) -> Self {
         match self {
             Self::System => Self::Light,
@@ -73,8 +64,6 @@ impl Mode {
     }
 }
 
-/// The five values of one mode, as stored in `theme.{mode}.*` and in the
-/// preset files.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 pub struct ModeValues {
     pub accent: String,
@@ -114,8 +103,6 @@ const BUILTIN: &[(&str, &str, &str)] = &[
     ),
 ];
 
-/// Presets from `(name, light JSON, dark JSON)`; an invalid one is skipped
-/// with a warning.
 pub fn load_presets(sources: &[(&str, &str, &str)]) -> Vec<Preset> {
     sources
         .iter()
@@ -146,7 +133,6 @@ pub fn presets() -> Vec<Preset> {
     load_presets(BUILTIN)
 }
 
-/// `#RGB` or `#RRGGBB`.
 pub fn parse_hex(text: &str) -> Option<Rgba> {
     let hex = text.strip_prefix('#')?;
     let full = match hex.len() {
@@ -158,17 +144,14 @@ pub fn parse_hex(text: &str) -> Option<Rgba> {
     Some(gpui::rgb(value))
 }
 
-/// `1 - t/100 × 0.95`, `t` clamped to 0..=100.
 pub fn opacity(translucent: f64) -> f32 {
     (1.0 - translucent.clamp(0.0, 100.0) / 100.0 * 0.95) as f32
 }
 
-/// `0.2 + c/100 × 0.8`, `c` clamped to 0..=100.
 pub fn contrast(contrast: f64) -> f32 {
     (0.2 + contrast.clamp(0.0, 100.0) / 100.0 * 0.8) as f32
 }
 
-/// The color tokens of one mode.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Tokens {
     pub bg: Hsla,
@@ -196,7 +179,6 @@ fn mix(color: Hsla, percent: f32) -> Hsla {
     color.opacity((percent / 100.0).clamp(0.0, 1.0))
 }
 
-/// The derived tokens (`App.css:52-94`): `mix(X, p)` is X at p % opacity.
 pub fn tokens(values: &ModeValues, dark: bool) -> Tokens {
     let fallback = |text: &str, default: u32| -> Hsla {
         parse_hex(text).unwrap_or_else(|| gpui::rgb(default)).into()
@@ -211,8 +193,6 @@ pub fn tokens(values: &ModeValues, dark: bool) -> Tokens {
         bg_base,
         text: fg,
         text_secondary: mix(fg, 80.0),
-        // Writer's 54 % fails 4.5:1 on the sidebar in both modes (3.96 and
-        // 4.49 measured); 68 % passes on every panel.
         muted: mix(fg, 68.0),
         icon_muted: mix(fg, 40.0),
         border: mix(fg, c * 24.0),
@@ -231,7 +211,6 @@ pub fn tokens(values: &ModeValues, dark: bool) -> Tokens {
     }
 }
 
-/// The five values of `mode` from the settings.
 pub fn mode_values(settings: &Settings, mode: Mode) -> ModeValues {
     let key = |name: &str| format!("theme.{}.{name}", mode.id());
     let text = |name: &str| {
@@ -255,7 +234,6 @@ pub fn mode_values(settings: &Settings, mode: Mode) -> ModeValues {
     }
 }
 
-/// The editor and chrome palette of `tokens`.
 pub fn palette(tokens: &Tokens) -> crate::editor::theme::Palette {
     crate::editor::theme::Palette {
         background: tokens.bg,
@@ -275,9 +253,6 @@ pub fn palette(tokens: &Tokens) -> crate::editor::theme::Palette {
     }
 }
 
-/// Applies the theme of `settings` for the OS `appearance`: the palette is
-/// installed for every editor and chrome color; returns the tokens and
-/// whether the window is translucent.
 pub fn apply(settings: &Settings, appearance: WindowAppearance) -> (Tokens, bool) {
     let mode = preference(settings).mode(appearance);
     let values = mode_values(settings, mode);
@@ -355,9 +330,6 @@ mod tests {
         (x.max(y) + 0.05) / (x.min(y) + 0.05)
     }
 
-    /// Muted and error text reach 4.5:1 on the window background and on a
-    /// selected sidebar row (the darkest panel in light mode, the lightest
-    /// in dark mode), for every preset.
     #[test]
     fn muted_and_danger_text_reach_4_5_to_1_on_every_panel() {
         for preset in presets() {

@@ -1,11 +1,3 @@
-//! Application services and the single startup call.
-//!
-//! Ported from Writer `commands/startup.rs` (`get_startup_state`) and
-//! `commands/workspace.rs:603-684` (`build_restore_bundle`): one call returns
-//! the settings, the libraries, the recent files, the root listing, the
-//! session and the active file, so the first frame can render without
-//! further round trips.
-
 use crate::fs::{DirEntry, FileContent, FsError, WorkspaceFs};
 use crate::ignore::WorkspaceIgnore;
 use crate::library::{Library, LibraryNotice, LibraryRegistry, Marker, read_marker};
@@ -24,7 +16,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::Sender;
 
-/// Setting that reopens the last library at launch (default on).
 pub const RESTORE_WORKSPACE_KEY: &str = "window.restore-workspace";
 
 #[derive(Debug, thiserror::Error)]
@@ -35,11 +26,9 @@ pub enum StartupError {
     Settings(#[from] SettingsError),
 }
 
-/// Process-wide services shared by every window.
 pub struct CoreApp {
     pub config_dir: PathBuf,
     pub data_dir: PathBuf,
-    /// Local, never roaming: the library stores (ADR 0009).
     pub local_data_dir: PathBuf,
     pub windows: WindowRegistry,
     pub sessions: SessionStore,
@@ -62,13 +51,11 @@ impl CoreApp {
         }
     }
 
-    /// The library stores go under `dir` instead of the data directory.
     pub fn with_local_data_dir(mut self, dir: PathBuf) -> Self {
         self.local_data_dir = dir;
         self
     }
 
-    /// Services on the OS config and data directories for Cerata.
     pub fn open_default() -> Result<Self, StartupError> {
         let config_dir = paths::global_config_dir().ok_or(SettingsError::NoConfigDir)?;
         let data_dir = paths::data_dir().ok_or(StartupError::NoDataDir)?;
@@ -76,15 +63,11 @@ impl CoreApp {
         Ok(Self::new(config_dir, data_dir).with_local_data_dir(local_data_dir))
     }
 
-    /// A new window with its own settings handle on the global config.
     pub fn create_window(&self) -> Result<(Arc<WindowState>, Vec<ConfigWarning>), StartupError> {
         let (settings, warnings) = Settings::open(&self.config_dir)?;
         Ok((self.windows.create(settings), warnings))
     }
 
-    /// Opens the folder `path` in `window` as a library: identified by its
-    /// marker (written when missing) and recorded in the registry. The
-    /// notice tells of a move, a copy or a folder Cerata cannot write to.
     pub fn open_workspace(
         &self,
         window: &Arc<WindowState>,
@@ -94,7 +77,6 @@ impl CoreApp {
         let root = canonicalize_workspace_root(path)?;
         let (id, notice) = match self.libraries.resolve(&root) {
             Ok(opened) => (opened.library.id, opened.notice),
-            // An unreadable registry still opens a marked library.
             Err(error) => match read_marker(&root) {
                 Marker::Id(id) => {
                     log::warn!("library registry unavailable: {error}");
@@ -119,30 +101,20 @@ impl CoreApp {
     }
 }
 
-/// Everything the first frame of a window needs.
 #[derive(Debug)]
 pub struct StartupBundle {
     pub settings: Vec<(&'static str, ConfigValue)>,
     pub settings_warnings: Vec<ConfigWarning>,
-    /// The registry, most recently opened first.
     pub libraries: Vec<Library>,
     pub recent_files: Vec<RecentEntry>,
     pub workspace: Option<WorkspaceInfo>,
-    /// What opening the library told (moved, copy, read-only).
     pub library_notice: Option<LibraryNotice>,
-    /// Root listing, before indexing completes (titles come later).
     pub entries: Vec<DirEntry>,
     pub session: Option<SessionData>,
-    /// Content of the session's active file.
     pub active_file: Option<FileContent>,
-    /// A Markdown file opened on its own, outside any workspace.
     pub standalone_file: Option<FileContent>,
 }
 
-/// The startup call. `target` comes from argv or the OS; without one, the
-/// most recently opened library that still exists is restored when
-/// `window.restore-workspace` is on. Failures of optional parts (recents,
-/// session, active file) are logged and leave that part empty.
 pub fn startup(
     app: &CoreApp,
     target: Option<OpenTarget>,
@@ -223,7 +195,6 @@ pub fn startup(
                         .and_then(|path| runtime.fs.read_file(&path).ok());
                 }
                 bundle.workspace = Some(info);
-                // The opening changed the order.
                 if let Ok(libraries) = app.libraries.list() {
                     bundle.libraries = libraries;
                 }
@@ -232,7 +203,6 @@ pub fn startup(
         }
     }
 
-    // After the workspace layer, so the bundle shows the merged values.
     bundle.settings = window.settings().merged();
     Ok((window, bundle))
 }
@@ -320,7 +290,6 @@ mod tests {
         assert_eq!(info.root, canonical);
         assert_eq!(info.library_id, library.id);
         assert_eq!(bundle.library_notice, None);
-        // `.cerata/` is hidden from the listing.
         let names: Vec<_> = bundle.entries.iter().map(|e| e.name.as_str()).collect();
         assert_eq!(names, ["a.md", "b.md"]);
         assert_eq!(bundle.session.as_ref().unwrap().tabs.len(), 1);
@@ -358,7 +327,6 @@ mod tests {
                 .libraries
                 .resolve(&dunce::canonicalize(dir.path()).unwrap())
                 .unwrap();
-            // `last_opened_at` has a resolution of one second.
             std::thread::sleep(std::time::Duration::from_millis(1100));
         }
         let gone_path = gone.path().to_path_buf();
@@ -422,7 +390,6 @@ mod tests {
         assert!(bundle.workspace.is_none());
         assert_eq!(bundle.standalone_file.unwrap().content, "solo");
         assert_eq!(window.standalone_file(), Some(file));
-        // A file opened on its own makes no library of its folder.
         assert!(env.app.libraries.list().unwrap().is_empty());
         assert!(!dir.path().join(".cerata").exists());
     }
@@ -452,8 +419,6 @@ mod tests {
         assert!(aside);
     }
 
-    /// US-074: an unreadable sessions file opens the library without
-    /// restored tabs and is left as it is.
     #[test]
     fn unreadable_sessions_file_opens_the_library_without_tabs() {
         let env = env();

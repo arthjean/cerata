@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# Installs Cerata with its desktop entry and icons under an XDG prefix, which
-# every freedesktop desktop (GNOME, KDE, Xfce, Cinnamon, ...) reads. Wayland
-# compositors match the window's app_id `cerata` to `cerata.desktop` to find
-# the icon; X11 also gets it from the window itself (`_NET_WM_ICON`).
-# Usage: scripts/install-linux.sh [prefix]   (default: ~/.local, or /usr/local as root)
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -29,7 +24,6 @@ for size in 16 32 48 64 128 256 512; do
 done
 install -Dm644 "$brand/cerata-icon.svg" "$prefix/share/icons/hicolor/scalable/apps/cerata.svg"
 
-# Cache refreshes are optional and absent on some distros.
 command -v gtk-update-icon-cache >/dev/null &&
     gtk-update-icon-cache -qtf "$prefix/share/icons/hicolor" || true
 command -v update-desktop-database >/dev/null &&

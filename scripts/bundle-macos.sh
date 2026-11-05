@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Builds Cerata.app. macOS takes the Dock and Finder icon from the bundle's
-# CFBundleIconFile, so a bare `cerata` binary always shows the generic icon.
-# Usage: scripts/bundle-macos.sh   (prints the path of the release bundle)
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

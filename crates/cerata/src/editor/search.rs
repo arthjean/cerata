@@ -1,9 +1,3 @@
-//! Find and replace in the open note (`editor-search-store.ts:28-125`,
-//! `editor-search-overlay.tsx:23-146`, `editor-search-overview.tsx:8-75`,
-//! `editor-search-extensions.ts:29-125`): literal, case-insensitive, a
-//! `n/total` counter, results marked on the scrollbar (at most 5 000), and a
-//! jump that keeps the result 140 px from the edges.
-
 use std::ops::Range;
 
 use cerata_markdown::{Change, EditorState, Selection, Transaction, UserEvent};
@@ -18,10 +12,8 @@ use super::text_field::{FieldEvent, TextField};
 use super::theme;
 use crate::icons::{Icon, icon};
 
-/// Scrollbar marks drawn at most (`MAX_OVERVIEW_MATCHES`).
 pub const MAX_MARKS: usize = 5000;
 
-/// Every occurrence of `query` in `doc`, literal and case-insensitive.
 pub fn find_all(doc: &str, query: &str) -> Vec<Range<usize>> {
     let mut out = Vec::new();
     if query.is_empty() {
@@ -48,8 +40,6 @@ pub fn find_all(doc: &str, query: &str) -> Vec<Range<usize>> {
         }
         return out;
     }
-    // Unicode: a result starts at a char whose lowercase starts the
-    // lowercased query; lowercased chars are then compared one by one.
     let needle: Vec<char> = query.chars().flat_map(char::to_lowercase).collect();
     let first = needle[0];
     let end_of_match = |at: usize| -> Option<usize> {
@@ -85,8 +75,6 @@ pub fn find_all(doc: &str, query: &str) -> Vec<Range<usize>> {
     out
 }
 
-/// The index of the result the counter shows: the first containing or
-/// after `head`, else the first (`computeMatchInfo`).
 pub fn current_index(matches: &[Range<usize>], head: usize) -> Option<usize> {
     if matches.is_empty() {
         return None;
@@ -96,10 +84,7 @@ pub fn current_index(matches: &[Range<usize>], head: usize) -> Option<usize> {
 }
 
 pub enum SearchEvent {
-    /// Move to the next (or previous) result.
-    Step {
-        forward: bool,
-    },
+    Step { forward: bool },
     ReplaceNext,
     ReplaceAll,
     Close,
@@ -155,7 +140,6 @@ impl SearchBar {
         self.current
     }
 
-    /// Results touching `range`, with their index.
     pub fn matches_in(&self, range: Range<usize>) -> Vec<(usize, Range<usize>)> {
         let start = self.matches.partition_point(|m| m.end < range.start);
         self.matches[start..]
@@ -166,12 +150,10 @@ impl SearchBar {
             .collect()
     }
 
-    /// The results drawn on the scrollbar.
     pub fn marks(&self) -> impl Iterator<Item = (usize, Range<usize>)> + '_ {
         self.matches.iter().take(MAX_MARKS).cloned().enumerate()
     }
 
-    /// Recounts on every document or selection change, or query edit.
     pub fn document_changed(&mut self, state: &EditorState, cx: &mut Context<Self>) {
         let query = self.query(cx);
         self.matches = find_all(state.doc(), &query);
@@ -289,8 +271,6 @@ impl Render for SearchBar {
 }
 
 impl Editor {
-    /// Cmd+F: opens the bar (pre-filled by a one-line selection) and
-    /// focuses its find field.
     pub fn open_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let main = self.state.selection().main();
         let prefill = (!main.is_empty())
@@ -321,7 +301,6 @@ impl Editor {
         cx.notify();
     }
 
-    /// Escape: closes the bar and gives the focus back to the text.
     pub fn close_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(search) = self.search.take() {
             self.last_query = search.read(cx).query(cx);
@@ -330,8 +309,6 @@ impl Editor {
         }
     }
 
-    /// The editor's tab became active or inactive; an inactive tab closes
-    /// its search (`use-close-editor-search-when-inactive.ts`).
     pub fn set_active(&mut self, active: bool, cx: &mut Context<Self>) {
         if !active && self.search.take().is_some() {
             cx.notify();
@@ -359,8 +336,6 @@ impl Editor {
         }
     }
 
-    /// Cmd+G, Cmd+Shift+G, Enter, Shift+Enter: selects the next (or
-    /// previous) result after (or before) the selection, wrapping around.
     pub fn search_step(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
         let Some(search) = self.search.clone() else {
             self.open_search(window, cx);
@@ -392,7 +367,6 @@ impl Editor {
         self.reveal(target.start, cx);
     }
 
-    /// A click on a scrollbar mark jumps to its result.
     pub(super) fn click_mark(&mut self, pos: usize, cx: &mut Context<Self>) {
         let Some(search) = self.search.clone() else {
             return;
@@ -408,8 +382,6 @@ impl Editor {
         }
     }
 
-    /// Enter in the replace field: replaces the selected result, then
-    /// selects the next one.
     pub fn replace_next(&mut self, cx: &mut Context<Self>) {
         let Some(search) = self.search.clone() else {
             return;
@@ -451,7 +423,6 @@ impl Editor {
         }
     }
 
-    /// Replaces every result in one transaction: one undo step.
     pub fn replace_all(&mut self, cx: &mut Context<Self>) {
         let Some(search) = self.search.clone() else {
             return;
@@ -477,9 +448,6 @@ impl Editor {
     }
 }
 
-/// The change replacing `range` by `replacement`: in a drawn table's cell,
-/// its `|` escaped and its line breaks as `<br>` (US-056); `None` where the
-/// cell refuses it.
 fn replacement_in(
     state: &cerata_markdown::EditorState,
     range: Range<usize>,
@@ -524,8 +492,6 @@ mod tests {
         assert_eq!(find_all(&doc, "LAZY").len(), 24_000);
     }
 
-    /// The criterion is about the shipped build:
-    /// `cargo test -p cerata --release -- --ignored`.
     #[test]
     #[ignore = "release measurement"]
     fn counting_a_megabyte_stays_under_five_milliseconds() {
@@ -536,7 +502,6 @@ mod tests {
         let elapsed = start.elapsed();
         assert_eq!(matches.len(), 24_000);
         assert!(elapsed.as_secs_f64() < 0.005, "{elapsed:?}");
-        // An accented query takes the Unicode path.
         let doc = "le café brûlé du chien paresseux. ".repeat(31_000);
         let start = std::time::Instant::now();
         let matches = find_all(&doc, "CAFÉ");

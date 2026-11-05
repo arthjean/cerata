@@ -1,8 +1,3 @@
-//! Images added to the note (US-060): every gesture (paste, drop, file
-//! picker) goes through [`Editor::add_images`], which plans and copies off
-//! the UI thread (`cerata_core::images`), then inserts the whole batch in
-//! one undo step (`EditorState::insert_images`).
-
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -12,20 +7,14 @@ use gpui::{AppContext as _, Context, Task};
 
 use super::Editor;
 
-/// A batch not inserted after this long shows a loading notice.
 pub const LOADING_NOTICE_DELAY: Duration = Duration::from_millis(300);
 
-/// Where a batch of images goes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ImageTarget {
-    /// The main caret (paste, file picker).
     Caret,
-    /// A document position (a drop's block boundary).
     At(usize),
 }
 
-/// Whether `path` is named like an image Cerata displays. Only routes a
-/// gesture without touching the disk; the pipeline checks the signature.
 pub fn named_like_image(path: &Path) -> bool {
     const EXTENSIONS: &[&str] = &[
         "png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff", "ico", "svg",
@@ -36,8 +25,6 @@ pub fn named_like_image(path: &Path) -> bool {
 }
 
 impl Editor {
-    /// The folder imports are confined to: the workspace root, else the
-    /// note's folder (a file opened on its own).
     fn import_root(&self) -> Option<PathBuf> {
         self.workspace
             .as_ref()
@@ -45,9 +32,6 @@ impl Editor {
             .or_else(|| self.path.as_ref()?.parent().map(Path::to_path_buf))
     }
 
-    /// "Insert image…": the OS file picker (several files, no folders;
-    /// `PathPromptOptions` has no type filter, so non-images are refused
-    /// afterwards by the pipeline), then [`Editor::add_images`] at the caret.
     pub fn pick_images(&mut self, cx: &mut Context<Self>) {
         if self.path.is_none() {
             self.show_notice(Refusal::NotSaved.notice(), cx);
@@ -69,7 +53,6 @@ impl Editor {
                 Ok(Err(error)) => {
                     editor.show_notice(format!("Can't open the file picker: {error}"), cx);
                 }
-                // Canceled.
                 Ok(Ok(None)) | Err(_) => {}
             })
             .ok();
@@ -77,12 +60,6 @@ impl Editor {
         .detach();
     }
 
-    /// Adds `sources` at `target` as one gesture: planned and copied in the
-    /// background, then every accepted image inserted in one transaction at
-    /// the target mapped through the edits made meanwhile. Refusals are
-    /// summarized in one notice; a batch still copying after 300 ms shows
-    /// `Adding {n} images…`. A closed tab inserts nothing and keeps the
-    /// copied files.
     pub fn add_images(
         &mut self,
         sources: Vec<ImportSource>,
@@ -113,10 +90,6 @@ impl Editor {
         self.insert_when_done(target, count, work, cx);
     }
 
-    /// Inserts what `work` (the plan and copies of `count` sources)
-    /// accepted at `target`, followed through the edits made until it ends:
-    /// at the caret by the caret's rules, at a drop's block boundary always
-    /// as blocks (the boundary may start a list, a quote or a table).
     pub(super) fn insert_when_done(
         &mut self,
         target: ImageTarget,
@@ -182,7 +155,6 @@ impl Editor {
             .as_ref()
             .is_some_and(|notice| **notice == *loading_notice(count))
         {
-            // The loading notice goes with the batch.
             self.notice = None;
             cx.notify();
         }
@@ -199,18 +171,12 @@ fn loading_notice(count: usize) -> String {
     }
 }
 
-/// Where a drop would insert, while a file drag carrying an image is over
-/// the editor: a document position at a top-level block boundary and the
-/// scroll-space y the insertion bar is drawn at.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DropBar {
     pub pos: usize,
     pub y: f64,
 }
 
-/// What a drop on the editor does with its paths: images (and the files
-/// dropped with them, refused by the pipeline) are added to the note, the
-/// rest (notes, folders) follows the shell's routing.
 pub fn split_drop(paths: &[PathBuf]) -> (Vec<PathBuf>, Vec<PathBuf>) {
     if !paths.iter().any(|path| named_like_image(path)) {
         return (Vec::new(), paths.to_vec());
@@ -218,8 +184,6 @@ pub fn split_drop(paths: &[PathBuf]) -> (Vec<PathBuf>, Vec<PathBuf>) {
     paths.iter().cloned().partition(|path| !opens_on_drop(path))
 }
 
-/// What a drop on the window opens (`routing::OpenRequest::from_drop`): a
-/// folder or a Markdown file.
 fn opens_on_drop(path: &Path) -> bool {
     match cerata_core::open_target::resolve(path) {
         Some(cerata_core::open_target::OpenTarget::Workspace(_)) => true,
@@ -231,10 +195,6 @@ fn opens_on_drop(path: &Path) -> bool {
 }
 
 impl Editor {
-    /// The block boundary nearest to scroll-space `y`: the start of a
-    /// top-level block, or the end of the document. Never inside a table,
-    /// code block, diagram or the frontmatter, and never above the
-    /// frontmatter.
     pub(super) fn drop_boundary(&self, y: f64) -> Option<DropBar> {
         let text = self.state.text();
         let line_top = |pos: usize| self.heights.prefix(text.line_at(pos).number);
@@ -265,8 +225,6 @@ impl Editor {
         ))
     }
 
-    /// A file drag moved: the bar follows the pointer while it is over the
-    /// editor and the drag carries an image.
     pub(super) fn on_file_drag_move(
         &mut self,
         event: &gpui::DragMoveEvent<gpui::ExternalPaths>,
@@ -295,9 +253,6 @@ impl Editor {
         }
     }
 
-    /// Paths dropped on the editor: images inserted at the bar (or the
-    /// boundary under the drop point), the rest handed to the shell, which
-    /// opens notes and folders as a drop on the window would.
     pub fn on_file_drop(
         &mut self,
         paths: &gpui::ExternalPaths,

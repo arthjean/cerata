@@ -1,7 +1,3 @@
-//! Arrow up and down next to a widget: the caret enters the folded block so
-//! its source can be edited (`revealBlockOnArrow.ts:44-146`). When nothing
-//! applies, the caller performs a plain vertical move.
-
 use crate::decorate::{Decoration, Widget};
 use crate::selection::Selection;
 use crate::state::EditorState;
@@ -13,19 +9,13 @@ pub enum Vertical {
     Down,
 }
 
-/// Where the caret goes when `direction` is pressed in `state`, if a widget
-/// takes the move; `None` leaves it to the regular vertical motion.
 pub fn reveal_block_on_arrow(state: &EditorState, direction: Vertical) -> Option<usize> {
     if let Some(pos) = crate::atomic::step_over(state, direction) {
         return Some(pos);
     }
-    // A move only enters a widget past the blank lines around the caret's
-    // line: the nodes touching that run are all it needs.
     let text = state.text();
     let line = text.line_at(state.selection().main().head).number;
     let decorations = state.decorations_in(run_start(text, line)..run_end(text, line));
-    // A drawn table is entered by the editor's geometry, cell first
-    // (ADR 0007, decision 8): no source to reveal.
     let widgets: Vec<_> = decorations
         .iter()
         .filter(|d| {
@@ -40,7 +30,6 @@ pub fn reveal_block_on_arrow(state: &EditorState, direction: Vertical) -> Option
     Some(reveal_at(state, head, target))
 }
 
-/// One position before `pos`, a line break counting as one.
 fn before(text: &Text, pos: usize) -> Option<usize> {
     let s = text.as_str();
     if pos >= 2 && s.get(pos - 2..pos) == Some("\r\n") {
@@ -60,7 +49,6 @@ fn after(text: &Text, pos: usize) -> Option<usize> {
     s.get(pos..)?.chars().next().map(|c| pos + c.len_utf8())
 }
 
-/// The caret sits right outside a widget (`maybeRevealAtWidgetBoundary`).
 fn at_widget_boundary(
     text: &Text,
     widgets: &[std::ops::Range<usize>],
@@ -78,8 +66,6 @@ fn is_blank(line: &str) -> bool {
     line.bytes().all(|b| b == b' ' || b == b'\t')
 }
 
-/// Start of the whitespace run ending at the start of line `number`
-/// (`whitespaceRunStart`).
 fn run_start(text: &Text, number: usize) -> usize {
     let mut number = number;
     let mut from = text.line(number).from;
@@ -95,8 +81,6 @@ fn run_start(text: &Text, number: usize) -> usize {
     from
 }
 
-/// End of the whitespace run starting at the end of line `number`
-/// (`whitespaceRunEnd`).
 fn run_end(text: &Text, number: usize) -> usize {
     let mut number = number;
     let mut to = text.line(number).to;
@@ -112,8 +96,6 @@ fn run_end(text: &Text, number: usize) -> usize {
     to
 }
 
-/// The nearest widget separated from the caret's line by whitespace only
-/// (`revealWidgetOnAdjacentLine`).
 fn on_adjacent_line(
     text: &Text,
     widgets: &[std::ops::Range<usize>],
@@ -146,8 +128,6 @@ fn on_adjacent_line(
         }
     }
 }
-// The caret on the target line in the column it had; at the block's
-/// boundary when that column would stay hidden under a widget.
 fn reveal_at(state: &EditorState, head: usize, target: usize) -> usize {
     let text = state.text();
     let column = head - text.line_at(head).from;
@@ -161,8 +141,6 @@ fn reveal_at(state: &EditorState, head: usize, target: usize) -> usize {
 }
 
 impl EditorState {
-    /// Arrow up or down: enters an adjacent widget's source and returns
-    /// `true`, or returns `false` for the caller's plain vertical move.
     pub fn reveal_block_on_arrow(&mut self, direction: Vertical) -> bool {
         let Some(pos) = reveal_block_on_arrow(self, direction) else {
             return false;

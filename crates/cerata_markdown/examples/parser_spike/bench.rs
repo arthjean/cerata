@@ -1,10 +1,3 @@
-//! Reparse latency after a one-character edit, both parsers.
-//!
-//! Each iteration inserts one character at the edit point, reparses (timed),
-//! deletes it, reparses again (timed): two samples per iteration. Buffer work
-//! (string splice, row/column computation, which a rope does in O(log n))
-//! stays outside the timed region; only the parser work is measured.
-
 use std::hint::black_box;
 use std::time::{Duration, Instant};
 
@@ -54,8 +47,6 @@ fn median_of<F: FnMut() -> Result<(), String>>(runs: usize, mut f: F) -> Result<
     Ok(stats(v).p50)
 }
 
-/// Returns total reparse stats, block-tree share stats, mean inline trees
-/// reparsed per edit.
 fn bench_ts_smart(
     text: &str,
     pos: usize,
@@ -79,8 +70,6 @@ fn bench_ts_smart(
             }
         }
     }
-    // Correctness: incremental result == fresh parse, after an insert and
-    // after the matching delete.
     let insert = ts::edit_text(&mut doc.text, pos, pos, ch);
     doc.reparse(&insert)?;
     if doc.fingerprint() != TsDoc::new(doc.text.clone(), true)?.fingerprint() {

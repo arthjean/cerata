@@ -1,7 +1,3 @@
-//! The `MarkdownTree` of every corpus fixture equals the Lezer tree Writer's
-//! own parser builds (`tests/fixtures/oracle/trees`, recorded by
-//! `scripts/oracle`: `bun oracle.ts trees ...`).
-
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use cerata_markdown::{MarkdownTree, Node, NodeKind};
@@ -11,7 +7,6 @@ fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
 }
 
-/// Fixture path for an oracle file stem.
 pub fn fixture_path(stem: &str) -> PathBuf {
     for dir in ["corpus", "parser_spike"] {
         let path = fixtures().join(dir).join(format!("{stem}.md"));
@@ -22,7 +17,6 @@ pub fn fixture_path(stem: &str) -> PathBuf {
     panic!("no fixture for {stem}");
 }
 
-/// Lezer-format dump without Cerata's own `WikiLink` wrappers.
 fn lezer_dump(tree: &MarkdownTree) -> String {
     fn walk(node: Node<'_>, depth: usize, out: &mut String) {
         let depth = if node.kind() == NodeKind::WikiLink {

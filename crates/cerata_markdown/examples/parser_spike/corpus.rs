@@ -1,7 +1,3 @@
-//! Fixture corpus: one case per Writer custom rule plus the cases of the
-//! three Writer test files, with Writer's expected result for each probe.
-//! Expectations are derived from the Lezer rules cited on each `Rule`.
-
 use crate::probes::Probe::{self, *};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -52,11 +48,7 @@ impl Rule {
 pub struct Case {
     pub id: &'static str,
     pub rule: Rule,
-    /// Writer's expected observation for each probe.
     pub checks: &'static [(Probe, &'static [&'static str])],
-    /// Native result recorded from the run (tree-sitter with the virtual
-    /// trailing newline, pulldown-cmark with `pd::options()`), pinned by the
-    /// tests so the ADR cannot drift from the code.
     pub ts_native: bool,
     pub pd_native: bool,
 }
@@ -81,7 +73,6 @@ const PS: &str = "Paragraph";
 const BL: &str = "BulletList";
 
 pub const CASES: &[Case] = &[
-    // Frontmatter.
     case(
         "frontmatter-offset0",
         Rule::Frontmatter,
@@ -124,7 +115,6 @@ pub const CASES: &[Case] = &[
         true,
         false,
     ),
-    // Math (tests/math.test.ts plus two extra cases).
     case(
         "math-inline",
         Rule::Math,
@@ -184,7 +174,6 @@ pub const CASES: &[Case] = &[
         true,
         true,
     ),
-    // Spaced link destinations (tests/markdown-links.test.ts).
     case(
         "link-space-destination",
         Rule::SpaceDestination,
@@ -229,7 +218,6 @@ pub const CASES: &[Case] = &[
         true,
         true,
     ),
-    // Nested links.
     case(
         "nested-inline-link",
         Rule::NestedLink,
@@ -244,8 +232,6 @@ pub const CASES: &[Case] = &[
         false,
         true,
     ),
-    // Setext (tests/setext-dash-underline.test.ts:22-37), without and with a
-    // trailing newline.
     case(
         "setext-single-dash-eol",
         Rule::SetextDash,
@@ -344,7 +330,6 @@ pub const CASES: &[Case] = &[
         false,
         false,
     ),
-    // Extended escape.
     case(
         "escape-ascii-punctuation",
         Rule::Escape,
@@ -366,7 +351,6 @@ pub const CASES: &[Case] = &[
         false,
         false,
     ),
-    // Dashes (Dash nodes of length 2 or 3, the ones Writer renders).
     case("dash-en", Rule::Dash, &[(Dash, &["--"])], false, true),
     case("dash-em", Rule::Dash, &[(Dash, &["---"])], false, true),
     case("dash-four", Rule::Dash, &[(Dash, &[])], true, true),
@@ -378,7 +362,6 @@ pub const CASES: &[Case] = &[
         false,
         true,
     ),
-    // Emoji.
     case(
         "emoji-basic",
         Rule::Emoji,
@@ -408,7 +391,6 @@ pub const CASES: &[Case] = &[
         false,
         false,
     ),
-    // Wiki links.
     case(
         "wiki-basic",
         Rule::WikiLink,
@@ -439,8 +421,6 @@ pub const CASES: &[Case] = &[
     ),
 ];
 
-/// Node kinds that must exist in the tree-sitter tree of `markers.md` for
-/// the decoration rules to work without reconstructing markers from text.
 pub const TS_MARKER_KINDS: &[&str] = &[
     "atx_h1_marker",
     "setext_h1_underline",
@@ -462,7 +442,6 @@ pub const TS_MARKER_KINDS: &[&str] = &[
     "pipe_table_delimiter_row",
 ];
 
-/// The long note of `e2e/specs/list-enter-exit.spec.js:238-251`.
 pub fn list_3000() -> String {
     let mut lines = vec!["# Long note".to_string(), String::new()];
     for i in 0..3000 {
@@ -477,7 +456,6 @@ pub fn list_3000() -> String {
     lines.join("\n")
 }
 
-/// A mixed note of at least 1 MiB exercising every block and inline kind.
 pub fn note_1mb() -> String {
     let mut out = String::from("---\ntitle: Big note\ntags: [spike, bench]\n---\n\n");
     let mut i = 0usize;

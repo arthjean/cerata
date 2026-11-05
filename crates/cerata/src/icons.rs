@@ -1,11 +1,3 @@
-//! Interface icons: the free Hugeicons Stroke Rounded set (MIT, see
-//! `NOTICE`), copied from `@hugeicons/core-free-icons`
-//! 4.4.0 and embedded in the binary.
-//!
-//! GPUI paints an SVG as a mask tinted by the element's own text color,
-//! which an `svg()` does not inherit from its parent: every icon is built
-//! with an explicit color.
-
 use gpui::{Hsla, Pixels, Styled, Svg, px, svg};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -42,7 +34,6 @@ pub enum Icon {
 }
 
 impl Icon {
-    /// The SVG source, also used as the rasterization cache key.
     pub fn data(self) -> &'static [u8] {
         match self {
             Icon::Add => include_bytes!("../assets/icons/add-01.svg"),
@@ -77,7 +68,6 @@ impl Icon {
         }
     }
 
-    /// A stable cache key for `Window::paint_svg`.
     pub fn key(self) -> &'static str {
         match self {
             Icon::Add => "icons/add-01.svg",
@@ -112,7 +102,6 @@ impl Icon {
     }
 }
 
-/// A square icon element of `size` pixels, tinted with `color`.
 pub fn icon(icon: Icon, size: f32, color: Hsla) -> Svg {
     let size: Pixels = px(size);
     svg()

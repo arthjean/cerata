@@ -1,14 +1,3 @@
-//! The editor's key handlers, in Writer's precedence: a handler that
-//! declines lets the next one run, down to the plain edit.
-//!
-//! Enter: `blockQuoteEnter`, `listEnter`, `leaveIndentedBlank`
-//! (`Prec.highest`), then a port of lang-markdown's
-//! `insertNewlineContinueMarkup` for what Writer leaves to it (ordered items
-//! with text, quote lines with text), then a newline keeping the line's
-//! indent (`insertNewlineAndIndent`). Backspace: `listBackspace`, then one
-//! character. Tab and Shift-Tab: list reindent, else a literal tab. Home and
-//! End: `lineBoundary.ts`.
-
 use std::ops::Range;
 
 use crate::change::Change;
@@ -22,8 +11,6 @@ fn leading_ws(s: &str) -> &str {
     &s[..s.len() - s.trim_start_matches([' ', '\t']).len()]
 }
 
-/// `^(?:[ \t]{0,3}>[ \t])+$`: a quote line holding only the markers Enter
-/// continues with (`blockQuote.ts:166`).
 fn is_empty_quote_line(s: &str) -> bool {
     let mut rest = s;
     if rest.is_empty() {
@@ -47,7 +34,6 @@ fn is_empty_quote_line(s: &str) -> bool {
     true
 }
 
-/// The quote markers starting a line: `^(?:[ \t]{0,3}>[ \t]?)+`.
 fn quote_prefix(s: &str) -> &str {
     let mut end = 0;
     loop {
@@ -80,8 +66,6 @@ impl EditorState {
         (line, self.text().slice(line.range()))
     }
 
-    /// Enter on a line holding only `> ` markers removes one level of
-    /// quoting in place (`blockQuote.ts:170-205`).
     pub fn blockquote_enter(&mut self) -> bool {
         if self.is_loading() || self.selection().ranges().len() != 1 {
             return false;
@@ -105,8 +89,6 @@ impl EditorState {
         self.apply(transaction).is_ok()
     }
 
-    /// lang-markdown's continuation for ordered items and quote lines with
-    /// text: the new line repeats the quote markers and the next number.
     fn continue_markup(&mut self) -> bool {
         if self.selection().ranges().len() != 1 || !self.selection().main().is_empty() {
             return false;
@@ -142,7 +124,6 @@ impl EditorState {
             changes.extend(self.renumber_after(line, number + 1));
             format!("{quote}{indent}{}{delimiter}{sep}", number + 1)
         } else if !quote.is_empty() && head >= line.from + quote.len() {
-            // A bullet inside a quote continues too.
             let bullet = crate::list::parse_bullet_task_line(0, rest);
             match bullet {
                 Some(b) if head >= line.from + quote.len() + b.body_from => {
@@ -169,8 +150,6 @@ impl EditorState {
         self.apply(transaction).is_ok()
     }
 
-    /// Following items of the ordered list on `line` renumbered from `next`
-    /// on, when they already follow on (lang-markdown's `renumberList`).
     fn renumber_after(&self, line: Line, next: usize) -> Vec<Change> {
         let tree = self.tree();
         let Some(mark) = tree
@@ -204,15 +183,10 @@ impl EditorState {
         changes
     }
 
-    /// Typed, pasted or committed text at every selection range (or at
-    /// `range`, from the OS): escaped in a table cell (`cells.rs`), on a
-    /// line of its own at a diagram's boundary (`atomic.rs`). Every caret
-    /// lands after its insert; a range a cell refuses is left as it is.
     pub fn type_text(&mut self, range: Option<Range<usize>>, text: &str, event: UserEvent) -> bool {
         if self.is_loading() {
             return false;
         }
-        // Over a rectangle of cells: its anchor cell takes the text (US-054).
         if let Some(done) = self.type_over_cells(text, event) {
             return done;
         }
@@ -262,8 +236,6 @@ impl EditorState {
         .is_ok()
     }
 
-    /// Enter: the first handler that takes the key, else a newline that
-    /// keeps the line's indentation, at every selection range.
     pub fn insert_newline(&mut self) -> bool {
         if self.is_loading() {
             return false;
@@ -290,13 +262,10 @@ impl EditorState {
         self.replace_ranges(changes, UserEvent::Type)
     }
 
-    /// Backspace: the list handler, else the selection or the character
-    /// before each caret (a `\r\n` break counts as one).
     pub fn delete_backward(&mut self) -> bool {
         if self.is_loading() {
             return false;
         }
-        // Over a rectangle of cells: they are emptied (US-054).
         if let Some(done) = self.clear_cells() {
             return done;
         }
@@ -324,7 +293,6 @@ impl EditorState {
         if self.list_backspace() {
             return true;
         }
-        // A caret in a table cell deletes inside it only (`cells.rs`).
         let changes: Vec<Change> = self.cell_cuts(&cut).into_iter().flatten().collect();
         if changes.is_empty() {
             return true;
@@ -332,7 +300,6 @@ impl EditorState {
         self.replace_ranges(changes, UserEvent::Delete)
     }
 
-    /// Tab: list reindent, else a tab at each selection range.
     pub fn indent(&mut self) -> bool {
         if self.is_loading() {
             return false;
@@ -349,7 +316,6 @@ impl EditorState {
         self.replace_ranges(changes, UserEvent::Type)
     }
 
-    /// Shift-Tab: list outdent; elsewhere nothing to do.
     pub fn outdent(&mut self) -> bool {
         if self.is_loading() {
             return false;
@@ -357,7 +323,6 @@ impl EditorState {
         self.list_outdent()
     }
 
-    /// Replaces each change's range; every caret lands after its insert.
     pub(crate) fn replace_ranges(&mut self, changes: Vec<Change>, event: UserEvent) -> bool {
         let mut sorted = changes.clone();
         sorted.sort_by_key(|c| c.from);
@@ -380,11 +345,6 @@ impl EditorState {
         self.apply(transaction).is_ok()
     }
 
-    /// Home (`forward == false`) or End: to the boundary of the visual line
-    /// `visual_line(pos)` returns (a wrapped row, as laid out by the
-    /// renderer). A move that would go the wrong way falls back to the
-    /// document line; Home stops at the first non-blank character first,
-    /// then at the line start (`lineBoundary.ts:12-80`). Always consumed.
     pub fn move_line_boundary(
         &mut self,
         forward: bool,
@@ -394,7 +354,6 @@ impl EditorState {
         self.boundary(forward, extend, Some(visual_line))
     }
 
-    /// Home or End on document lines (no wrapping known).
     pub fn move_line_boundary_unwrapped(&mut self, forward: bool, extend: bool) -> bool {
         self.boundary(forward, extend, None)
     }
@@ -413,7 +372,6 @@ impl EditorState {
             .map(|r| {
                 let line = text.line_at(r.head);
                 let row = visual_line.map_or_else(|| line.range(), |f| f(r.head));
-                // In a table cell: the visual line of the cell, nothing past it.
                 if let Some((grid, ro, co)) = crate::cells::cell_at(self, r.head)
                     && let Some(cell) = grid.cell(ro, co)
                 {

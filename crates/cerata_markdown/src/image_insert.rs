@@ -1,6 +1,3 @@
-//! Images added to a note (US-060): each on its own line, as a block,
-//! except in a table, a list or a quote, where they go inline at the caret.
-
 use crate::change::Change;
 use crate::history::UserEvent;
 use crate::selection::Selection;
@@ -8,15 +5,6 @@ use crate::state::{EditorState, Transaction};
 use crate::tree::NodeKind;
 
 impl EditorState {
-    /// Inserts `images` (Markdown, one per image) at `pos` in one undo step.
-    ///
-    /// Outside a table, list or quote each image takes its own line, with a
-    /// blank line between it and any non-blank neighbor or the next image:
-    /// on a blank line the first image takes it, at the end of a line they
-    /// follow it, in the middle the line is split at `pos`. The caret ends
-    /// on the blank line after the last image (created at the end of the
-    /// document), so no source is revealed. Inside a table, list or quote
-    /// they are typed at `pos`, separated by a space, escaped in a cell.
     pub fn insert_images(&mut self, pos: usize, images: &[String]) -> bool {
         if self.is_loading() || images.is_empty() {
             return false;
@@ -28,8 +16,6 @@ impl EditorState {
         self.insert_image_blocks(pos, images)
     }
 
-    /// [`EditorState::insert_images`] as blocks wherever `pos` is: a drop
-    /// at a block boundary, which may be the start of a list or a quote.
     pub fn insert_image_blocks(&mut self, pos: usize, images: &[String]) -> bool {
         if self.is_loading() || images.is_empty() {
             return false;
@@ -43,7 +29,6 @@ impl EditorState {
             line.number > 0 && !blank(text.slice(text.line(line.number - 1).range()));
         let next_blank = (line.number + 1 < text.line_count())
             .then(|| blank(text.slice(text.line(line.number + 1).range())));
-        // Room for the caret after the block, unless a blank line follows.
         let after_line = if next_blank == Some(true) { "" } else { "\n" };
         let (range, before, after) = match (blank(left), blank(right)) {
             (true, true) => (
@@ -75,8 +60,6 @@ impl EditorState {
         if crate::cells::cell_at(self, pos).is_some() {
             return true;
         }
-        // Both sides: a caret ending a list item is outside its node on the
-        // right.
         [1, -1].into_iter().any(|side| {
             let node = self.tree().resolve(pos, side);
             std::iter::once(node).chain(node.ancestors()).any(|n| {
@@ -93,8 +76,6 @@ impl EditorState {
 mod tests {
     use super::*;
 
-    /// `text` with `^` as the insertion point, after inserting `images`;
-    /// the result shows the caret as `^`.
     fn insert(text: &str, images: &[&str]) -> String {
         let pos = text.find('^').unwrap();
         let mut state = EditorState::new(text.replacen('^', "", 1));

@@ -1,14 +1,8 @@
-//! Document headings and their GFM anchors: `#slug` links (US-033) and the
-//! section rail (US-038). Ported from `lib/heading-slug.ts` and
-//! `hooks/use-document-headings.ts:27-80`.
-
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
 use regex::Regex;
 
-/// github-slugger's rule: lowercase, drop U+2000-U+206F, U+2E00-U+2E7F and
-/// ASCII punctuation except `-` and `_`, then one `-` per run of spaces.
 pub fn slugify(text: &str) -> String {
     let kept: String = text
         .to_lowercase()
@@ -24,8 +18,6 @@ pub fn slugify(text: &str) -> String {
         .join("-")
 }
 
-/// Unique slugs in document order: a repeat gets `-2`, `-3`, skipping any
-/// slug already taken (`createHeadingSlugger`).
 #[derive(Default)]
 pub struct Slugger {
     used: HashSet<String>,
@@ -55,9 +47,7 @@ impl Slugger {
 pub struct Heading {
     pub level: u8,
     pub text: String,
-    /// Zero-based line number.
     pub line: usize,
-    /// Byte offset of the line start.
     pub pos: usize,
     pub slug: String,
 }
@@ -66,9 +56,6 @@ static ATX: LazyLock<Option<Regex>> =
     LazyLock::new(|| Regex::new(r"^(#{1,6})\s+(.+?)\s*#*\s*$").ok());
 static FENCE: LazyLock<Option<Regex>> = LazyLock::new(|| Regex::new(r"^(`{3,}|~{3,})").ok());
 
-/// ATX headings up to `max_depth`, outside fences. Slugs count every
-/// heading up to `slug_depth` (at least `max_depth`), so an anchor to a
-/// deeper heading stays right when the list leaves it out.
 pub fn parse(content: &str, max_depth: u8, slug_depth: u8) -> Vec<Heading> {
     let (Some(atx), Some(fence)) = (ATX.as_ref(), FENCE.as_ref()) else {
         return Vec::new();
@@ -112,7 +99,6 @@ pub fn parse(content: &str, max_depth: u8, slug_depth: u8) -> Vec<Heading> {
     out
 }
 
-/// The first heading of `content` whose slug is `slug`, any level.
 pub fn find_by_slug(content: &str, slug: &str) -> Option<Heading> {
     parse(content, 6, 6).into_iter().find(|h| h.slug == slug)
 }
@@ -121,7 +107,6 @@ pub fn find_by_slug(content: &str, slug: &str) -> Option<Heading> {
 mod tests {
     use super::*;
 
-    /// `heading-slug.test.ts`.
     #[test]
     fn slugs_follow_github_slugger() {
         assert_eq!(slugify("Hello World"), "hello-world");
@@ -154,7 +139,6 @@ mod tests {
         );
     }
 
-    /// `document-headings.test.ts`.
     #[test]
     fn headings_skip_fences_and_count_deeper_levels() {
         assert!(parse("", 3, 3).is_empty());
@@ -190,7 +174,6 @@ mod tests {
             slugs(parse("# Setup\n## Setup\n### Setup", 3, 3)),
             ["setup", "setup-2", "setup-3"]
         );
-        // The rail lists H1 and H2, the H3 in between still counts.
         assert_eq!(slugs(parse("# A\n### A\n## A", 2, 6)), ["a", "a-3"]);
         let found = find_by_slug("# A\n## B\n### A", "a-2").unwrap();
         assert_eq!(found.level, 3);

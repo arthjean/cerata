@@ -1,11 +1,3 @@
-//! The sidebar's footer, on Paneflow's measures and behavior: the Search
-//! field (a 36 px capsule, glyph 17, text 15) and the Settings button
-//! (36 px square, radius 12, glyph 18), 6 apart, on the rows' 8 px margin.
-//!
-//! At rest the capsule shows its glyph only; hovering it shows the field,
-//! focus or a query fills it. Typing filters the sidebar; Escape, or a
-//! press elsewhere, hands the focus back to the page (Escape also clears).
-
 use gpui::{
     AnyElement, Context, Entity, Focusable as _, InteractiveElement, IntoElement, MouseButton,
     ParentElement, StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder as _,
@@ -52,7 +44,6 @@ impl WindowView {
         cx.notify();
     }
 
-    /// The focus goes back to the active note, else to the window.
     pub(super) fn focus_page(&self, window: &mut Window, cx: &mut Context<Self>) {
         match self.active_doc() {
             Some(doc) => window.focus(&doc.editor.focus_handle(cx), cx),
@@ -155,7 +146,6 @@ fn search(view: &WindowView, window: &Window, cx: &mut Context<WindowView>) -> A
                 this.focus_page(window, cx);
             }
         }))
-        // Focused, the glyph takes the text color, as Paneflow's lights up.
         .child(icon(
             Icon::Search,
             17.0,

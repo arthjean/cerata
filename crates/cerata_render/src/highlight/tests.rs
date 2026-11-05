@@ -67,7 +67,6 @@ fn an_unknown_language_stays_plain_without_error() {
     assert_eq!(highlight("foo", "anything at all"), None);
     let state = EditorState::new("```foo\nlet x = 1;\n```\n");
     assert!(highlight_code_blocks(&state).is_empty());
-    // The block is still drawn as code.
     let lines = state
         .decorations()
         .into_iter()

@@ -1,14 +1,3 @@
-//! The editor element: a dedicated GPUI view over a `cerata_markdown`
-//! [`EditorState`], with a display map of variable-height lines, a height
-//! map in a sum tree, and virtualized layout (`docs/adr/0001-editor-engine.md`,
-//! option C, built on the US-002 spike).
-//!
-//! Every position is computed from the model, never from the last frame:
-//! hit-testing, IME bounds and scrolling lay the line out on demand, which
-//! GPUI's shaping cache makes free for lines already on screen.
-
-/// A keystroke with the OS's command modifier: Cmd on macOS, Ctrl
-/// elsewhere, as a static string for `KeyBinding::new`.
 macro_rules! secondary {
     ($keys:literal) => {
         if cfg!(target_os = "macos") {
@@ -74,130 +63,81 @@ pub use links::EditorEvent;
 use menu::ContextMenu;
 use search::SearchBar;
 
-/// Layout margin above and below the viewport, in pixels.
 pub const LAYOUT_MARGIN: f64 = 300.0;
-/// Space kept clear above and below a caret or a search result: the fade
-/// distance plus 20 px (`editor-scroll-container.tsx:3-11`).
 pub const SAFE_MARGIN: f64 = 140.0;
-/// Horizontal padding around the text column, gutter included.
 pub const SIDE_PADDING: f32 = 40.0;
-/// The side inset of a source-only editor.
 const SOURCE_PADDING: f32 = 12.0;
-/// Space above the first line.
 pub const TOP_INSET: f32 = 32.0;
-/// Width of the drawn vertical scrollbar.
 pub const SCROLLBAR_WIDTH: f32 = 10.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Viewport {
     pub bounds: Bounds<Pixels>,
-    /// Window x of the text column.
     pub column_left: Pixels,
     pub column_width: f32,
 }
 
-/// What the next frame scrolls to.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Autoscroll {
-    /// The main caret, kept inside the safe margins.
     Caret,
-    /// The line holding a position, `SAFE_MARGIN` from the top or bottom
-    /// edge, whichever is nearer (search results).
     Reveal(usize),
-    /// The line holding a position at the top of the safe zone (heading
-    /// anchors, `scrollPosToSafeTop`).
     Top(usize),
 }
 
-/// The state saved when an IME composition starts: a cancel restores it, a
-/// commit restores it and applies the committed text as one edit, so the
-/// buffer and the undo history only ever see the result.
 struct Composition {
     state: EditorState,
     heights: HeightMap,
-    /// The range the composition replaces, in the saved state.
     replaced: Range<usize>,
 }
 
 pub struct Editor {
     pub focus_handle: FocusHandle,
     pub state: EditorState,
-    /// The note's path: images resolve against its folder, pastes save next
-    /// to it.
     pub path: Option<PathBuf>,
     pub config: EditorConfig,
     fonts: Option<Fonts>,
-    /// `ch` of the body font at its current size.
     ch: Option<(f32, f32)>,
     pub heights: HeightMap,
-    /// Column width the estimated heights were computed for.
     estimated_for: f32,
     pub viewport: Option<Viewport>,
     pub marked_range: Option<Range<usize>>,
     composition: Option<Composition>,
     autoscroll: Option<Autoscroll>,
-    /// Pixel x a vertical motion aims for, kept across Up and Down.
     goal_x: Option<f32>,
     pub images: ImageHost,
     pub rich: blocks::RichBlocks,
-    /// The open workspace: link resolution and wiki completion.
     pub workspace: Option<std::sync::Arc<cerata_core::workspace::WorkspaceRuntime>>,
-    /// An anchor to scroll to once the note has loaded.
     pending_anchor: Option<String>,
-    /// The caret goes to the end once the note has loaded.
     pending_caret_end: bool,
-    /// The open wiki link completion.
     pub completion: Option<complete::Completion>,
-    /// The change being applied was typed (opens the completion).
     typed: bool,
-    /// The properties panel drawn in place of the frontmatter.
     pub frontmatter: Entity<frontmatter::FrontmatterPanel>,
-    /// Formulas asked of the renderer, and their images.
     math: math::MathHost,
-    /// A canvas per ` ```mermaid ` fence, by its index in the document.
     canvases: HashMap<usize, (Entity<mermaid::MermaidCanvas>, Subscription)>,
-    /// The diagram open full screen.
     fullscreen: Option<mermaid::Fullscreen>,
-    /// Focus this at the next frame (a closed full-screen diagram's canvas).
     refocus_to: Option<FocusHandle>,
-    /// The section rail's headings and hover state.
     rail: rail::Rail,
     _frontmatter_events: Subscription,
-    /// Take the focus back at the next frame (the panel let it go).
     refocus: bool,
     highlights: HashMap<(String, String), Rc<Vec<HighlightSpan>>>,
     pub code_scroll: CodeScroll,
     drag: Option<mouse::Drag>,
-    /// Code block scrollbars drawn by the last frame.
     thumbs: Vec<mouse::ThumbHit>,
-    /// Search marks on the scrollbar and the result each one jumps to.
     mark_hits: Vec<(Bounds<Pixels>, usize)>,
     pub search: Option<Entity<SearchBar>>,
-    /// The query of the last closed search, shown again on the next open.
     last_query: String,
     pub menu: Option<ContextMenu>,
     pub notice: Option<SharedString>,
-    /// Image batches being copied, by the id of their tracked insertion
-    /// point (`import.rs`).
     importing: Vec<u64>,
-    /// The insertion bar of a file drag carrying images (US-061).
     drop_bar: Option<import::DropBar>,
-    /// What the block image toolbar follows (US-070).
     toolbar: image_actions::Toolbar,
-    /// Lines laid out by the last frame.
     pub laid_out: Range<usize>,
-    /// Tables laid out for the current state, by line.
     tables: TableCache,
-    /// Every frame drawn, oldest first (tests clear it).
     #[cfg(test)]
     pub frames: Vec<element::FrameRecord>,
     epoch: Instant,
-    /// Source text only, filling its width: a diagram's edit panel
-    /// (Writer's inner editor has no prosemark decorations nor page inset).
     source_only: bool,
-    /// Tab and Shift+Tab move the focus instead of indenting.
     pub(crate) tab_focus: bool,
-    /// The focus the view last scrolled into sight.
     revealed_focus: Option<FocusHandle>,
 }
 
@@ -264,8 +204,6 @@ impl Editor {
             tab_focus: false,
             revealed_focus: None,
         };
-        // Writer keeps the frontmatter out of the editor: a note opens with
-        // the caret in its body, so the properties show as a panel.
         if let Some(frontmatter) = cerata_markdown::frontmatter::detect(editor.state.doc()) {
             let _ = editor
                 .state
@@ -287,7 +225,6 @@ impl Editor {
             .update(cx, |panel, cx| panel.sync(yaml.as_deref(), cx));
     }
 
-    /// The panel rewrote the YAML, or removed the frontmatter.
     fn on_panel(&mut self, event: &frontmatter::PanelEvent, cx: &mut Context<Self>) {
         use frontmatter::PanelEvent;
         if *event == PanelEvent::FocusEditor {
@@ -302,7 +239,6 @@ impl Editor {
             PanelEvent::FocusEditor => return,
             PanelEvent::Write(yaml) => yaml.as_deref(),
         };
-        // Writer's `serializeFile`: the block written whole, the body kept.
         let eol = if self.state.doc()[..fm.body_start].contains("\r\n") {
             "\r\n"
         } else {
@@ -317,8 +253,6 @@ impl Editor {
         });
     }
 
-    /// Milliseconds since the editor opened, never 0 (0 means "unset" to
-    /// [`EditorState::set_time`]).
     fn now_ms(&self) -> u64 {
         self.epoch.elapsed().as_millis() as u64 + 1
     }
@@ -328,8 +262,6 @@ impl Editor {
             .map_or(self.config.content_width, |viewport| viewport.column_width)
     }
 
-    /// New settings (size, zoom, fonts, width): fonts resolve again and
-    /// every line height is estimated afresh on the next frame.
     pub fn set_config(&mut self, config: EditorConfig, cx: &mut Context<Self>) {
         if self.config == config {
             return;
@@ -350,8 +282,6 @@ impl Editor {
         self.estimated_for = self.column_width();
     }
 
-    /// Height of a line before it is laid out: half an em per character
-    /// (CodeMirror-like estimates). Exact once the line is laid out.
     fn estimate_height(&self, ix: usize) -> f64 {
         let text = self.state.text();
         let line = text.slice(text.line(ix).range());
@@ -366,8 +296,6 @@ impl Editor {
         (metrics.pad_top + rows * metrics.row_height + metrics.pad_bottom) as f64
     }
 
-    /// Applies the line splices of the edits since the last call to the
-    /// height map, then remembers the time for undo grouping.
     fn sync_heights(&mut self) {
         let splices = self.state.take_line_splices();
         self.tables.pending_splices.extend(splices.iter().cloned());
@@ -390,8 +318,6 @@ impl Editor {
         debug_assert_eq!(self.heights.len(), self.state.text().line_count());
     }
 
-    /// Runs `f` on the state as one user action: the clock is set first,
-    /// then heights, scroll and the view follow what changed.
     pub fn update_state<R>(
         &mut self,
         cx: &mut Context<Self>,
@@ -411,7 +337,6 @@ impl Editor {
         result
     }
 
-    /// The view follows a change of the document or selection.
     fn on_changed(&mut self, cx: &mut Context<Self>) {
         if let Some(search) = self.search.clone() {
             search.update(cx, |search, cx| search.document_changed(&self.state, cx));
@@ -430,7 +355,6 @@ impl Editor {
         cx.notify();
     }
 
-    /// Replaces the whole text (a Mermaid edit panel following its fence).
     pub fn set_text(&mut self, text: &str, cx: &mut Context<Self>) {
         let all = 0..self.state.text().len();
         let text = text.to_owned();
@@ -439,9 +363,6 @@ impl Editor {
         });
     }
 
-    /// Moves every destination into the folder `from` (relative to the
-    /// note) to `to`, in one undo step: the note was renamed and its assets
-    /// folder followed it or stayed (EP-015). `false` when nothing changed.
     pub fn rewrite_asset_links(&mut self, from: &str, to: &str, cx: &mut Context<Self>) -> bool {
         use cerata_markdown::asset_links;
         if self.state.is_loading() {
@@ -475,8 +396,6 @@ impl Editor {
         });
     }
 
-    /// Puts the caret at the end of the note; a note still loading does it
-    /// once loaded.
     pub fn caret_to_end(&mut self, cx: &mut Context<Self>) {
         if self.state.is_loading() {
             self.pending_caret_end = true;
@@ -495,7 +414,6 @@ impl Editor {
         })
     }
 
-    /// Scroll position: the anchor line's top plus the offset into it.
     pub fn scroll_top(&self) -> f64 {
         let anchor = self.state.scroll_anchor();
         let line = self.state.text().line_at(anchor.pos).number;
@@ -506,8 +424,6 @@ impl Editor {
         (self.heights.total() - self.viewport_height() / 2.0).max(0.0)
     }
 
-    /// Scrolls to `y`, stored as (line, offset into it): a later height
-    /// change above that line moves nothing on screen.
     pub fn set_scroll_top(&mut self, y: f64) {
         let (line, offset) = self.heights.find(y.clamp(0.0, self.max_scroll()));
         let pos = self.state.text().line(line).from;
@@ -524,7 +440,6 @@ impl Editor {
             .number
     }
 
-    /// Window y of a scroll-space y.
     pub fn screen_y(&self, scroll_y: f64) -> Pixels {
         let top = self.viewport.map_or(px(0.0), |v| v.bounds.top());
         top + px(TOP_INSET + (scroll_y - self.scroll_top()) as f32)
@@ -548,7 +463,6 @@ impl Editor {
             column_width: width,
         });
         if (self.estimated_for - width).abs() > 0.5 {
-            // Keep the first visible line where it is across the reflow.
             let anchor = self.state.scroll_anchor();
             self.reestimate_heights();
             self.state.set_scroll_anchor(cerata_markdown::ScrollAnchor {
@@ -597,8 +511,6 @@ impl Editor {
         ch
     }
 
-    /// Inputs for the lines touching `range`, code highlighting cached per
-    /// block content.
     fn frame_inputs(&mut self, range: Range<usize>) -> FrameInputs {
         let cache = &mut self.highlights;
         if cache.len() > 512 {
@@ -619,9 +531,6 @@ impl Editor {
         inputs
     }
 
-    /// The editor's keys act on the text: it has the focus, or its find
-    /// bar does (whose shortcuts drive the text). Any other control drawn
-    /// in or beside the text keeps its keys.
     pub(crate) fn keys_reach_text(&self, window: &Window, cx: &App) -> bool {
         self.focus_handle.is_focused(window)
             || self
@@ -630,9 +539,6 @@ impl Editor {
                 .is_some_and(|search| search.focus_handle(cx).contains_focused(window, cx))
     }
 
-    /// A control drawn in the text that takes the keyboard focus (a
-    /// property field, a diagram or its toolbar) scrolls into sight once:
-    /// a focused control is never left off screen (WCAG 2.4.11).
     fn reveal_focused_block(&mut self, window: &Window, cx: &App) {
         let focused = window.focused(cx);
         if focused == self.revealed_focus {
@@ -662,15 +568,12 @@ impl Editor {
         }
     }
 
-    /// Shows the source as plain text across the whole width.
     pub fn source_only(mut self) -> Self {
         self.source_only = true;
         self.state.set_atomic_blocks(false);
         self
     }
 
-    /// Lays out line `ix` from `inputs` (gathered for it when `None`) and
-    /// records its exact height. Image loads it needs go to `jobs`.
     fn layout_line_with(
         &mut self,
         ix: usize,
@@ -723,7 +626,6 @@ impl Editor {
             let visible = column_width - layout::CODE_PADDING * 2.0;
             self.code_scroll.measure(first, code.text_width, visible);
         }
-        // A table wider than the column scrolls like a code block (US-056).
         if let Some(block) = &line.block
             && let layout::BlockKind::Table(t) = &block.kind
         {
@@ -732,7 +634,6 @@ impl Editor {
         line
     }
 
-    /// What rich blocks are drawn with.
     pub(crate) fn block_style(&mut self, window: &Window) -> blocks::BlockStyle {
         blocks::BlockStyle {
             fonts: self.fonts(window),
@@ -740,7 +641,6 @@ impl Editor {
         }
     }
 
-    /// Lays out one line on demand (hit-testing, IME, scrolling).
     pub fn layout_line(&mut self, ix: usize, window: &Window, cx: &mut Context<Self>) -> LaidLine {
         let mut jobs = Vec::new();
         let line = self.layout_line_with(ix, None, &mut jobs, window);
@@ -749,8 +649,6 @@ impl Editor {
         line
     }
 
-    /// Runs image loads off the main thread; a measured image updates its
-    /// line's height, which the scroll anchor keeps from moving the view.
     fn start_loads(&mut self, jobs: Vec<LoadJob>, cx: &mut Context<Self>) {
         for job in jobs {
             let task = cx.background_spawn(async move { job.run() });
@@ -767,8 +665,6 @@ impl Editor {
         }
     }
 
-    /// The line the caret at `pos` is drawn on: the cell line holding it
-    /// in a drawn table, else its document line.
     pub(crate) fn text_line(
         &mut self,
         pos: usize,
@@ -793,7 +689,6 @@ impl Editor {
         table::TextLine::Line(Box::new(self.layout_line(ix, window, cx)))
     }
 
-    /// Window bounds of the caret at `offset`.
     pub fn caret_bounds(
         &mut self,
         offset: usize,
@@ -826,8 +721,6 @@ impl Editor {
         }
     }
 
-    /// The wrapped row of `pos`: its line (a cell line in a drawn table)
-    /// and the row's index.
     fn row_at(
         &mut self,
         pos: usize,
@@ -844,7 +737,6 @@ impl Editor {
         (line, row)
     }
 
-    /// Buffer range of a wrapped row of `line`.
     fn row_range(line: &LaidLine, row: usize) -> Range<usize> {
         let start = line.row_starts.get(row).copied().unwrap_or(0);
         let end = line
@@ -854,7 +746,6 @@ impl Editor {
             .unwrap_or(line.display.text.len());
         let to_buffer = |d: usize| line.start + line.display.to_buffer(d);
         let end = if row + 1 < line.row_starts.len() {
-            // The wrap point belongs to the next row.
             line.start + line.display.to_buffer(end).min(line.len)
         } else {
             line.end()
@@ -862,7 +753,6 @@ impl Editor {
         to_buffer(start).min(end)..end
     }
 
-    /// Buffer offset at pixel `x` (column-relative) on row `row` of `line`.
     fn offset_in_row(line: &LaidLine, row: usize, x: f32) -> usize {
         let Some(wrapped) = &line.wrapped else {
             return line.start;
@@ -877,13 +767,10 @@ impl Editor {
             Ok(ix) | Err(ix) => ix,
         };
         let pos = line.start + line.display.to_buffer(display);
-        // A wrap boundary maps to the next row: stay on this one.
         let range = Self::row_range(line, row);
         pos.clamp(range.start, range.end)
     }
 
-    /// Scrolls the main caret inside the safe margins, or the requested
-    /// line to its safe edge.
     fn autoscroll(&mut self, window: &Window, cx: &mut Context<Self>) {
         let Some(request) = self.autoscroll.take() else {
             return;
@@ -905,8 +792,6 @@ impl Editor {
                     (row_top, row_top + line.metrics.row_height as f64)
                 }
             }
-            // A result in a drawn cell: its cell line, the table scrolled
-            // to it (US-056).
             Autoscroll::Reveal(pos)
                 if cerata_markdown::cells::cell_at(&self.state, pos).is_some() =>
             {
@@ -935,13 +820,11 @@ impl Editor {
         }
     }
 
-    /// Asks the next frame to bring `pos` into the safe zone.
     pub fn reveal(&mut self, pos: usize, cx: &mut Context<Self>) {
         self.autoscroll = Some(Autoscroll::Reveal(pos));
         cx.notify();
     }
 
-    /// Shows a short message under the text (paste refusals).
     pub fn show_notice(&mut self, notice: impl Into<SharedString>, cx: &mut Context<Self>) {
         self.notice = Some(notice.into());
         cx.notify();
@@ -990,7 +873,6 @@ impl Render for Editor {
         }
         let mut root = root.child(EditorElement::new(cx.entity()));
         if let (Some(bar), Some(viewport)) = (self.drop_bar, self.viewport) {
-            // A 2 px accent line across the column, centered on the boundary.
             root = root.child(
                 div()
                     .absolute()
@@ -1003,8 +885,6 @@ impl Render for Editor {
         }
         if let Some(search) = &self.search {
             root = root.child(
-                // Occluding: a click in the bar never reaches the text
-                // behind it, which would move the caret and take the focus.
                 div()
                     .absolute()
                     .top(px(8.0))
@@ -1053,7 +933,6 @@ impl Render for Editor {
     }
 }
 
-/// Sizes the block widgets of the lines being laid out.
 struct Sizer<'a> {
     images: &'a mut ImageHost,
     rich: &'a mut blocks::RichBlocks,
@@ -1086,7 +965,6 @@ impl layout::BlockSizer for Sizer<'_> {
     }
 
     fn rich_height(&mut self, widget: &cerata_markdown::Widget, width: f32) -> f32 {
-        // A formula's height is its image's, known without measuring.
         if let cerata_markdown::Widget::Math { tex, display } = widget {
             let state = self.math.state(tex, *display, self.font_size);
             return math::block_height(&state, tex, self.font_size, self.row_height);
@@ -1116,7 +994,6 @@ impl layout::BlockSizer for Sizer<'_> {
     fn previous_table(&mut self, ix: usize) -> Option<(Rc<table::TableLayout>, Vec<Range<usize>>)> {
         let tables = &self.tables;
         tables.previous.iter().find_map(|(old_ix, t)| {
-            // Every splice since stays in the table's lines.
             let mut lines = *old_ix..*old_ix + t.grid.rows.len();
             for s in &tables.splices {
                 if s.first < lines.start || s.first + s.old > lines.end {
@@ -1129,12 +1006,6 @@ impl layout::BlockSizer for Sizer<'_> {
     }
 }
 
-/// What a table's layout depends on besides its line and the settings
-/// (a change of settings empties the cache): the text, the selection (what
-/// is revealed), a drag's frozen selection, the IME's marked range, the
-/// column width, the text size, the palette (a theme change that keeps
-/// the mode still recolors the cells' text) and the table "Edit as
-/// Markdown" shows as source.
 type TableKey = (
     u64,
     Selection,
@@ -1146,22 +1017,14 @@ type TableKey = (
     Option<usize>,
 );
 
-/// Table layouts valid for one state of the editor, so a table is laid out
-/// once per state whatever asks for it (US-048), and the column widths of
-/// the table the caret edits (US-058), which a change of settings drops
-/// with the rest.
 #[derive(Default)]
 struct TableCache {
     key: Option<TableKey>,
     layouts: Vec<(usize, Rc<table::TableLayout>)>,
     frozen: Option<table::FrozenWidths>,
-    /// The layouts of the state before, in the same settings, with that
-    /// state's edit ranges and the line splices from it to this one: an
-    /// edit in a table lays out only the cells it touched (US-057).
     previous: Vec<(usize, Rc<table::TableLayout>)>,
     previous_ranges: Vec<Range<usize>>,
     splices: Vec<cerata_markdown::LineSplice>,
-    /// Splices since this state, for the next one.
     pending_splices: Vec<cerata_markdown::LineSplice>,
 }
 
@@ -1195,8 +1058,6 @@ impl TableCache {
             }
             self.splices = std::mem::take(&mut self.pending_splices);
             self.key = Some(key);
-            // The caret left the table whose widths were kept: they are
-            // computed afresh, even if that table is not laid out now.
             let head = state.selection().main().head;
             if let Some(frozen) = &self.frozen
                 && cerata_markdown::cells::grid_at(state, head)

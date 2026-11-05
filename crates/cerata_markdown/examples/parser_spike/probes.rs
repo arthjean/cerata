@@ -1,6 +1,3 @@
-//! Probes: extract, from each parser's native output, the observation Writer's
-//! tests make (node slices, top-level block names, values).
-
 use pulldown_cmark::{Event, LinkType, Options, Tag};
 
 use crate::{pd, ts::TsDoc};
@@ -9,18 +6,12 @@ use crate::{pd, ts::TsDoc};
 pub enum Probe {
     Frontmatter,
     Math,
-    /// Inline links (Lezer `Link` with a destination).
     Link,
-    /// Inline images.
     Image,
-    /// Destination of inline links and images.
     Url,
-    /// Title of inline links and images, quotes included.
     Title,
-    /// Top-level block names, in Lezer vocabulary.
     Blocks,
     Escape,
-    /// Dashes of length 2 or 3.
     Dash,
     Emoji,
     Wiki,
@@ -88,7 +79,6 @@ pub fn ts(doc: &TsDoc, probe: Probe) -> Vec<String> {
             })
             .collect(),
         Probe::Escape => slices(&|n| n.kind == "backslash_escape" && n.inline),
-        // No node kind exists for these in the shipped grammar.
         Probe::Dash | Probe::Emoji => Vec::new(),
         Probe::Wiki => slices(&|n| n.kind == "wiki_link"),
     }
@@ -97,8 +87,6 @@ pub fn ts(doc: &TsDoc, probe: Probe) -> Vec<String> {
 pub fn pd(text: &str, probe: Probe) -> Vec<String> {
     let slice = |r: &std::ops::Range<usize>| text[r.clone()].to_string();
     if probe == Probe::Dash {
-        // Closest native feature: smart punctuation turns `--` and `---`
-        // into en and em dashes.
         return pd::events(text, pd::options() | Options::ENABLE_SMART_PUNCTUATION)
             .iter()
             .filter(
@@ -192,7 +180,5 @@ pub fn pd(text: &str, probe: Probe) -> Vec<String> {
             _ => {}
         }
     }
-    // Escapes, emoji: pulldown-cmark emits no event for them (the escaping
-    // backslash is simply absent from the Text ranges).
     out
 }

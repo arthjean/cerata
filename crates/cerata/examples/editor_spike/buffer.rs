@@ -1,28 +1,15 @@
-//! Flat `String` buffer with a line index in bytes and UTF-16 code units.
-//!
-//! A real editor uses a rope (PLAN.md section 3.4); for the spike a `String`
-//! is enough: inserting a character into 1 MB is one `memmove` of at most
-//! 1 MB, and the line index shift is O(lines). Both are measured by the
-//! typing benchmark, so the spike does not hide their cost.
-
 use std::ops::Range;
 
-/// What an edit did to the line structure, so the height map can follow.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LineEdit {
-    /// First line touched by the edit.
     pub first_line: usize,
-    /// Number of lines the edited region spanned before the edit.
     pub old_line_count: usize,
-    /// Number of lines the edited region spans after the edit.
     pub new_line_count: usize,
 }
 
 pub struct Buffer {
     text: String,
-    /// Byte offset of the start of each line. Always starts with 0.
     line_starts: Vec<usize>,
-    /// UTF-16 offset of the start of each line.
     line_starts_utf16: Vec<usize>,
     len_utf16: usize,
 }
@@ -64,7 +51,6 @@ impl Buffer {
         self.line_starts.len()
     }
 
-    /// Byte range of line `ix`, without its trailing newline.
     pub fn line_range(&self, ix: usize) -> Range<usize> {
         let start = self.line_starts[ix];
         let end = self
@@ -78,7 +64,6 @@ impl Buffer {
         &self.text[self.line_range(ix)]
     }
 
-    /// Line containing byte `offset` (a newline belongs to the line it ends).
     pub fn line_for_offset(&self, offset: usize) -> usize {
         match self.line_starts.binary_search(&offset) {
             Ok(ix) => ix,
@@ -130,7 +115,6 @@ impl Buffer {
         self.offset_from_utf16(range.start)..self.offset_from_utf16(range.end)
     }
 
-    /// Replaces `range` (bytes, clipped to char boundaries) with `new_text`.
     pub fn edit(&mut self, range: Range<usize>, new_text: &str) -> LineEdit {
         let start = self.clip_offset(range.start);
         let end = self.clip_offset(range.end.max(start));

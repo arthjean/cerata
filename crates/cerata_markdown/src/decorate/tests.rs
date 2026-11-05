@@ -1,4 +1,3 @@
-// Expected values are written as lists of ranges.
 #![allow(clippy::single_range_in_vec_init)]
 
 use super::*;
@@ -30,7 +29,6 @@ fn atx_marks_hide_with_their_space_unless_touched() {
         hidden(&at(doc, 7)).is_empty(),
         "the caret at the end touches the heading"
     );
-    // Contact is inclusive on every range of the selection.
     let state = EditorState::with_filters(doc, Vec::new());
     let two = Selection::new(
         vec![SelectionRange::cursor(12), SelectionRange::cursor(0)],
@@ -65,7 +63,6 @@ fn emphasis_strike_and_code_keep_their_style() {
         style: MarkStyle::InlineCode
     }));
     assert_eq!(hidden(&d), [0..2, 3..5, 6..8, 9..11, 12..13, 14..15]);
-    // Touched: marks shown, styles kept.
     let touched = at(doc, 5);
     assert!(touched.contains(&Decoration::Mark {
         range: 0..5,
@@ -74,7 +71,6 @@ fn emphasis_strike_and_code_keep_their_style() {
     assert_eq!(hidden(&touched), [6..8, 9..11, 12..13, 14..15]);
 }
 
-// Ported from Writer `tests/hide-links.test.ts`.
 #[test]
 fn hides_the_title_of_a_titled_link_along_with_its_marks_and_url() {
     let doc = "see [text](http://x.y \"the title\") ok";
@@ -106,7 +102,6 @@ fn an_escape_shows_while_its_word_is_touched() {
     let doc = "foo\\*bar baz";
     assert_eq!(hidden(&at(doc, 10)), [3..4]);
     assert!(hidden(&at(doc, 7)).is_empty(), "same WORD");
-    // A lone escaped space: the zone is the whole line.
     let lone = "a \\  b\nnext";
     assert!(hidden(&at(lone, 6)).is_empty());
     assert_eq!(hidden(&at(lone, 9)), [2..3]);
@@ -127,7 +122,6 @@ fn fence_marks_and_quote_marks_keep_their_width() {
     }
 }
 
-// Ported from Writer `tests/heading-decorations.test.ts`.
 #[test]
 fn heading_lines_get_their_level_scale_and_weight() {
     let doc = "# a\n## b\n### c\n#### d\n##### e\n###### f\ng\n-\nh\n=";
@@ -164,7 +158,6 @@ fn a_selection_past_the_end_is_clamped() {
     );
 }
 
-// Ported from Writer `tests/image-fold.test.ts:52-70`.
 #[test]
 fn image_previews_wait_for_the_caret_to_leave_the_destination() {
     let doc = "before\n\n![diagram](assets/diagram.png)\n\nafter";
@@ -179,7 +172,6 @@ fn image_previews_wait_for_the_caret_to_leave_the_destination() {
     assert_eq!(widgets(url + 3), 0);
     assert_eq!(widgets(end), 1);
     assert_eq!(widgets(doc.find("diagram").unwrap() + 2), 1);
-    // Untouched, it replaces its line; touched, it follows the source.
     let image = 8..end;
     let url_string = "assets/diagram.png".to_owned();
     assert!(at(doc, 0).contains(&Decoration::Replace {
@@ -198,7 +190,6 @@ fn image_previews_wait_for_the_caret_to_leave_the_destination() {
         },
         block: true
     }));
-    // Inline when it shares its line.
     let inline = "see ![a](b.png) here";
     assert!(at(inline, 0).iter().any(|d| matches!(
         d,
@@ -231,11 +222,9 @@ fn rules_dashes_and_emoji_fold_and_unknown_codes_stay_text() {
     assert_eq!(emoji("smile"), Some("\u{1f604}"));
     assert_eq!(emoji(":smile:"), Some("\u{1f604}"));
     assert_eq!(emoji("nope"), None);
-    // Touched: the source shows.
     assert!(!at(doc, 3).iter().any(|d| d.range() == (2..4)));
 }
 
-// Ported from Writer `tests/drag-selection-gate.test.ts:38-79`.
 #[test]
 fn a_drag_freezes_what_is_revealed_until_it_ends() {
     let doc = "# heading\nplain";
@@ -247,17 +236,14 @@ fn a_drag_freezes_what_is_revealed_until_it_ends() {
 
     state.begin_drag();
     assert!(state.is_dragging());
-    // The live selection enters the heading: nothing is revealed yet.
     state.select(Selection::cursor(1)).unwrap();
     assert_eq!(state.decorations(), baseline);
 
-    // Edits during the drag remap the frozen set.
     state
         .apply(Transaction::new().change(Change::insert(0, "xyz\n")))
         .unwrap();
     assert_eq!(hidden(&state.decorations()), [4..6]);
 
-    // Release: decorations follow the live selection.
     state.end_drag();
     assert!(hidden(&state.decorations()).is_empty());
 }
@@ -273,11 +259,9 @@ fn arrows_enter_an_adjacent_block_widget_in_the_same_column() {
         10,
         "column 2 of the rule's line"
     );
-    // From below, upward, onto the rule's last line.
     state.select(Selection::cursor(14)).unwrap();
     assert!(state.reveal_block_on_arrow(Vertical::Up));
     assert_eq!(state.selection().main().head, 9);
-    // No widget nearby: the regular vertical move runs.
     state.select(Selection::cursor(16)).unwrap();
     assert!(!state.reveal_block_on_arrow(Vertical::Down));
 }
@@ -319,10 +303,6 @@ fn ranged_decorations_match_the_whole_document_line_by_line() {
     }
 }
 
-/// ADR 0007, decision 2: the grid stays drawn while the selection is in
-/// one cell's content; inside the cell, only the marks the selection
-/// touches are revealed. Replaces Writer's reveal on contact
-/// (`table-decorations.test.ts:134-190`).
 #[test]
 fn a_table_stays_drawn_while_the_selection_is_in_one_cell() {
     let before = "before\n";
@@ -343,7 +323,6 @@ fn a_table_stays_drawn_while_the_selection_is_in_one_cell() {
         } if *range == (from..to)
     )));
 
-    // A caret in "Name" and in "Tea": still the grid, `**` hidden.
     let name = doc.find("Name").unwrap();
     let tea = doc.find("Tea").unwrap();
     let count = doc.find("Count").unwrap();
@@ -352,13 +331,11 @@ fn a_table_stays_drawn_while_the_selection_is_in_one_cell() {
         assert_eq!(widget_range(&d), Some(from..to), "{caret}");
         assert!(hidden(&d).contains(&(count - 2..count)), "{caret}");
     }
-    // In the bold cell: the grid, the marks it touches revealed.
     let d = at(&doc, count + 1);
     assert_eq!(widget_range(&d), Some(from..to));
     assert!(!hidden(&d).contains(&(count - 2..count)));
     assert!(source_lines(&d).is_empty());
 
-    // A range inside one cell keeps the grid.
     let state = EditorState::with_filters(&doc, Vec::new());
     let in_cell = Selection::single(name, name + 4);
     assert!(
@@ -368,8 +345,6 @@ fn a_table_stays_drawn_while_the_selection_is_in_one_cell() {
     );
 }
 
-/// The source comes back when a range crosses a cell's edge or the table's,
-/// covers the whole table, or a caret sits on its structure.
 #[test]
 fn a_selection_leaving_the_cell_reveals_the_table_source() {
     let before = "before\n";
@@ -395,15 +370,10 @@ fn a_selection_leaving_the_cell_reveals_the_table_source() {
         },
     ];
     for selection in [
-        // Across a pipe, into the next cell.
         Selection::single(name, doc.find("Count").unwrap() + 1),
-        // From above the table into a cell.
         Selection::single(2, tea + 1),
-        // Out of the table below.
         Selection::single(tea, doc.len()),
-        // The whole table.
         Selection::single(to, from),
-        // A caret on a pipe, or on the delimiter row.
         Selection::cursor(from),
         Selection::cursor(doc.find("---").unwrap()),
     ] {
@@ -415,7 +385,6 @@ fn a_selection_leaving_the_cell_reveals_the_table_source() {
         );
         assert_eq!(source_lines(&d), expected, "{selection:?}");
     }
-    // A caret elsewhere, with another range in a cell: the grid.
     let two = Selection::new(
         vec![SelectionRange::cursor(0), SelectionRange::cursor(tea)],
         0,
@@ -450,8 +419,6 @@ fn a_table_in_a_quote_gets_its_grid_without_the_marks() {
     assert_eq!(cells, ["a", "b", "1", "2"]);
 }
 
-/// US-049: an unclosed `**` in a cell is text: nothing is hidden and the
-/// grid keeps its cells.
 #[test]
 fn an_unclosed_mark_in_a_cell_shows_as_typed() {
     let doc = "| **open | b |\n| - | - |\n| c | d |\n\nx";
@@ -472,8 +439,6 @@ fn an_unclosed_mark_in_a_cell_shows_as_typed() {
     );
 }
 
-/// A cell's `\|` reads as `|` whatever the caret in its row, and shows as
-/// typed once the table's source is revealed.
 #[test]
 fn an_escaped_pipe_in_a_drawn_table_stays_hidden() {
     let doc = "| a\\|b | c |\n| - | - |\n\nx";
@@ -490,9 +455,6 @@ fn an_escaped_pipe_in_a_drawn_table_stays_hidden() {
     assert!(!hidden(&revealed).contains(&(escape..escape + 1)));
 }
 
-/// Cells past the header's width are not drawn (GFM): their table shows its
-/// grid while untouched and its source on contact, as in Writer, so they
-/// never hide while the table is edited.
 #[test]
 fn a_table_with_cells_past_its_header_reveals_its_source_on_contact() {
     let doc = "intro\n\n| a | b |\n|---|---|\n| 1 | 2 | extra |\n\nend";
@@ -507,9 +469,6 @@ fn a_table_with_cells_past_its_header_reveals_its_source_on_contact() {
     assert_eq!(source_lines(&d).len(), 3);
 }
 
-/// A table is decided drawn once, not once per `\|`: a 200 × 8 table with
-/// one in every cell took 247 ms to decorate, every keystroke.
-/// `cargo test -p cerata_markdown --release -- --ignored`.
 #[test]
 #[ignore = "release measurement"]
 fn escaped_pipes_in_a_large_table_decorate_within_a_frame() {
@@ -528,8 +487,6 @@ fn escaped_pipes_in_a_large_table_decorate_within_a_frame() {
     assert!(elapsed.as_secs_f64() < 0.004, "{elapsed:?}");
 }
 
-/// `wiki-link-extension.ts:195-238`: the alias (else the target) while the
-/// selection is outside the brackets; the source while it is inside.
 #[test]
 fn wiki_links_fold_to_their_text_unless_the_selection_is_inside() {
     let doc = "see [[Roadmap|the plan]] and [[Notes/Plan.md#Goals]] x";
@@ -556,9 +513,6 @@ fn wiki_links_fold_to_their_text_unless_the_selection_is_inside() {
     assert!(at("`[[code]]`", 0).iter().all(|d| d.widget().is_none()));
 }
 
-/// US-033: an image embed folds to its image (a block alone on its line,
-/// `!` included) unless the caret is inside; another embed keeps its `!`
-/// and folds as a link (`wiki-link-extension.ts:205-232`).
 #[test]
 fn image_embeds_fold_to_their_image() {
     let doc = "![[assets/pic.png|400]]\n\nsee ![[pic.png]] and ![[Note]]\n\nx";
@@ -595,8 +549,6 @@ fn image_embeds_fold_to_their_image() {
     );
 }
 
-/// US-034: the properties panel while the caret is away, the YAML as a
-/// code block once it touches the frontmatter.
 #[test]
 fn frontmatter_folds_to_its_panel_unless_touched() {
     let doc = "---\ntitle: a\n---\nbody";
@@ -631,9 +583,6 @@ fn frontmatter_folds_to_its_panel_unless_touched() {
     assert_eq!(code_lines(&touched), 3);
 }
 
-/// US-035: an HTML block is drawn while the selection is away, its source
-/// once touched, and stays drawn while a drag frozen outside it passes
-/// over it; `script` and `style` blocks stay source.
 #[test]
 fn html_blocks_fold_unless_touched_or_script() {
     let doc = "intro\n\n<div>\n<b>hi</b>\n</div>\n\nend";
@@ -644,7 +593,6 @@ fn html_blocks_fold_unless_touched_or_script() {
     assert_eq!(widget.range(), block..doc.find("\n\nend").unwrap());
     assert!(!at(doc, block + 3).iter().any(is_html));
 
-    // A drag that started at the intro keeps the block drawn.
     let state = EditorState::with_filters(doc, Vec::new());
     let frozen = Selection::cursor(0);
     let live = Selection::single(0, block + 3);
@@ -658,8 +606,6 @@ fn html_blocks_fold_unless_touched_or_script() {
     );
 }
 
-/// `<details>` runs to its `</details>` over blank lines, as Writer's
-/// block parser reads it; an unclosed one does not.
 #[test]
 fn details_blocks_span_blank_lines() {
     let doc = "<details>\n<summary>More</summary>\n\nHidden **text**\n\n</details>\n\nafter";
@@ -677,8 +623,6 @@ fn details_blocks_span_blank_lines() {
     assert_eq!(html[0].range(), 0..unclosed.find("\n\nHidden").unwrap());
 }
 
-/// US-036: `$...$` folds inline, `$$...$$` alone on its lines as a block;
-/// currency stays text; the caret reveals the source.
 #[test]
 fn formulas_fold_inline_or_as_blocks_and_currency_stays_text() {
     let math = |d: &[Decoration]| -> Vec<(Range<usize>, String, bool, bool)> {
@@ -700,9 +644,7 @@ fn formulas_fold_inline_or_as_blocks_and_currency_stays_text() {
     let block_from = doc.find("$$").unwrap();
     assert_eq!(found[1].0, block_from..doc.rfind("$$").unwrap() + 2);
     assert!(found[1].2 && found[1].3);
-    // The caret inside a formula shows its source.
     assert_eq!(math(&at(doc, 9)).len(), 1);
-    // So does a range covering it (`math.test.ts:142`).
     let state = EditorState::with_filters(doc, Vec::new());
     let covering = Selection::single(13, 5);
     assert_eq!(
@@ -717,7 +659,6 @@ fn formulas_fold_inline_or_as_blocks_and_currency_stays_text() {
     ] {
         assert!(math(&at(text, 0)).is_empty(), "{text}");
     }
-    // Display math inside a line flows with the text.
     let inline_display = "see $$x$$ now";
     assert_eq!(
         math(&at(inline_display, 0)),
@@ -725,8 +666,6 @@ fn formulas_fold_inline_or_as_blocks_and_currency_stays_text() {
     );
 }
 
-/// `math.test.ts:29-63`: Pandoc's rules for `$` (no space after the
-/// opener or before the closer, no digit after the closer, `\$` escaped).
 #[test]
 fn math_parses_with_pandocs_guards() {
     let nodes = |doc: &str| -> Vec<String> {
@@ -755,8 +694,6 @@ fn math_parses_with_pandocs_guards() {
     assert_eq!(nodes("$$ x^2 $$"), ["$$ x^2 $$"]);
 }
 
-/// US-037: only a closed, non-empty ` ```mermaid ` fence becomes a canvas,
-/// whose code chrome is not drawn, whatever the selection.
 #[test]
 fn closed_mermaid_fences_fold_to_a_canvas() {
     let canvas = |d: &[Decoration]| -> Vec<(Range<usize>, String)> {
@@ -785,7 +722,6 @@ fn closed_mermaid_fences_fold_to_a_canvas() {
             ..
         }
     )));
-    // `mermaid.test.ts:501-511`: the canvas stays whatever the selection.
     let state = EditorState::with_filters(doc, Vec::new());
     for selection in [
         Selection::cursor(fence.start + 5),
@@ -809,8 +745,6 @@ fn closed_mermaid_fences_fold_to_a_canvas() {
     assert!(canvas(&at(other, other.len())).is_empty());
 }
 
-// EP-013 ---------------------------------------------------------------
-
 fn with(doc: &str, ranges: &[(usize, usize)]) -> Vec<Decoration> {
     let state = EditorState::with_filters(doc, Vec::new());
     let ranges = ranges
@@ -830,8 +764,6 @@ fn image_widths(decorations: &[Decoration]) -> Vec<Option<u32>> {
         .collect()
 }
 
-/// US-063: the width an image's alt text or embed asks for rides on its
-/// widget; the height of `|WxH` is dropped, a refused suffix is no size.
 #[test]
 fn image_widgets_carry_the_width_of_their_source() {
     let doc = "![a|300](x.png)\n\n![120](x.png)\n\n![a|100x50](x.png)\n\n![a|50%](x.png)\n\n![a\\|30](x.png)\n\n![[x.png|250]]\n\n![[x.png]]\n\nend";
@@ -841,9 +773,6 @@ fn image_widgets_carry_the_width_of_their_source() {
     );
 }
 
-/// US-065: a range equal to a block image keeps it drawn; a range that
-/// only touches it, an inline image and an image in a table cell keep the
-/// reveal rule.
 #[test]
 fn a_range_equal_to_a_block_image_selects_it_as_an_object() {
     let doc = "intro\n\n![a|300](x.png)\n\nend";
@@ -855,7 +784,6 @@ fn a_range_equal_to_a_block_image_selects_it_as_an_object() {
     };
     assert!(replaced(&with(doc, &[(22, 7)])), "anchored at the end");
     assert!(replaced(&with(doc, &[(7, 22)])), "anchored at the start");
-    // Touching without being equal: the source with the widget below it.
     for ranges in [
         [(7, 7)],
         [(22, 22)],
@@ -876,7 +804,6 @@ fn a_range_equal_to_a_block_image_selects_it_as_an_object() {
             block: true
         }
     )));
-    // Inline: the current rule.
     let inline = "see ![a](x.png) here";
     let d = with(inline, &[(4, 15)]);
     assert!(
@@ -889,7 +816,6 @@ fn a_range_equal_to_a_block_image_selects_it_as_an_object() {
         )),
         "an inline image equal to the range shows its source"
     );
-    // In a table cell: the table reveals its source, as today.
     let table = "| a |\n| --- |\n| ![x](y.png) |\n";
     let cell = table.find("![x").unwrap();
     let d = with(table, &[(cell, cell + 11)]);
@@ -902,7 +828,6 @@ fn a_range_equal_to_a_block_image_selects_it_as_an_object() {
     )));
 }
 
-/// US-065: an embed selected whole stays drawn too.
 #[test]
 fn an_embed_selected_whole_stays_drawn() {
     let doc = "![[x.png|300]]\n\nend";
@@ -922,8 +847,6 @@ fn an_embed_selected_whole_stays_drawn() {
     );
 }
 
-/// US-065: with several ranges, the rule applies to the image a range
-/// equals; another image touched by another range shows its source.
 #[test]
 fn the_object_rule_applies_to_the_image_a_range_equals_only() {
     let doc = "![a](x.png)\n\n![b](y.png)\n";

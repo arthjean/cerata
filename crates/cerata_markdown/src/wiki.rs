@@ -1,17 +1,9 @@
-//! Wiki link parsing: `[[target#fragment|alias]]`, with `\|` escaping the
-//! pipe inside tables. Ported from `lib/wiki-links.ts:14-75`.
-
-/// A wiki link's inner text, split.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WikiLink {
-    /// The target with `\|` unescaped, fragment included.
     pub target: String,
-    /// The target path, normalized by [`normalize_target`].
     pub path: String,
     pub fragment: Option<String>,
     pub alias: Option<String>,
-    /// What the folded link shows: the alias, else the path, else
-    /// `#fragment`.
     pub display: String,
 }
 
@@ -19,7 +11,6 @@ fn unescape(text: &str) -> String {
     text.replace("\\|", "|").trim().to_owned()
 }
 
-/// Parses the text between `[[` and `]]` (`parseWikiLink`).
 pub fn parse(raw: &str) -> WikiLink {
     let raw = raw.trim();
     let (target, alias) = match raw.find('|') {
@@ -52,8 +43,6 @@ pub fn parse(raw: &str) -> WikiLink {
     }
 }
 
-/// Trims, turns `\` into `/`, drops leading slashes and a `.md` or
-/// `.markdown` extension (`normalizeWikiTarget`).
 pub fn normalize_target(raw: &str) -> String {
     let target = raw.trim().replace('\\', "/");
     let target = target.trim_start_matches('/');
@@ -67,22 +56,14 @@ pub fn normalize_target(raw: &str) -> String {
     }
 }
 
-/// Image formats an Obsidian embed (`![[image.png]]`) shows
-/// (`SPECs/obsidian-image-embed-spec.md`).
 const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "svg"];
 
-/// An image embed's inner text, read.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ImageEmbed {
-    /// The image path, slashes normalized and leading `/` dropped.
     pub path: String,
-    /// The size on its last `|` segment (`image_size::embed_size`).
     pub size: Option<crate::image_size::ImageSize>,
 }
 
-/// The image an embed's inner text names, with its size; `None` for a
-/// note, a PDF or anything else. An alias after an unescaped `|` is
-/// ignored (`parseWikiImageEmbedTarget`).
 pub fn image_embed_target(raw: &str) -> Option<ImageEmbed> {
     let size = crate::image_size::embed_size(raw).map(|s| s.size);
     let raw = raw.trim();
@@ -110,7 +91,6 @@ pub fn image_embed_target(raw: &str) -> Option<ImageEmbed> {
 mod tests {
     use super::*;
 
-    /// `wiki-links.test.ts:16-50`.
     #[test]
     fn normalizes_targets() {
         for (raw, normalized) in [
@@ -129,7 +109,6 @@ mod tests {
         }
     }
 
-    /// `wiki-links.test.ts:55-91`.
     #[test]
     fn splits_alias_fragment_and_escaped_pipe() {
         let link = parse("No prior experience|I have no prior experience");
@@ -162,7 +141,6 @@ mod tests {
         assert_eq!(parse("a|").display, "a");
     }
 
-    /// `wiki-links.test.ts:396-425`; the size is kept (US-063).
     #[test]
     fn image_embeds_name_an_image_file() {
         for (raw, target, width) in [

@@ -1,14 +1,3 @@
-//! Runs the EP-016 migration on a copy of a Cerata data folder: the
-//! registry from `recent_workspaces.json`, then the conversion of each
-//! library's session and pins to its id with relative paths. Writes only
-//! into the folder given, and never into a library (no marker is written:
-//! the libraries are not opened).
-//!
-//!   cargo run -p cerata_core --example migration_check -- COPY_OF_DATA_DIR
-//!
-//! Pass a copy, never the live `%APPDATA%\cerata`: the JSON files in it
-//! are rewritten in the new format.
-
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 

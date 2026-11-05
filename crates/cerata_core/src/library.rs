@@ -1,16 +1,3 @@
-//! Libraries (ADR 0009, US-076): folders of notes recorded in the registry
-//! `libraries.json` of the app data folder, each with an opaque 128-bit id
-//! written once in `{root}/.cerata/id`.
-//!
-//! The marker lets Cerata recognize a library that moved (its entry follows
-//! the folder) and tell a copy from the original (the copy gets its own
-//! id, the only case where a marker is rewritten). A folder Cerata cannot
-//! write to keeps a registry entry recognized by its path only.
-//!
-//! On the first start of a version with libraries, every folder of
-//! `recent_workspaces.json` that still exists becomes a library; that file
-//! is left as it is.
-
 use crate::fs::{FsError, WorkspaceFs, validate_file_name};
 use crate::json_store::{JsonStore, StoreError};
 use crate::paths;
@@ -21,22 +8,16 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const REGISTRY_FILE: &str = "libraries.json";
-/// Writer's list of recent workspaces, read once for the migration.
 pub const LEGACY_RECENTS_FILE: &str = "recent_workspaces.json";
-/// Name the welcome form proposes for a first library.
 pub const DEFAULT_LIBRARY_NAME: &str = "Cerata";
 const REGISTRY_VERSION: u32 = 1;
-/// A marker is 32 hex characters and a newline; anything much longer is
-/// not one.
 const MARKER_MAX_BYTES: u64 = 64;
 
-/// A registry entry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Library {
     pub id: String,
     pub path: PathBuf,
     pub name: String,
-    /// Seconds since the Unix epoch.
     pub created_at: u64,
     pub last_opened_at: u64,
     #[serde(default)]
@@ -51,14 +32,11 @@ impl Library {
         }
     }
 
-    /// `false` for a library whose folder is gone ("Not found").
     pub fn exists(&self) -> bool {
         self.path.is_dir()
     }
 }
 
-/// What app state (sessions, pins) is keyed by: the library id, with paths
-/// stored relative to `root`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LibraryKey {
     pub id: String,
@@ -81,14 +59,10 @@ impl Default for Registry {
     }
 }
 
-/// What opening a folder told about its identity, for the window notice.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LibraryNotice {
-    /// The marker's library was registered at a path that no longer exists.
     Moved,
-    /// The marker's library still exists elsewhere: this folder is a copy.
     Copy { original: String },
-    /// No marker could be written.
     ReadOnly,
 }
 
@@ -113,12 +87,10 @@ pub struct OpenedLibrary {
     pub notice: Option<LibraryNotice>,
 }
 
-/// The content of `{root}/.cerata/id`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Marker {
     Absent,
     Id(String),
-    /// Unreadable or malformed: ignored, never overwritten.
     Unusable,
 }
 
@@ -126,9 +98,6 @@ pub fn read_marker(root: &Path) -> Marker {
     let path = paths::library_marker_path(root);
     let meta = match std::fs::symlink_metadata(&path) {
         Ok(meta) => meta,
-        // A file named `.cerata` holds no marker: Unix says `ENOTDIR` where
-        // Windows says not found. Writing one then fails, without touching
-        // that file, and the folder is known by its path.
         Err(error)
             if matches!(
                 error.kind(),
@@ -163,17 +132,13 @@ pub fn read_marker(root: &Path) -> Marker {
     }
 }
 
-/// 32 lowercase hexadecimal characters.
 pub fn is_library_id(text: &str) -> bool {
     text.len() == 32 && text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
-/// 16 random bytes from the OS, as 32 lowercase hex characters.
 pub fn new_id() -> String {
     let mut bytes = [0u8; 16];
     if let Err(error) = getrandom::fill(&mut bytes) {
-        // Never seen in practice; std's per-process random hasher keys
-        // and the clock still make a collision implausible.
         log::error!("OS randomness unavailable ({error}); deriving a library id");
         use std::hash::{BuildHasher, Hasher};
         let nanos = SystemTime::now()
@@ -190,10 +155,8 @@ pub fn new_id() -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// Writes `{root}/.cerata/id` if it does not exist; never replaces it.
 fn write_marker(root: &Path, id: &str) -> Result<(), FsError> {
     let fs = WorkspaceFs::new(root)?;
-    // `AlreadyExists` here means a file named `.cerata`, not a marker.
     fs.ensure_directory(&root.join(paths::WORKSPACE_DIR))
         .map_err(|error| match error {
             FsError::AlreadyExists(path) => FsError::Io {
@@ -209,7 +172,6 @@ fn write_marker(root: &Path, id: &str) -> Result<(), FsError> {
     Ok(())
 }
 
-/// Replaces the marker of a copied library, atomically.
 fn rewrite_marker(root: &Path, id: &str) -> Result<(), FsError> {
     let fs = WorkspaceFs::new(root)?;
     fs.write_bytes(
@@ -262,7 +224,6 @@ impl Registry {
         });
     }
 
-    /// The entry of `root`, created with a fresh id when there is none.
     fn entry_at(&mut self, root: &Path) -> String {
         match self.index_at(root) {
             Some(ix) => self.libraries[ix].id.clone(),
@@ -276,8 +237,6 @@ impl Registry {
 
     fn resolve_marked(&mut self, root: &Path, id: String) -> (String, Option<LibraryNotice>) {
         let Some(ix) = self.index_of(&id) else {
-            // Unknown id (a new registry, another machine): the marker wins
-            // over a path-only entry.
             return match self.index_at(root) {
                 Some(at) => {
                     self.libraries[at].id = id.clone();
@@ -328,24 +287,17 @@ impl Registry {
     }
 }
 
-/// Result of [`LibraryRegistry::locate`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LocateOutcome {
     Located(Library),
-    /// The folder's marker names another library, or it has none.
-    NotThisLibrary {
-        name: String,
-    },
-    /// The id is no longer in the registry.
+    NotThisLibrary { name: String },
     Unknown,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum CreateError {
-    /// The name cannot be a folder name; the reason is shown as is.
     #[error("{0}")]
     InvalidName(String),
-    /// A non-empty folder without a marker is there.
     #[error("{} exists", .0.display())]
     FolderExists(PathBuf),
     #[error(transparent)]
@@ -354,8 +306,6 @@ pub enum CreateError {
     Store(#[from] StoreError),
 }
 
-/// The reason `name` cannot name a library folder, capitalized for the
-/// form, or `None` when it can.
 pub fn name_problem(name: &str) -> Option<String> {
     match validate_file_name(name) {
         Ok(()) => None,
@@ -370,7 +320,6 @@ pub fn name_problem(name: &str) -> Option<String> {
     }
 }
 
-/// `libraries.json` in the app data folder.
 #[derive(Debug, Clone)]
 pub struct LibraryRegistry {
     store: JsonStore,
@@ -385,7 +334,6 @@ impl LibraryRegistry {
         }
     }
 
-    /// Every library, most recently opened first.
     pub fn list(&self) -> Result<Vec<Library>, StoreError> {
         let mut libraries = self.read()?.libraries;
         libraries.sort_by(|a, b| {
@@ -404,8 +352,6 @@ impl LibraryRegistry {
         Ok(self.read()?.libraries.into_iter().find(|l| l.is_default))
     }
 
-    /// The registered library whose folder holds `path` (the deepest one
-    /// when libraries nest), if its folder exists.
     pub fn containing(&self, path: &Path) -> Result<Option<Library>, StoreError> {
         Ok(self
             .read()?
@@ -415,7 +361,6 @@ impl LibraryRegistry {
             .max_by_key(|l| l.path.components().count()))
     }
 
-    /// Makes `id` the only default library. `false` when it is unknown.
     pub fn set_default(&self, id: &str) -> Result<bool, StoreError> {
         self.update(|registry| {
             let known = registry.index_of(id).is_some();
@@ -428,8 +373,6 @@ impl LibraryRegistry {
         })
     }
 
-    /// Forgets `id`. No file is touched: not the folder, its marker or its
-    /// store. `false` when it is unknown.
     pub fn remove(&self, id: &str) -> Result<bool, StoreError> {
         self.update(|registry| {
             let before = registry.libraries.len();
@@ -438,8 +381,6 @@ impl LibraryRegistry {
         })
     }
 
-    /// Identifies the folder `root` (canonical, existing) by its marker,
-    /// writing one when it has none, and records the opening.
     pub fn resolve(&self, root: &Path) -> Result<OpenedLibrary, StoreError> {
         let marker = read_marker(root);
         self.update(|registry| {
@@ -456,7 +397,6 @@ impl LibraryRegistry {
                     entry.last_opened_at = now.max(entry.last_opened_at);
                     entry.clone()
                 }
-                // Unreachable: every branch above registers `id`.
                 None => Library {
                     id,
                     path: root.to_path_buf(),
@@ -470,8 +410,6 @@ impl LibraryRegistry {
         })
     }
 
-    /// "Locate…": `folder` replaces the path of `id` when its marker holds
-    /// that id; otherwise nothing changes.
     pub fn locate(&self, id: &str, folder: &Path) -> Result<LocateOutcome, StoreError> {
         let folder = dunce::canonicalize(folder).unwrap_or_else(|_| folder.to_path_buf());
         let matches = read_marker(&folder) == Marker::Id(id.to_owned());
@@ -497,11 +435,6 @@ impl LibraryRegistry {
         })
     }
 
-    /// The welcome form's "Create": `{parent}/{name}` becomes the default
-    /// library. A folder there that already has a marker is reused, an
-    /// empty one is adopted, a non-empty one without a marker is refused
-    /// with [`CreateError::FolderExists`]. On an error nothing is recorded,
-    /// and a folder this call created is removed again.
     pub fn create(&self, parent: &Path, name: &str) -> Result<Library, CreateError> {
         if let Some(problem) = name_problem(name) {
             return Err(CreateError::InvalidName(problem));
@@ -565,8 +498,6 @@ impl LibraryRegistry {
         }
     }
 
-    /// "Open" after [`CreateError::FolderExists`], or "Create" on a folder
-    /// that is already a library: `path` is identified and made default.
     pub fn adopt(&self, path: &Path) -> Result<Library, CreateError> {
         let root = dunce::canonicalize(path).map_err(|e| FsError::io(path, e))?;
         let opened = self.resolve(&root)?;
@@ -587,9 +518,6 @@ impl LibraryRegistry {
         self.store.update(change)
     }
 
-    /// Without `libraries.json`, the folders of `recent_workspaces.json`
-    /// that still exist become libraries, in their order. Runs once: the
-    /// registry file exists afterwards, even empty.
     fn migrate(&self) -> Result<(), StoreError> {
         if std::fs::symlink_metadata(self.store.path()).is_ok() {
             return Ok(());
@@ -626,7 +554,6 @@ impl LibraryRegistry {
                     name: folder_name(&path),
                     path,
                     created_at: now,
-                    // Keeps the recents' order once sorted by last opening.
                     last_opened_at: now.saturating_sub(ix as u64),
                     is_default: false,
                 });
@@ -766,12 +693,9 @@ mod tests {
         assert_eq!(marker_of(&copy), format!("{}\n", opened.library.id));
         assert_eq!(marker_of(&root), format!("{id}\n"));
         assert_eq!(env.registry.list().unwrap().len(), 2);
-        // The copy is now known as itself.
         assert_eq!(env.registry.resolve(&copy).unwrap().notice, None);
     }
 
-    /// `.cerata` is a file here, so no marker can be written: the folder
-    /// is recognized by its path, with the same id each time.
     #[test]
     fn a_folder_without_a_writable_marker_is_known_by_its_path() {
         let env = env();
@@ -837,15 +761,11 @@ mod tests {
         let paths: Vec<&Path> = libraries.iter().map(|l| l.path.as_path()).collect();
         assert_eq!(paths, [b.as_path(), a.as_path()]);
         assert!(libraries.iter().all(|l| is_library_id(&l.id)));
-        // The original file stays, and no marker is written by the
-        // migration itself.
         assert_eq!(std::fs::read_to_string(&legacy).unwrap(), recents);
         assert!(!paths::library_marker_path(&a).exists());
-        // Opening a migrated folder writes the id it was given.
         let id_a = libraries.iter().find(|l| l.path == a).unwrap().id.clone();
         assert_eq!(env.registry.resolve(&a).unwrap().library.id, id_a);
         assert_eq!(marker_of(&a), format!("{id_a}\n"));
-        // Once the registry exists, the recents are not read again.
         env.registry.remove(&id_a).unwrap();
         assert_eq!(env.registry.list().unwrap().len(), 1);
     }
@@ -877,12 +797,9 @@ mod tests {
         assert!(env.registry.remove(&b.id).unwrap());
         assert!(!env.registry.remove(&b.id).unwrap());
         assert_eq!(env.registry.containing(&inside).unwrap(), None);
-        // Removing touched no file.
         assert!(paths::library_marker_path(&b.path).exists());
     }
 
-    /// Ports Writer `stores.test.ts:881` (recent workspaces, now the
-    /// registry): removing one drops only it and keeps the others' order.
     #[test]
     fn removing_a_library_keeps_the_others_in_order() {
         let env = env();
@@ -891,7 +808,6 @@ mod tests {
             .iter()
             .map(|name| env.registry.resolve(&env.folder(name)).unwrap().library.id)
             .collect();
-        // Opened C, then B, then A: A is the most recent.
         env.registry
             .update(|registry| {
                 for (ix, library) in registry.libraries.iter_mut().enumerate() {
@@ -948,11 +864,9 @@ mod tests {
         assert!(library.is_default);
         assert_eq!(library.name, "Cerata");
         assert_eq!(marker_of(&library.path), format!("{}\n", library.id));
-        // Same place again: the existing library, no second entry.
         let again = env.registry.create(&parent, "Cerata").unwrap();
         assert_eq!(again.id, library.id);
         assert_eq!(env.registry.list().unwrap().len(), 1);
-        // A non-empty folder without a marker is refused.
         let busy = parent.join("Busy");
         std::fs::create_dir(&busy).unwrap();
         std::fs::write(busy.join("a.md"), "x").unwrap();
@@ -961,10 +875,8 @@ mod tests {
             Err(CreateError::FolderExists(_))
         ));
         assert!(!paths::library_marker_path(&busy).exists());
-        // An empty one is adopted.
         std::fs::create_dir(parent.join("Empty")).unwrap();
         assert!(env.registry.create(&parent, "Empty").is_ok());
-        // Invalid names are refused before touching the disk.
         assert!(matches!(
             env.registry.create(&parent, "a/b"),
             Err(CreateError::InvalidName(_))

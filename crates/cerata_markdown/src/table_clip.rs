@@ -1,9 +1,3 @@
-//! Cells on the clipboard (US-055, ADR 0007 decision 10): a rectangle of
-//! cells copies as a GFM table (its first row as the header), with the
-//! grid itself as metadata for the host to attach; a grid pasted into a
-//! cell (that metadata, a GFM table or TSV of at least two cells) fills
-//! the cells from it, adding the rows and columns it needs, in one step.
-
 use crate::cells;
 use crate::state::EditorState;
 use crate::table::{Align, CellKind, Grid, RowKind};
@@ -11,24 +5,18 @@ use crate::table_ops::{At, Draft};
 use crate::text::Text;
 use crate::tree::{MarkdownTree, NodeKind};
 
-/// Cells pasted at once, at most (ADR 0007, decision 10).
 pub const PASTE_LIMIT: usize = 10_000;
 
-/// A block of cells: each one's text as cell source (`\|` and `<br>`
-/// escaped), and the alignment of each column.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CellBlock {
     pub rows: Vec<Vec<String>>,
     pub alignments: Vec<Option<Align>>,
 }
 
-/// What a paste into a table did.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PasteCells {
-    /// The caret is not in a drawn cell: paste as text.
     Outside,
     Pasted,
-    /// Over [`PASTE_LIMIT`]: nothing pasted.
     TooLarge(usize),
 }
 
@@ -41,7 +29,6 @@ impl CellBlock {
         self.rows.iter().map(Vec::len).max().unwrap_or(0)
     }
 
-    /// The block as a GFM table: its first row is the header.
     pub fn to_gfm(&self) -> String {
         let columns = self.columns().max(1);
         let row = |cells: &[String]| {
@@ -69,8 +56,6 @@ impl CellBlock {
         out.join("\n")
     }
 
-    /// Every cell made a valid cell source: `|` escaped, line breaks as
-    /// `<br>`, edge spaces trimmed.
     pub fn escaped(mut self) -> Self {
         for row in &mut self.rows {
             for cell in row.iter_mut() {
@@ -81,7 +66,6 @@ impl CellBlock {
     }
 }
 
-/// `text` when it is one GFM table and nothing else: its cells' sources.
 pub fn parse_gfm(text: &str) -> Option<CellBlock> {
     let trimmed = text.trim_matches(['\n', '\r']);
     let doc = Text::new(trimmed);
@@ -111,8 +95,6 @@ pub fn parse_gfm(text: &str) -> Option<CellBlock> {
     })
 }
 
-/// Tab-separated values from a spreadsheet: at least two cells, so at
-/// least one tab. Plain text, to escape.
 pub fn parse_tsv(text: &str) -> Option<CellBlock> {
     if !text.contains('\t') {
         return None;
@@ -139,9 +121,6 @@ pub fn parse_tsv(text: &str) -> Option<CellBlock> {
     (block.cell_count() >= 2).then(|| block.escaped())
 }
 
-/// The rows of `body` as spreadsheets write them: a cell holding a tab, a
-/// line break or a quote is quoted, its quotes doubled (`"l1\nl2"\tx`).
-/// `None` without a quoted cell or with one left open: split plainly.
 fn quoted_rows(body: &str) -> Option<Vec<Vec<String>>> {
     let mut rows = vec![Vec::new()];
     let mut cell = String::new();
@@ -185,8 +164,6 @@ fn quoted_rows(body: &str) -> Option<Vec<Vec<String>>> {
 }
 
 impl EditorState {
-    /// The rectangle of cells as a block: the source of each selected
-    /// cell (empty for a missing one) and its columns' alignments.
     pub fn copied_cells(&self) -> Option<CellBlock> {
         let (ts, grid) = self.table_selection_grid()?;
         let doc = self.doc();
@@ -214,18 +191,11 @@ impl EditorState {
         Some(CellBlock { rows, alignments })
     }
 
-    /// Cut over a rectangle: its cells emptied (the host copied them
-    /// first), one undo step.
     pub fn cut_cells(&mut self) -> bool {
         self.clear_cells().unwrap_or(false)
     }
 
-    /// Pastes `block` into the table from the caret's cell (the rectangle's
-    /// top-left one), adding the rows and columns it needs: one undo step,
-    /// the caret at the end of the last cell filled.
     pub fn paste_cells(&mut self, block: &CellBlock) -> PasteCells {
-        // The rectangle it fills, short and empty rows included: what the
-        // paste creates, which the limit bounds.
         let count = block.rows.len().saturating_mul(block.columns());
         if count > PASTE_LIMIT {
             return PasteCells::TooLarge(count);
@@ -250,7 +220,6 @@ impl EditorState {
         let doc = self.doc().to_owned();
         let mut d = Draft::new(&doc, &grid);
         d.complete();
-        // Draft positions of the drawn rows: the header, then the body.
         let first = if row == 0 { 0 } else { row - 1 };
         let needed_rows = first + block.rows.len();
         let needed_columns = column + block.columns();
@@ -272,7 +241,6 @@ impl EditorState {
                 last = (at, column + j);
             }
         }
-        // Pasting what is already there changes nothing, and that is fine.
         let _ = d.commit(self, last.0, last.1, At::Offset(usize::MAX));
         PasteCells::Pasted
     }

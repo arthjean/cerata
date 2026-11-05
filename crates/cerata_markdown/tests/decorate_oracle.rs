@@ -1,12 +1,3 @@
-//! US-011 and US-012: `decorate` gives exactly the decorations Writer's
-//! `hideExtension` and `foldExtension` hold, on every fixture of the corpus
-//! and of the parser spike, for every caret of the snapshot: document
-//! bounds, line bounds, node bounds, two carets at once, short ranges and
-//! the whole document. Snapshots come from Writer itself, run headless by
-//! `scripts/oracle/oracle.ts snapshots` (UTF-8 byte offsets). Line styles
-//! come from Writer view plugins the oracle cannot capture; they are left
-//! out here and tested in `src/decorate/tests.rs`.
-
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use cerata_markdown::{
@@ -43,9 +34,6 @@ fn describe(decoration: &Decoration) -> Option<String> {
                 Widget::HorizontalRule => "HorizontalRuleWidget".to_owned(),
                 Widget::Dash(count) => format!("DashWidget {count}"),
                 Widget::Emoji(emoji) => format!("EmojiWidget {emoji}"),
-                // View-plugin chrome the oracle cannot capture (see top),
-                // and the rich blocks of Writer's own extensions (tables,
-                // math, Mermaid, HTML), outside prosemark-core's fold set.
                 _ => return None,
             };
             let block = if *block { "block" } else { "inline" };
@@ -76,8 +64,6 @@ fn decorations_match_writer_snapshots() {
             .find(|p| p.exists())
             .unwrap_or_else(|| panic!("no fixture for {name}"));
         let doc = std::fs::read_to_string(source).unwrap();
-        // No selection filters, and no caret passes (atomic blocks, table
-        // cells): the snapshots were taken on Writer's selections as given.
         let mut state = EditorState::with_filters(doc, Vec::new());
         state.set_atomic_blocks(false);
         fixtures += 1;
@@ -101,7 +87,6 @@ fn decorations_match_writer_snapshots() {
                 .iter()
                 .map(|d| d.as_str().unwrap().to_owned())
                 .collect();
-            // The entry point the editor uses, and the pure function.
             let actual: Vec<String> = state.decorations().iter().filter_map(describe).collect();
             let pure: Vec<String> = decorate(state.tree(), state.text(), &selection, None)
                 .iter()
@@ -109,8 +94,6 @@ fn decorations_match_writer_snapshots() {
                 .collect();
             assert_eq!(actual, pure);
             cases += 1;
-            // ADR 0008 amends Writer: a range equal to a block image
-            // selects it as an object, which stays drawn.
             let main = selection.main();
             let object = (selection.ranges().len() == 1 && !main.is_empty())
                 .then(|| {
@@ -119,7 +102,6 @@ fn decorations_match_writer_snapshots() {
                 .flatten()
                 .filter(|i| i.block && i.range == (main.from()..main.to()));
             if let Some(image) = object {
-                // An embed's widget is outside the oracle's fold set.
                 if image.embed {
                     continue;
                 }

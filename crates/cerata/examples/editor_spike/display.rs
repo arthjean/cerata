@@ -1,12 +1,8 @@
-//! Buffer offsets to display offsets within one line, given hidden ranges.
-
 use std::ops::Range;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DisplayLine {
-    /// The line text with hidden ranges removed.
     pub text: String,
-    /// Hidden ranges, line-relative buffer offsets, sorted and disjoint.
     pub hidden: Vec<Range<usize>>,
     pub buffer_len: usize,
 }
@@ -27,8 +23,6 @@ impl DisplayLine {
         }
     }
 
-    /// Display offset of a line-relative buffer offset. An offset inside a
-    /// hidden range maps to where that range collapsed.
     pub fn to_display(&self, buffer: usize) -> usize {
         let mut removed = 0;
         for range in &self.hidden {
@@ -43,11 +37,6 @@ impl DisplayLine {
         buffer.min(self.buffer_len) - removed
     }
 
-    /// Buffer offset of a display offset. At the boundary of a hidden range
-    /// the offset skips it forward: it lands on the next visible character,
-    /// so a selection that ends after visible text includes the markup that
-    /// follows it (closing `**`, `](url)`), and a click at the start of a
-    /// heading lands after its hidden `# `.
     pub fn to_buffer(&self, display: usize) -> usize {
         let mut removed = 0;
         for range in &self.hidden {
@@ -60,7 +49,6 @@ impl DisplayLine {
         (display + removed).min(self.buffer_len)
     }
 
-    /// Visible buffer segments with their display start.
     pub fn visible_segments(&self) -> Vec<(Range<usize>, usize)> {
         let mut segments = Vec::new();
         let mut ix = 0;
@@ -85,7 +73,6 @@ mod tests {
 
     #[test]
     fn maps_offsets_across_hidden_ranges() {
-        // "a **b** c" with both `**` hidden: display "a b c".
         let line = DisplayLine::new("a **b** c", vec![2..4, 5..7]);
         assert_eq!(line.text, "a b c");
         assert_eq!(line.to_display(0), 0);

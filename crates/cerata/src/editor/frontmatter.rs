@@ -1,12 +1,3 @@
-//! The frontmatter panel (US-034): one row per property, drawn in place of
-//! the YAML while the selection is away from it. Ported from
-//! `frontmatter-panel.tsx:105-158` and `use-frontmatter-entries.ts:10-111`.
-//!
-//! Each edit rewrites the frontmatter through the editor
-//! ([`PanelEvent::Write`]), entry by entry (`yaml_entries::write`), so the
-//! properties it does not touch keep their text. A YAML the panel cannot
-//! read is shown raw with its error and never written.
-
 use cerata_markdown::yaml_entries::{self, Properties, Row as YamlRow};
 use gpui::{
     AnyElement, Context, CursorStyle, Entity, EventEmitter, FocusHandle, Focusable, MouseButton,
@@ -18,12 +9,9 @@ use super::{actions, theme};
 
 const TEXT_SIZE: f32 = 13.0;
 
-/// What the panel asks of the editor.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PanelEvent {
-    /// The new YAML between the delimiters; `None` removes the block.
     Write(Option<String>),
-    /// Give the focus back to the text.
     FocusEditor,
 }
 
@@ -37,23 +25,17 @@ struct Row {
     id: u64,
     key: Entity<TextField>,
     value: Entity<TextField>,
-    /// The entry it shows, by index in the parsed properties.
     origin: Option<usize>,
-    /// A list or map: shown, edited only as text.
     complex: bool,
     _events: [Subscription; 2],
-    /// Focus-out listeners, registered at the first frame (they need the
-    /// window).
     blur: Option<[Subscription; 2]>,
 }
 
 pub struct FrontmatterPanel {
-    /// The YAML last read or written; `None` without frontmatter.
     yaml: Option<String>,
     properties: Properties,
     rows: Vec<Row>,
     next_id: u64,
-    /// A field to focus at the next frame.
     focus: Option<(u64, Field)>,
 }
 
@@ -124,8 +106,6 @@ impl FrontmatterPanel {
         }
     }
 
-    /// Follows the document's frontmatter, `None` when it has none. The
-    /// YAML the panel itself wrote changes nothing.
     pub fn sync(&mut self, yaml: Option<&str>, cx: &mut Context<Self>) {
         if self.yaml.as_deref() == yaml {
             return;
@@ -152,7 +132,6 @@ impl FrontmatterPanel {
                 .collect(),
             Properties::Invalid(_) => Vec::new(),
         };
-        // Rows are kept where they can be, so a field keeps its focus.
         self.rows.truncate(wanted.len());
         for (i, (key, value, origin, complex)) in wanted.into_iter().enumerate() {
             match self.rows.get_mut(i) {
@@ -178,8 +157,6 @@ impl FrontmatterPanel {
         cx.notify();
     }
 
-    /// Focuses the first property name at the next frame (`---` typed on
-    /// the first line).
     pub fn focus_first(&mut self, cx: &mut Context<Self>) {
         self.focus = self.rows.first().map(|r| (r.id, Field::Key));
         cx.notify();
@@ -195,7 +172,6 @@ impl FrontmatterPanel {
         self.rows.iter().position(|r| r.id == id)
     }
 
-    /// Writes the rows to the document (`commit`).
     fn commit(&mut self, cx: &mut Context<Self>) {
         let Some(yaml) = self.yaml.clone() else {
             return;
@@ -229,7 +205,6 @@ impl FrontmatterPanel {
         let Some(written) = yaml_entries::write(&yaml, &self.properties, &rows) else {
             return;
         };
-        // The rows with a key are, in order, the entries just written.
         self.properties = yaml_entries::parse(&written);
         let mut next = 0;
         for (row, (key, _, _)) in self.rows.iter_mut().zip(&texts) {
@@ -274,7 +249,6 @@ impl FrontmatterPanel {
                 self.focus = Some((id, Field::Value));
                 cx.notify();
             }
-            // Enter on the last value adds a row.
             (FieldEvent::Submit { backward: false }, Field::Value) if ix + 1 == self.rows.len() => {
                 self.add_row(cx)
             }
@@ -287,9 +261,7 @@ impl FrontmatterPanel {
         }
     }
 
-    /// A row that loses the focus without a key is removed.
     fn on_blur(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
-        // The focus may only be moving to the row's other field.
         cx.defer_in(window, move |panel, window, cx| {
             let Some(row) = panel.index(id).map(|ix| &panel.rows[ix]) else {
                 return;
@@ -298,14 +270,11 @@ impl FrontmatterPanel {
                 || row.value.focus_handle(cx).is_focused(window);
             if !inside && row.key.read(cx).text.trim().is_empty() {
                 panel.remove_row(id, cx);
-                // The focus went where the user put it.
                 panel.focus = None;
             }
         });
     }
 
-    /// Moves the focus `delta` fields away, in reading order; `false` past
-    /// the first or last field, where Tab leaves the panel.
     fn step(&mut self, delta: isize, cx: &mut Context<Self>, window: &Window) -> bool {
         let fields: Vec<(u64, Field)> = self
             .rows
@@ -335,7 +304,6 @@ impl FrontmatterPanel {
         false
     }
 
-    /// The row above or below, same column.
     fn vertical(&mut self, down: bool, window: &Window, cx: &mut Context<Self>) {
         let current = self.rows.iter().enumerate().find_map(|(i, r)| {
             if r.key.focus_handle(cx).is_focused(window) {
@@ -392,7 +360,6 @@ impl FrontmatterPanel {
             .py(px(6.0))
             .rounded(px(8.0))
             .when(focused, |d| d.bg(theme::row_hover()))
-            // Backspace in an empty row removes it (`handleKeyDown`).
             .capture_action(cx.listener(move |panel, _: &text_field::Backspace, _, cx| {
                 let Some(ix) = panel.index(id) else {
                     return;
@@ -437,7 +404,6 @@ impl FrontmatterPanel {
 
 impl Render for FrontmatterPanel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // Focus-out listeners need the window.
         for ix in 0..self.rows.len() {
             if self.rows[ix].blur.is_some() {
                 continue;
@@ -471,10 +437,8 @@ impl Render for FrontmatterPanel {
             .pb(px(24.0))
             .text_size(px(TEXT_SIZE))
             .cursor(CursorStyle::Arrow)
-            // The text behind never sees a click in the panel.
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
-            // Past the edges the editor moves the focus on.
             .on_action(cx.listener(|p, _: &actions::Indent, window, cx| {
                 if !p.step(1, cx, window) {
                     cx.propagate();

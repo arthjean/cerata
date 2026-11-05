@@ -1,14 +1,9 @@
-//! US-050: 10 000 random edits typed, deleted and pasted in the cells of a
-//! drawn table never panic and always leave a table with the same rows and
-//! columns (ADR 0007, decision 5).
-
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use cerata_markdown::cells;
 use cerata_markdown::table::{CellKind, Grid};
 use cerata_markdown::{EditorState, NodeKind, Selection, UserEvent};
 
-/// Deterministic xorshift, so a failure replays.
 struct Rng(u64);
 
 impl Rng {
@@ -50,7 +45,6 @@ fn grid(state: &EditorState) -> Option<Grid> {
     Grid::from_node(state.text(), node)
 }
 
-/// Rows and drawn columns per row: what no cell edit may change.
 fn shape(grid: &Grid) -> Vec<usize> {
     grid.rows
         .iter()
@@ -63,7 +57,6 @@ fn shape(grid: &Grid) -> Vec<usize> {
         .collect()
 }
 
-/// A random caret position in a random drawn cell.
 fn caret_in_cell(rng: &mut Rng, grid: &Grid) -> usize {
     let cells: Vec<_> = grid.drawn_cells().collect();
     let (_, _, cell) = cells[rng.below(cells.len())];
@@ -88,7 +81,6 @@ fn random_cell_edits_keep_the_table() {
             }
             state.set_time(step as u64 * 1_000);
             let selection = if rng.below(4) == 0 {
-                // A range inside the caret's cell.
                 let (r, c) = g.content_at(pos).unwrap_or((0, 0));
                 let cell = g.cell(r, c).unwrap();
                 let mut other = cell.content.start + rng.below(cell.content.len() + 1);
@@ -106,7 +98,6 @@ fn random_cell_edits_keep_the_table() {
                     let before = state.selection().main();
                     let cell = cells::cell_at(&state, before.head).map(|(_, r, c)| (r, c));
                     state.type_text(None, text, UserEvent::Type);
-                    // The caret stays in its cell, after what it typed.
                     let head = state.selection().main().head;
                     assert_eq!(
                         cells::cell_at(&state, head).map(|(_, r, c)| (r, c)),
@@ -138,7 +129,6 @@ fn random_cell_edits_keep_the_table() {
                 "table {t}, step {step}:\n{}",
                 state.doc()
             );
-            // The caret stays where a drawn table can show it.
             let head = state.selection().main().head;
             if cells::grid_at(&state, head).is_some() {
                 assert!(
@@ -149,7 +139,6 @@ fn random_cell_edits_keep_the_table() {
             }
             total += 1;
         }
-        // The edits did land in the cells.
         assert_ne!(state.doc(), *doc, "table {t}");
         assert!(state.doc().len() > doc.len() / 2, "table {t}");
     }

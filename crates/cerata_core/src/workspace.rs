@@ -1,13 +1,3 @@
-//! Per-window workspace state, the window registry and opening a workspace.
-//!
-//! Ported from Writer `state.rs` (`transition_to_workspace`,
-//! `with_workspace_snapshot`, `clear_workspace_if_current`, pending opens,
-//! `find_by_workspace`, `find_by_standalone_file`) and
-//! `commands/workspace.rs:419-603` (canonicalization, background bootstrap).
-//! Windows are identified by a numeric id instead of Tauri labels. Every
-//! asynchronous result is checked against a `{root, epoch}` snapshot; the
-//! epoch makes the A, B, A sequence (ABA) distinguishable from staying on A.
-
 use crate::epoch::{EpochCounter, EpochToken};
 use crate::fs::{FsError, WorkspaceFs};
 use crate::history::History;
@@ -32,20 +22,16 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::Sender;
 
-/// How long a library change waits for its pending versions.
 pub const HISTORY_FLUSH: std::time::Duration = std::time::Duration::from_secs(2);
 
-/// `{root, epoch}` of a window's workspace at some instant.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceSnapshot {
     pub root: PathBuf,
     pub epoch: u64,
 }
 
-/// Everything that lives exactly as long as one open workspace.
 pub struct WorkspaceRuntime {
     pub root: PathBuf,
-    /// The library's id (ADR 0009), the key of its sessions and pins.
     pub library_id: String,
     pub token: EpochToken,
     pub fs: WorkspaceFs,
@@ -53,14 +39,9 @@ pub struct WorkspaceRuntime {
     pub ignore: Arc<RwLock<Arc<WorkspaceIgnore>>>,
     pub self_writes: Arc<SelfWriteLog>,
     pub index_ready: Arc<AtomicBool>,
-    /// The library's store once opened; `None` before or without one.
     pub store: Arc<RwLock<Option<Store>>>,
-    /// The library's history, with its store (EP-018).
     pub history: Arc<RwLock<Option<History>>>,
-    /// Why the library has no store, once its opening failed (the history
-    /// panel says it, US-091).
     pub store_unavailable: Arc<RwLock<Option<String>>>,
-    /// The passes that catch up with changes the watcher missed.
     pub reconciler: Reconciler,
     watcher: Arc<Mutex<Option<WorkspaceWatcher>>>,
 }
@@ -80,25 +61,19 @@ impl WorkspaceRuntime {
         }
     }
 
-    /// `true` once the watcher runs (it starts after the first index).
     pub fn is_watching(&self) -> bool {
         self.watcher.lock().is_some()
     }
 
-    /// Asks for a reconciliation pass (see [`Reconciler::request`]).
     pub fn request_reconcile(&self, trigger: ReconcileTrigger) -> bool {
         self.reconciler.request(trigger)
     }
 
-    /// `path` relative to the root, `/`-separated; `None` outside it.
     pub fn relative(&self, path: &Path) -> Option<String> {
         path.starts_with(&self.root)
             .then(|| relative_slash_path(&self.root, path))
     }
 
-    /// Writes the pending save versions of `path` (every note with
-    /// `None`) now: a tab closes, the library changes, the app quits. With
-    /// `wait`, blocks until they are committed or the time is up.
     pub fn flush_history(&self, path: Option<&Path>, wait: Option<std::time::Duration>) -> bool {
         let Some(history) = self.history.read().clone() else {
             return true;
@@ -119,9 +94,6 @@ impl WorkspaceRuntime {
         }
     }
 
-    /// The library closes: its pending versions are written (waited for
-    /// up to `timeout`), then a retention pass runs off this thread
-    /// (US-090).
     pub fn close_history(&self, timeout: std::time::Duration) -> bool {
         match self.history.read().clone() {
             Some(history) => history.close(timeout),
@@ -129,7 +101,6 @@ impl WorkspaceRuntime {
         }
     }
 
-    /// Lookups by file name for embeds (US-087).
     pub fn names(&self) -> NameIndex {
         NameIndex {
             index: self.index.clone(),
@@ -137,27 +108,22 @@ impl WorkspaceRuntime {
     }
 }
 
-/// Finds files by name in a library's live index.
 #[derive(Clone)]
 pub struct NameIndex {
     index: Arc<Mutex<LiveIndex>>,
 }
 
 impl NameIndex {
-    /// A name table over `index` alone (tests, tools).
     pub fn from_index(index: LiveIndex) -> Self {
         Self {
             index: Arc::new(Mutex::new(index)),
         }
     }
 
-    /// Changes the index behind the table.
     pub fn update(&self, change: impl FnOnce(&mut LiveIndex)) {
         change(&mut self.index.lock());
     }
 
-    /// `None` while the index does not know every file yet (the caller
-    /// walks the folder instead), else the file found, if any.
     pub fn find(&self, file_name: &str) -> Option<Option<PathBuf>> {
         let index = self.index.lock();
         index
@@ -166,7 +132,6 @@ impl NameIndex {
     }
 }
 
-/// State of one window.
 pub struct WindowState {
     id: u64,
     epoch: EpochCounter,
@@ -197,9 +162,6 @@ impl WindowState {
         })
     }
 
-    /// Runs `publish` only if the window still shows the workspace of
-    /// `snapshot` (same root and same epoch), holding the state lock so no
-    /// transition can interleave. `None` when the result is stale.
     pub fn with_snapshot<T>(
         &self,
         snapshot: &WorkspaceSnapshot,
@@ -213,14 +175,10 @@ impl WindowState {
         Some(publish())
     }
 
-    /// Replaces the workspace: starts a new epoch (which cancels every job
-    /// of the previous one) and installs `runtime_for(token)`.
     fn transition(
         &self,
         build: impl FnOnce(EpochToken) -> Arc<WorkspaceRuntime>,
     ) -> Arc<WorkspaceRuntime> {
-        // The library changes: its pending versions are written first,
-        // while its epoch is still current (US-089).
         if let Some(old) = self.runtime() {
             old.close_history(HISTORY_FLUSH);
         }
@@ -234,14 +192,11 @@ impl WindowState {
         runtime
     }
 
-    /// `true` while a reader such as [`WindowState::with_snapshot`] holds
-    /// the workspace lock (no transition can start).
     #[cfg(test)]
     pub(crate) fn workspace_is_locked(&self) -> bool {
         self.runtime.try_write().is_none()
     }
 
-    /// Closes the workspace if it is still `root`.
     pub fn clear_workspace_if_current(&self, root: &Path) -> bool {
         if let Some(old) = self.runtime().filter(|runtime| runtime.root == root) {
             old.close_history(HISTORY_FLUSH);
@@ -266,8 +221,6 @@ impl WindowState {
         self.standalone_file.read().clone()
     }
 
-    /// Queues an open request that arrived before the window was ready.
-    /// A request equal to the last queued one is dropped.
     pub fn push_pending_open(&self, target: OpenTarget) {
         let mut pending = self.pending_open.lock();
         if pending.back() != Some(&target) {
@@ -284,7 +237,6 @@ impl WindowState {
     }
 }
 
-/// Watcher teardown can block (FSEvents, inotify): never on the UI thread.
 fn drop_off_thread(runtime: Option<Arc<WorkspaceRuntime>>) {
     let Some(runtime) = runtime else { return };
     runtime.reconciler.stop();
@@ -300,7 +252,6 @@ fn drop_off_thread(runtime: Option<Arc<WorkspaceRuntime>>) {
     }
 }
 
-/// All windows of the process.
 #[derive(Default)]
 pub struct WindowRegistry {
     next_id: AtomicU64,
@@ -312,7 +263,6 @@ impl WindowRegistry {
         Self::default()
     }
 
-    /// Registers a window with its own settings handle.
     pub fn create(&self, settings: Settings) -> Arc<WindowState> {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst) + 1;
         let window = Arc::new(WindowState {
@@ -340,7 +290,6 @@ impl WindowRegistry {
         removed
     }
 
-    /// The window showing (or about to show) workspace `root`.
     pub fn find_by_workspace(&self, root: &Path) -> Option<u64> {
         let target = OpenTarget::Workspace(root.to_path_buf());
         self.windows
@@ -355,7 +304,6 @@ impl WindowRegistry {
             .map(|window| window.id)
     }
 
-    /// The window showing (or about to show) standalone file `path`.
     pub fn find_by_standalone_file(&self, path: &Path) -> Option<u64> {
         let target = OpenTarget::File(path.to_path_buf());
         self.windows
@@ -368,13 +316,11 @@ impl WindowRegistry {
     }
 }
 
-/// Result of [`open_workspace`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceInfo {
     pub root: PathBuf,
     pub name: String,
     pub epoch: u64,
-    /// The library's id; `{root, epoch}` stays the runtime identity.
     pub library_id: String,
 }
 
@@ -387,7 +333,6 @@ impl WorkspaceInfo {
     }
 }
 
-/// Canonical form of an existing folder.
 pub fn canonicalize_workspace_root(path: &Path) -> Result<PathBuf, FsError> {
     if !path.is_dir() {
         return Err(FsError::NotFound(path.to_path_buf()));
@@ -398,17 +343,12 @@ pub fn canonicalize_workspace_root(path: &Path) -> Result<PathBuf, FsError> {
     })
 }
 
-/// How a library opens beyond its folder.
 #[derive(Clone, Default)]
 pub struct OpenOptions {
-    /// `local_data_dir()/cerata`, where the stores live
-    /// ([`library_store_dir`]); `None` opens the library without a store.
     pub store_root: Option<PathBuf>,
-    /// How notes are read; the OS by default ([`OsFiles`]).
     pub files: Option<Arc<dyn FileAccess>>,
 }
 
-/// [`open_workspace_with`] without a store.
 pub fn open_workspace(
     window: &Arc<WindowState>,
     path: &Path,
@@ -418,17 +358,6 @@ pub fn open_workspace(
     open_workspace_with(window, path, library_id, events, OpenOptions::default())
 }
 
-/// Opens `path` as the workspace of `window`, as library `library_id`
-/// (resolved by [`crate::library::LibraryRegistry::resolve`]).
-///
-/// Synchronously: canonicalizes the root, starts a new epoch, installs a
-/// bootstrap ignore matcher and the workspace settings layer. In the
-/// background (US-083, US-084): opens the library's store, publishes the
-/// index it holds (titles included) and reports `IndexComplete` before any
-/// walk, then runs the first reconciliation pass, after the first frame
-/// when the store had an index; without one, that pass is the walk that
-/// publishes the index. The watcher starts after it. Every event goes to
-/// `events` tagged with `{root, epoch}`.
 pub fn open_workspace_with(
     window: &Arc<WindowState>,
     path: &Path,
@@ -485,8 +414,6 @@ pub fn open_workspace_with(
     })
 }
 
-/// The background part of [`open_workspace_with`]; it ends when the
-/// library closes.
 fn bootstrap(
     job: &Arc<WorkspaceRuntime>,
     settings: Settings,
@@ -602,8 +529,6 @@ fn bootstrap(
     job.reconciler.run(&ctx, from_store, start_watcher);
 }
 
-/// Opens the library's store under `store_root`, telling its notice. No
-/// store inside the library itself (ADR 0009).
 fn open_store(
     job: &WorkspaceRuntime,
     store_root: &Path,
@@ -649,10 +574,8 @@ fn open_store(
     }
 }
 
-/// Why a library has no store, when nothing more precise is known.
 const UNAVAILABLE: &str = "History is unavailable: this library's store could not be opened.";
 
-/// The live index the store describes: no file is opened.
 pub fn index_from_store(root: &Path, notes: &[StoredNote]) -> LiveIndex {
     let mut files = Vec::with_capacity(notes.len());
     for note in notes {
@@ -674,9 +597,6 @@ pub fn index_from_store(root: &Path, notes: &[StoredNote]) -> LiveIndex {
     LiveIndex::from_files(root, files)
 }
 
-/// Cerata's own writes of notes update the index and the store with the
-/// content written (US-086): the next pass and the next event know it. A
-/// save becomes a version after the typing pause (US-089).
 fn write_sink(job: &WorkspaceRuntime, store: Option<Store>, history: Option<History>) -> WriteSink {
     let root = job.root.clone();
     let index = job.index.clone();
@@ -725,7 +645,6 @@ mod tests {
         (dir, settings)
     }
 
-    /// Reads through the disk and counts every file opened.
     #[derive(Default)]
     struct CountingFiles(std::sync::atomic::AtomicUsize);
 
@@ -747,8 +666,6 @@ mod tests {
             .unwrap();
     }
 
-    /// Opens `root` with a store under `stores`, reading through `files`,
-    /// and returns the first `IndexComplete` with the runtime.
     fn open_with_store(
         window: &Arc<WindowState>,
         root: &Path,
@@ -780,9 +697,6 @@ mod tests {
         root
     }
 
-    /// US-083: the first open fills the store at the end of its walk; the
-    /// next one shows every title from the store before any walk, without
-    /// opening a single file, and its reconciliation opens none either.
     #[test]
     fn a_reopened_library_shows_its_titles_from_the_store_without_opening_a_file() {
         let (_config, settings) = settings();
@@ -818,7 +732,6 @@ mod tests {
         let (runtime, _events, count) =
             open_with_store(&window, &root, stores.path(), again.clone());
         assert_eq!(count, 2);
-        // Titles are there with the index, before the first pass.
         assert_eq!(
             runtime.index.lock().title(&root.join("a.md")),
             Some("Alpha")
@@ -842,8 +755,6 @@ mod tests {
         }
     }
 
-    /// US-083 and US-084: a note edited while Cerata was closed shows its
-    /// stored title first, then the first reconciliation corrects it.
     #[test]
     fn a_title_changed_while_closed_is_corrected_by_the_first_pass() {
         let (_config, settings) = settings();
@@ -895,8 +806,6 @@ mod tests {
         );
     }
 
-    /// US-086: an autosave updates the index and the store with what it
-    /// wrote, so the next pass reads nothing.
     #[test]
     fn a_save_records_its_content_in_the_index_and_the_store() {
         let (_config, settings) = settings();
@@ -945,9 +854,6 @@ mod tests {
         }
     }
 
-    /// US-089: a write of Cerata's becomes a `save` version, at once when
-    /// the library changes rather than after the typing pause, and the
-    /// device that wrote it is named.
     #[test]
     fn a_save_becomes_a_version_when_the_library_changes() {
         let (_config, settings) = settings();
@@ -969,7 +875,6 @@ mod tests {
         let hash = runtime.self_writes.record(&path, bytes);
         runtime.fs.write_bytes(&path, bytes).unwrap();
         runtime.self_writes.written(&path, hash, bytes);
-        // Within the 30 s pause: no version yet.
         store.sync().unwrap();
         assert_eq!(versions(&store, "a.md"), []);
         let other_root = dunce::canonicalize(other.path()).unwrap();
@@ -996,8 +901,6 @@ mod tests {
         );
     }
 
-    /// US-089: a change made outside Cerata, found by a pass, is an
-    /// `external` version.
     #[test]
     fn an_outside_change_found_by_a_pass_is_a_version() {
         let (_config, settings) = settings();
@@ -1013,7 +916,6 @@ mod tests {
                 .wait_for_passes(1, Duration::from_secs(10))
         );
         let store = runtime.store.read().clone().unwrap();
-        // Opening and indexing a library records nothing.
         assert_eq!(versions(&store, "a.md"), []);
         let path = root.join("b.md");
         std::fs::write(&path, "# Beta, edited by an agent\n").unwrap();
@@ -1031,10 +933,6 @@ mod tests {
         );
     }
 
-    /// US-093: a sync conflict copy found beside its original is a
-    /// `conflict` version of the original, whose parent is the original's
-    /// last version before the copy's modified time; the original's head
-    /// stays its own text.
     #[test]
     fn a_conflict_copy_is_a_conflict_version_of_its_original() {
         let (_config, settings) = settings();
@@ -1065,7 +963,6 @@ mod tests {
             history.record(request);
         }
         assert!(history.flush_and_wait(None, Duration::from_secs(5)));
-        // The copy was written an hour ago, between the two versions.
         let copy = root.join("a.sync-conflict-20261103-101010-ABCDEFG.md");
         std::fs::write(&copy, "# Alpha, from the other device\n").unwrap();
         aged(&copy);
@@ -1089,14 +986,12 @@ mod tests {
             Some(listed[2].hash),
             "the version before the copy"
         );
-        // The copy stays a note of its own until it is reviewed.
         assert_eq!(
             versions(&store, "a.sync-conflict-20261103-101010-ABCDEFG.md"),
             []
         );
     }
 
-    /// US-093: a copy whose original is missing is an ordinary note.
     #[test]
     fn a_conflict_copy_without_its_original_is_an_ordinary_note() {
         let (_config, settings) = settings();
@@ -1127,9 +1022,6 @@ mod tests {
         assert_eq!(versions(&store, "gone.md"), []);
     }
 
-    /// US-089: a crash between the write of a note and its version leaves
-    /// the index ahead of the history; reopening the library records what
-    /// the disk holds as an `external` version, and no note is lost.
     #[test]
     fn a_crash_between_a_write_and_its_version_is_caught_up_on_reopen() {
         let (_config, settings) = settings();
@@ -1151,8 +1043,6 @@ mod tests {
         runtime.self_writes.written(&path, hash, first);
         assert!(runtime.flush_history(None, Some(Duration::from_secs(5))));
         let store = runtime.store.read().clone().unwrap();
-        // The crash: the `.md` and the index row are written, the version
-        // never is.
         let second = b"# Second, written just before the crash\n";
         std::fs::write(&path, second).unwrap();
         aged(&path);
@@ -1172,7 +1062,6 @@ mod tests {
         assert!(window.clear_workspace_if_current(&root));
         drop(runtime);
         let (runtime, _events, _) = open_with_store(&window, &root, stores.path(), files);
-        // A library opened from its store tells its index before its store.
         wait_until("the store", || runtime.store.read().is_some());
         let store = runtime.store.read().clone().unwrap();
         wait_until("the caught-up version", || {
@@ -1193,8 +1082,6 @@ mod tests {
         );
         assert_eq!(std::fs::read(&path).unwrap(), second);
     }
-
-    // Ported from Writer `commands/workspace.rs` tests.
 
     #[test]
     fn canonicalize_rejects_missing_path() {
@@ -1222,8 +1109,6 @@ mod tests {
         let canonical = canonicalize_workspace_root(dir.path()).unwrap();
         assert_eq!(canonicalize_workspace_root(&canonical).unwrap(), canonical);
     }
-
-    // Ported from Writer `state.rs` tests.
 
     #[test]
     fn find_by_workspace_matches_pending_open_and_current_root() {
@@ -1285,14 +1170,11 @@ mod tests {
 
         open_workspace(&window, b.path(), TEST_LIBRARY, sender.clone()).unwrap();
         assert_eq!(window.with_snapshot(&captured, || ()), None);
-        // Back to A: same root, new epoch. A result captured during the first
-        // visit must still be rejected.
         open_workspace(&window, a.path(), TEST_LIBRARY, sender).unwrap();
         assert_eq!(window.snapshot().unwrap().root, captured.root);
         assert_eq!(window.with_snapshot(&captured, || ()), None);
     }
 
-    // Writer `state.rs` guarded_workspace_snapshot_rejects_stale_callbacks_and_holds_read_guard.
     #[test]
     fn a_publish_holds_the_state_lock_so_no_transition_interleaves() {
         let (_config, settings) = settings();
@@ -1305,7 +1187,6 @@ mod tests {
         assert_eq!(published, Some(true));
     }
 
-    // Writer `commands/fs.rs` create_sidebar_entry_rejects_stale_workspace_before_mutation.
     #[test]
     fn a_stale_snapshot_never_reaches_the_file_system() {
         let (_config, settings) = settings();
@@ -1326,7 +1207,6 @@ mod tests {
         assert_eq!(std::fs::read_dir(a.path()).unwrap().count(), 0);
     }
 
-    // Writer `state.rs` close_workspace_invalidates_the_snapshot_and_rejects_stale_roots.
     #[test]
     fn clear_workspace_only_when_still_current() {
         let (_config, settings) = settings();
@@ -1350,15 +1230,12 @@ mod tests {
         assert_eq!(window.snapshot().map(|s| s.root), Some(other.root));
     }
 
-    // Writer `commands/workspace.rs` canonicalize_resolves_var_alias_on_macos.
     #[cfg(target_os = "macos")]
     #[test]
     fn canonicalize_resolves_var_alias_on_macos() {
         let dir = TempDir::new().unwrap();
         let canonical = canonicalize_workspace_root(dir.path()).unwrap();
         let raw = canonical.to_string_lossy().into_owned();
-        // `/var` is an alias of `/private/var`: both spellings must give the
-        // same root, or the sidebar and the index disagree on every path.
         if let Some(aliased) = raw.strip_prefix("/private") {
             assert!(Path::new(aliased).exists());
             assert_eq!(
@@ -1382,7 +1259,6 @@ mod tests {
         .unwrap();
         let (sender, events) = mpsc::channel();
         let info = open_workspace(&window, root.path(), TEST_LIBRARY, sender).unwrap();
-        // The workspace layer is installed synchronously.
         assert_eq!(
             settings.get("editor.font-size").and_then(|v| v.as_f64()),
             Some(20.0)
@@ -1411,7 +1287,6 @@ mod tests {
             "{created:?}"
         );
 
-        // The settings file is watched too.
         std::fs::write(
             info.root.join(".cerata").join("config"),
             "editor.font-size = 22\n",

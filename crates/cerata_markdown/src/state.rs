@@ -1,10 +1,3 @@
-//! Editor state of one open file: text, selection, Markdown tree, undo
-//! history and the scroll anchor its tab restores.
-//!
-//! Every open file owns its own `EditorState`, so undo history, caret and
-//! scroll position are per file by construction (Writer resets a shared
-//! history on tab swap, `use-prosemark-editor.ts:139-203`).
-
 use crate::change::{Bias, Change, ChangeError, ChangeSet};
 use crate::decorate::{Decoration, decorate_range_with};
 use crate::history::{History, UserEvent};
@@ -13,15 +6,8 @@ use crate::text::Text;
 use crate::tree::MarkdownTree;
 use std::ops::Range;
 
-/// A selection filter runs on every transaction that sets the selection,
-/// after the document changes are applied, and may replace the selection
-/// (CodeMirror's `transactionFilter` returning `{ selection, sequential:
-/// true }`). Its output is in the new document and is clamped into it.
 pub type SelectionFilter = fn(&EditorState, Selection) -> Selection;
 
-/// Lines an edit replaced, for a renderer that keeps one item per line:
-/// `old` lines starting at line `first` became `new` lines. Applied in order,
-/// each splice is in the coordinates left by the previous ones.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LineSplice {
     pub first: usize,
@@ -29,8 +15,6 @@ pub struct LineSplice {
     pub new: usize,
 }
 
-/// Where a tab's viewport starts: the line holding `pos` and a pixel offset
-/// into it. Mapped through every edit, so it survives changes above it.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ScrollAnchor {
     pub pos: usize,
@@ -40,13 +24,9 @@ pub struct ScrollAnchor {
 #[derive(Clone, Debug, Default)]
 pub struct Transaction {
     pub changes: Vec<Change>,
-    /// The selection after the transaction, in the new document. `None` maps
-    /// the current selection through the changes.
     pub selection: Option<Selection>,
     pub user_event: UserEvent,
     pub add_to_history: bool,
-    /// Milliseconds on any monotonic clock; only differences matter (undo
-    /// grouping).
     pub time_ms: u64,
     pub scroll_into_view: bool,
 }
@@ -95,11 +75,8 @@ impl Transaction {
     }
 }
 
-/// What an applied transaction did.
 #[derive(Clone, Debug)]
 pub struct Applied {
-    /// The changes in the coordinates of the previous document; map
-    /// external positions (anchors) through them.
     pub changes: ChangeSet,
     pub doc_changed: bool,
     pub selection_changed: bool,
@@ -118,7 +95,6 @@ pub enum TransactionError {
     },
 }
 
-/// A position that follows edits: map it through `Applied::changes`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Anchor {
     pub pos: usize,
@@ -146,32 +122,20 @@ pub struct EditorState {
     history: History,
     filters: Vec<SelectionFilter>,
     scroll: ScrollAnchor,
-    /// Edits since the last save point.
     revision: u64,
     saved_revision: u64,
     loading: bool,
-    /// The selection a pointer drag started from, while it is in flight.
     drag: Option<Selection>,
-    /// Line splices since the last [`EditorState::take_line_splices`].
     splices: Vec<LineSplice>,
-    /// The time stamped on transactions that carry none, for undo grouping.
     now_ms: u64,
-    /// Diagrams are atomic blocks (`atomic.rs`); off for an editor showing
-    /// plain source (a diagram's edit panel).
     atomic_blocks: bool,
-    /// The table "Edit as Markdown" shows as source, by its start, until
-    /// the selection leaves it (US-056).
     table_source: Option<usize>,
-    /// The rectangle of cells the selection projects (US-054), until the
-    /// next commit that does not set it.
     pub(crate) cell_selection: Option<crate::table_select::TableSelection>,
-    /// Positions callers follow across edits ([`EditorState::track`]), by id.
     tracked: Vec<(u64, usize)>,
     next_tracked: u64,
 }
 
 impl EditorState {
-    /// A loaded document with the default selection filters.
     pub fn new(text: impl Into<String>) -> Self {
         Self::with_filters(text, default_filters())
     }
@@ -200,18 +164,14 @@ impl EditorState {
         }
     }
 
-    /// Whether diagrams are atomic blocks the caret steps over.
     pub fn atomic_blocks(&self) -> bool {
         self.atomic_blocks
     }
 
-    /// The start of the table shown as source by "Edit as Markdown".
     pub fn table_source(&self) -> Option<usize> {
         self.table_source
     }
 
-    /// "Edit as Markdown": `grid`'s table shows its source, edited as
-    /// text, until the selection leaves it.
     pub fn edit_table_source(&mut self, grid: &crate::table::Grid) -> bool {
         self.table_source = Some(grid.range.start);
         let selection = self.selection.clone();
@@ -223,22 +183,16 @@ impl EditorState {
         .is_ok()
     }
 
-    /// Plain source: the caret goes anywhere (a diagram's edit panel).
     pub fn set_atomic_blocks(&mut self, on: bool) {
         self.atomic_blocks = on;
     }
 
-    /// A placeholder for a file still being read: empty, and editing
-    /// commands refuse to run on it (`run_command` returns `false`).
     pub fn loading() -> Self {
         let mut state = Self::new("");
         state.loading = true;
         state
     }
 
-    /// Replaces the document with content read from disk: not undoable, the
-    /// caret kept where it was (clamped), and the history dropped, because
-    /// its positions refer to the replaced text (Writer's `writer.reload`).
     pub fn reload(&mut self, content: impl Into<String>) {
         let head = self.selection.main().head;
         let old_lines = self.text.line_count();
@@ -253,8 +207,6 @@ impl EditorState {
         self.tree = MarkdownTree::parse(self.text.as_str());
         self.table_source = None;
         self.cell_selection = None;
-        // The kept offset may fall inside a diagram's source or on a drawn
-        // table's structure: it moves on, as after any commit (US-057).
         if self.atomic_blocks {
             let previous = self.selection.clone();
             self.selection = crate::atomic::skip(
@@ -303,14 +255,10 @@ impl EditorState {
         &self.history
     }
 
-    /// Live-preview decorations for the current tree and selection, frozen
-    /// on the drag's starting selection while a drag is in flight.
     pub fn decorations(&self) -> Vec<Decoration> {
         self.decorations_in(0..self.text.len())
     }
 
-    /// Decorations of the nodes touching `range` (inclusive): the subset of
-    /// [`EditorState::decorations`] a renderer needs for the lines it shows.
     pub fn decorations_in(&self, range: Range<usize>) -> Vec<Decoration> {
         decorate_range_with(
             &self.tree,
@@ -322,8 +270,6 @@ impl EditorState {
         )
     }
 
-    /// [`Self::decorations_in`] without the content of the tables drawn as
-    /// grids, whose ranges come second (US-057).
     pub fn frame_decorations_in(
         &self,
         range: Range<usize>,
@@ -338,26 +284,18 @@ impl EditorState {
         )
     }
 
-    /// The current time, in ms on any monotonic clock: transactions without
-    /// their own time stamp ([`Transaction::at`]) take it, so typing groups
-    /// into undo steps by real time.
     pub fn set_time(&mut self, now_ms: u64) {
         self.now_ms = now_ms;
     }
 
-    /// Line splices made by every edit (and reload) since the last call.
     pub fn take_line_splices(&mut self) -> Vec<LineSplice> {
         std::mem::take(&mut self.splices)
     }
 
-    /// A pointer drag starts: what is revealed stays as it is until
-    /// [`EditorState::end_drag`], so text does not shift under the pointer
-    /// (Writer's `drag-selection-gate.ts`).
     pub fn begin_drag(&mut self) {
         self.drag = Some(self.selection.clone());
     }
 
-    /// The drag ends: decorations follow the live selection again.
     pub fn end_drag(&mut self) {
         self.drag = None;
     }
@@ -366,7 +304,6 @@ impl EditorState {
         self.drag.is_some()
     }
 
-    /// The selection a pointer drag started from, while it is in flight.
     pub fn drag_selection(&self) -> Option<&Selection> {
         self.drag.as_ref()
     }
@@ -383,13 +320,10 @@ impl EditorState {
         self.saved_revision = self.revision;
     }
 
-    /// Increases on every edit and reload: identifies a text for autosave.
     pub fn revision(&self) -> u64 {
         self.revision
     }
 
-    /// `revision` reached the disk: the document is clean if it has not
-    /// changed since, and stays dirty otherwise.
     pub fn mark_saved_at(&mut self, revision: u64) {
         if revision <= self.revision {
             self.saved_revision = self.saved_revision.max(revision);
@@ -407,9 +341,6 @@ impl EditorState {
         };
     }
 
-    /// Follows `pos` through every later edit (an import's insertion point
-    /// while its files are copied); read it back with
-    /// [`EditorState::untrack`].
     pub fn track(&mut self, pos: usize) -> u64 {
         let id = self.next_tracked;
         self.next_tracked += 1;
@@ -417,7 +348,6 @@ impl EditorState {
         id
     }
 
-    /// Where the position tracked as `id` is now, and stops following it.
     pub fn untrack(&mut self, id: u64) -> Option<usize> {
         let at = self
             .tracked
@@ -426,7 +356,6 @@ impl EditorState {
         Some(self.tracked.swap_remove(at).1)
     }
 
-    /// Applies `tr` atomically: on error nothing changes.
     pub fn apply(&mut self, tr: Transaction) -> Result<Applied, TransactionError> {
         let changes = ChangeSet::new(&self.text, tr.changes)?;
         let mut text = self.text.clone();
@@ -462,7 +391,6 @@ impl EditorState {
         ))
     }
 
-    /// Sets the selection alone (keyboard motion, pointer).
     pub fn select(&mut self, selection: Selection) -> Result<Applied, TransactionError> {
         self.apply(
             Transaction::new()
@@ -515,7 +443,6 @@ impl EditorState {
         scroll_into_view: bool,
     ) -> Applied {
         let doc_changed = !changes.is_empty();
-        // A rectangle of cells holds only for the selection that set it.
         self.cell_selection = None;
         let previous_text = std::mem::replace(&mut self.text, text);
         if doc_changed {
@@ -530,7 +457,6 @@ impl EditorState {
             for (_, pos) in &mut self.tracked {
                 *pos = changes.map_pos(*pos, Bias::Left);
             }
-            // A frozen drag is only remapped by edits.
             self.drag = self.drag.take().map(|frozen| frozen.map(&changes));
             self.revision += 1;
         }
@@ -549,8 +475,6 @@ impl EditorState {
                 self.selection = filtered.clamp(&self.text);
             }
         }
-        // Never inside a diagram's source (`atomic.rs`), nor on a drawn
-        // table's structure (`cells.rs`).
         if self.atomic_blocks {
             self.selection = crate::atomic::skip(
                 &self.tree,
@@ -578,7 +502,6 @@ impl EditorState {
                 time_ms,
             );
         } else if doc_changed && !matches!(event, UserEvent::Undo | UserEvent::Redo) {
-            // A change outside the history invalidates its positions.
             self.history.clear();
         } else if !doc_changed && self.selection != previous_selection {
             self.history.note_selection();
@@ -592,10 +515,7 @@ impl EditorState {
     }
 }
 
-/// The line splices of `changes` (from `before` to `after`), merged where
-/// two changes touch the same line.
 fn push_splices(out: &mut Vec<LineSplice>, before: &Text, after: &Text, changes: &ChangeSet) {
-    // (old first, old last, new first, new last), in document order.
     let mut groups: Vec<(usize, usize, usize, usize)> = Vec::new();
     let mut delta: isize = 0;
     for change in changes.changes() {
@@ -623,14 +543,11 @@ fn push_splices(out: &mut Vec<LineSplice>, before: &Text, after: &Text, changes:
     }
 }
 
-/// The selection filters every editor installs.
 pub fn default_filters() -> Vec<SelectionFilter> {
     vec![crate::list::prefix_selection_guard]
 }
 
 impl EditorState {
-    /// The table starting at `start` holds every selection range, its
-    /// container prefixes included.
     fn source_table_holds_selection(&self, start: usize) -> bool {
         let Some(node) = self
             .tree
@@ -664,7 +581,6 @@ mod tests {
             .unwrap();
     }
 
-    /// Applies `splices` to one item per line of `before`, tagging new items.
     fn replay_splices(before: &str, splices: &[LineSplice]) -> Vec<Option<usize>> {
         let mut items: Vec<Option<usize>> = (0..Text::new(before).line_count()).map(Some).collect();
         for splice in splices {
@@ -824,7 +740,6 @@ two",
 
     #[test]
     fn a_filter_sees_the_new_document_and_cannot_leave_it() {
-        // Pushes every caret 100 bytes right: way past the end.
         fn overshoot(_: &EditorState, selection: Selection) -> Selection {
             let main = selection.main();
             Selection::cursor(main.head + 100)
@@ -880,7 +795,6 @@ two",
         });
         second.select(Selection::cursor(1)).unwrap();
         typed(&mut second, 0, "#", 0);
-        // Typing above the scroll anchor keeps it on the same text.
         typed(&mut first, 0, ">> ", 1_000);
         assert_eq!(
             first.scroll_anchor(),

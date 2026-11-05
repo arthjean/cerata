@@ -1,8 +1,3 @@
-//! The banner of a document that changed or vanished on disk while it had
-//! unsaved changes. Writer had none: it reloaded over the unsaved text
-//! (`use-file-watcher.ts:31-50`). A change whose edits overlap the buffer's
-//! offers "Review Changes", the block-by-block merge review (US-092).
-
 use gpui::{
     AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
     StatefulInteractiveElement, Styled, div, px,

@@ -1,5 +1,3 @@
-//! US-031 binary weight: mitex + Typst + typst-svg, with the bundled
-//! fonts the formulas need (New Computer Modern Math and text).
 use typst::LibraryExt;
 fn main() {
     let source = std::env::args().nth(1).unwrap_or_default();

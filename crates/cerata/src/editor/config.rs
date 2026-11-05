@@ -1,33 +1,20 @@
-//! Editor settings and the vertical metrics of Writer's theme
-//! (`prosemark-theme.css:155-187` and `:259-271`).
-
 use cerata_core::settings::ConfigValue;
 use cerata_markdown::LineStyle;
 use gpui::SharedString;
 
-/// Reference body size of Writer's spacing scale (`--ws-px`).
 const DESIGN_PX: f32 = 16.0;
-/// Font ascent plus descent, in em (`--ws-glyph`).
 const GLYPH: f32 = 1.125;
-/// Bold display sizes run taller (`--ws-heading-glyph`).
 const HEADING_GLYPH: f32 = 1.17;
-/// Line height of heading lines, relative to their own size.
 const HEADING_LINE_HEIGHT: f32 = 1.3;
-/// Text column bounds (`editor.content-width` range in the settings schema).
 pub const MIN_CONTENT_WIDTH: f32 = 480.0;
 pub const MAX_CONTENT_WIDTH: f32 = 1600.0;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct EditorConfig {
-    /// `editor.font-size`, in px.
     pub font_size: f32,
-    /// `editor.zoom`, as a factor (100 % is 1.0).
     pub zoom: f32,
-    /// `editor.line-height`, a multiplier of the font size.
     pub line_height: f32,
-    /// `editor.content-width`, in px, clamped to its range.
     pub content_width: f32,
-    /// `fonts.editor` and `fonts.mono`, CSS family lists.
     pub font_families: String,
     pub mono_families: String,
 }
@@ -46,7 +33,6 @@ impl Default for EditorConfig {
 }
 
 impl EditorConfig {
-    /// From merged settings; missing or invalid values keep the defaults.
     pub fn from_settings(settings: &[(&str, ConfigValue)]) -> Self {
         let mut config = Self::default();
         let number = |key: &str| {
@@ -79,17 +65,14 @@ impl EditorConfig {
         config
     }
 
-    /// Body text size: the font size times the zoom.
     pub fn text_size(&self) -> f32 {
         self.font_size * self.zoom
     }
 
-    /// Height of one body row.
     pub fn row_height(&self) -> f32 {
         self.line_height * self.text_size()
     }
 
-    /// Vertical metrics of a line with `style` (`None`: body text).
     pub fn metrics(&self, style: Option<LineStyle>) -> LineMetrics {
         let base = self.text_size();
         match style {
@@ -123,7 +106,6 @@ pub struct LineMetrics {
     pub pad_bottom: f32,
 }
 
-/// CSS generic families and keywords that name no installed font.
 const GENERIC: &[&str] = &[
     "serif",
     "sans-serif",
@@ -136,8 +118,6 @@ const GENERIC: &[&str] = &[
     "fantasy",
 ];
 
-/// The first family of the CSS list `families` that is installed, else the
-/// platform's default (`mono` for code).
 pub fn resolve_family(families: &str, installed: &[String], mono: bool) -> SharedString {
     for family in families.split(',') {
         let family = family.trim().trim_matches(['"', '\'']).trim();
@@ -154,9 +134,6 @@ pub fn resolve_family(families: &str, installed: &[String], mono: bool) -> Share
     SharedString::new_static(default_family(mono))
 }
 
-/// The platform's default family: gpui maps its implicit `.SystemUIFont`
-/// to IBM Plex Sans off macOS, which Cerata does not ship, so roots name
-/// this one instead.
 pub fn default_family(mono: bool) -> &'static str {
     match (cfg!(target_os = "macos"), cfg!(target_os = "windows"), mono) {
         (true, _, false) => ".SystemUIFont",
@@ -194,9 +171,7 @@ mod tests {
         let h1 = config.metrics(Some(LineStyle::Heading(1)));
         assert_eq!(h1.font_size, 25.6);
         assert!((h1.row_height - 33.28).abs() < 1e-4);
-        // leading = 0.13 * 1.6 * 16 / 2 = 1.664
         assert!((h1.pad_top - (12.0 - 1.664)).abs() < 1e-4);
-        // 8 - (1.875 - 1.125) * 16 / 2 - 1.664
         assert!((h1.pad_bottom - 0.336).abs() < 1e-4);
         let body = config.metrics(None);
         assert_eq!((body.font_size, body.row_height), (16.0, 30.0));

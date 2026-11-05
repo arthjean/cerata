@@ -1,6 +1,3 @@
-//! A window: its chrome (workspace or compact), tabs, open documents,
-//! autosave, session and the reaction to changes on disk.
-
 mod banner;
 mod commands;
 mod compact;
@@ -42,23 +39,18 @@ use crate::routing::{Chrome, OpenRequest};
 use crate::sidebar::{self, Sidebar, SidebarEvent};
 use crate::tabs::{Location, Tabs, Undo};
 
-/// Initial content size of a new window (`tauri.conf.json:14-31`).
 pub const DEFAULT_SIZE: Size<f32> = Size {
     width: 1200.0,
     height: 800.0,
 };
 
-/// Smallest size the user can shrink a window to.
 pub const MIN_SIZE: Size<f32> = Size {
     width: 800.0,
     height: 500.0,
 };
 
-/// The session is saved this long after the last change of the tabs
-/// (`workspace-store.ts:439-458`).
 pub const SESSION_DELAY: Duration = Duration::from_millis(500);
 
-/// How long closing a window waits for its last writes.
 const FLUSH_TIMEOUT: Duration = Duration::from_secs(2);
 
 const RESTORE_OPEN_FILES_KEY: &str = "workspace.restore-open-files";
@@ -127,12 +119,6 @@ pub fn bindings() -> Vec<gpui::KeyBinding> {
     ]
 }
 
-/// The shortcuts on digit and punctuation keys again, by position: Windows
-/// names a key by its unshifted character, so on AZERTY `ctrl-0` arrives
-/// as `ctrl-à` and the bindings above never fire. GPUI's key equivalents
-/// map each one to the key at its US position (letters are left alone).
-/// `-` is left out: it is an unshifted character on US, AZERTY and QWERTZ
-/// alike, and AZERTY has no key at its US position, which GPUI logs.
 pub fn positional_bindings(cx: &App) -> Vec<gpui::KeyBinding> {
     let predicate = gpui::KeyBindingContextPredicate::parse("Shell")
         .ok()
@@ -189,9 +175,6 @@ pub fn window_options(cx: &App) -> WindowOptions {
     }
 }
 
-/// `_NET_WM_ICON`, which GPUI only sets on X11: Wayland compositors resolve the
-/// icon from `app_id` through the installed `cerata.desktop`, and Windows and
-/// macOS from the exe resource and the app bundle.
 #[cfg(target_os = "linux")]
 fn x11_icon() -> Option<Arc<image::RgbaImage>> {
     static ICON: std::sync::LazyLock<Option<Arc<image::RgbaImage>>> =
@@ -205,8 +188,6 @@ fn x11_icon() -> Option<Arc<image::RgbaImage>> {
     ICON.clone()
 }
 
-/// Opens the window of a startup bundle. Everything the first frame shows
-/// (settings, session, active file) is already in `bundle`.
 pub fn open(
     cx: &mut App,
     state: Arc<WindowState>,
@@ -226,7 +207,6 @@ pub fn open(
     })
 }
 
-/// What a tab's page shows while its file loads.
 pub enum Page {
     Editor(Entity<Editor>),
     Loading { spinner: bool },
@@ -243,15 +223,11 @@ pub struct WindowView {
     config: EditorConfig,
     bridge: Arc<SaveBridge>,
     saver: Option<AutoSaver>,
-    /// Rollbacks of navigations whose file is still loading.
     pending_undos: HashMap<PathBuf, Vec<Undo>>,
     active_editor: Option<EntityId>,
     pub notice: Option<SharedString>,
-    /// The buttons of a notice, with the text they belong to (EP-016).
     pub notice_actions: Option<(SharedString, Vec<libraries::NoticeAction>)>,
-    /// The welcome screen's form and library list (US-078).
     pub welcome: libraries::Welcome,
-    /// Duplicates still copying (US-073), by id.
     duplicating: Vec<u64>,
     next_duplicate: u64,
     session_task: Option<Task<()>>,
@@ -264,34 +240,24 @@ pub struct WindowView {
     pub sidebar_visible: bool,
     resizing: bool,
     _sidebar_events: Option<Subscription>,
-    /// The sidebar footer's Search field, and whether the pointer is on it.
     pub sidebar_filter: Entity<crate::editor::text_field::TextField>,
     sidebar_filter_hovered: bool,
     _sidebar_filter_events: Subscription,
     pub palette: Option<Entity<crate::palette::Palette>>,
     pub settings_panel: Option<Entity<crate::settings_panel::SettingsPanel>>,
-    /// Settings replace the sidebar and the page until Back, Escape or a
-    /// tab change.
     pub settings_open: bool,
-    /// The compact window's open recents picker and its entries.
     pub recents_picker: Option<Vec<crate::palette::RecentFile>>,
     picker_focus: FocusHandle,
-    /// A file tab's open context menu.
     pub tab_menu: Option<crate::menu::Menu<WindowView>>,
-    /// The tab strip's horizontal scroll, read by its edge fades.
     pub tab_scroll: gpui::ScrollHandle,
-    /// The status bar's counts for an editor at a revision.
     stats_cache: Option<((EntityId, u64), status_bar::Stats)>,
     _settings_events: Option<Subscription>,
     _palette_events: Option<Subscription>,
-    /// The window background to set on the next frame (translucency).
     background: Option<gpui::WindowBackgroundAppearance>,
     _appearance: Subscription,
     _activation: Subscription,
-    /// Titles of global recents read in the background, by path.
     pub recent_titles: HashMap<PathBuf, Option<String>>,
     recent_titles_task: Option<Task<()>>,
-    /// The open history panel (US-091) and the open merge review (US-092).
     pub history_panel: Option<Entity<crate::history_panel::HistoryPanel>>,
     _history_events: Option<Subscription>,
     pub merge_review: Option<Entity<crate::merge_review::MergeReview>>,
@@ -299,7 +265,6 @@ pub struct WindowView {
     _tasks: Vec<Task<()>>,
 }
 
-/// A translucent theme lets the desktop show through, blurred.
 pub fn background_appearance(translucent: bool) -> gpui::WindowBackgroundAppearance {
     if translucent {
         gpui::WindowBackgroundAppearance::Blurred
@@ -323,12 +288,10 @@ impl WindowView {
                 }
             }
         });
-        // "System" follows the OS appearance.
         let observed = cx.weak_entity();
         let appearance_changes = window.observe_window_appearance(move |_, cx| {
             let _ = observed.update(cx, |this, cx| this.settings_applied(cx));
         });
-        // Back to the window: catch up with changes made meanwhile (US-084).
         let activation = cx.observe_window_activation(window, |this, window, _| {
             if window.is_window_active() {
                 this.reconcile(ReconcileTrigger::Focus);
@@ -339,11 +302,6 @@ impl WindowView {
         let sidebar_filter_events = cx.subscribe_in(&sidebar_filter, window, Self::on_filter_event);
         let welcome = libraries::Welcome::new(window, cx);
         let this = cx.weak_entity();
-        // Returning `true` would let `DefWindowProc` destroy the HWND before
-        // GPUI drops the window, whose teardown then calls Win32 on a dead
-        // handle. GPUI removes the window instead; the last one quits, since
-        // the quit hook writes every window and skips the deactivation that
-        // a removed window still reports while it hides.
         window.on_window_should_close(cx, move |window, cx| {
             if cx.windows().len() == 1 {
                 cx.quit();
@@ -405,8 +363,6 @@ impl WindowView {
         }
     }
 
-    // ---- Sidebar ----
-
     fn read_sidebar_settings(&mut self) {
         let settings = self.core.settings();
         self.sidebar_width = settings
@@ -419,8 +375,6 @@ impl WindowView {
             .unwrap_or(true);
     }
 
-    /// Creates the sidebar for the workspace, or tells it the workspace
-    /// changed.
     fn sync_sidebar(&mut self, cx: &mut Context<Self>) {
         if self.workspace.is_none() || self.chrome == Chrome::Compact {
             self.sidebar = None;
@@ -482,7 +436,6 @@ impl WindowView {
             .is_some_and(|doc| doc.editor.read(cx).state.is_dirty())
     }
 
-    /// Unsaved documents at `path` or under it.
     fn dirty_under(&self, path: &Path, cx: &App) -> usize {
         self.docs
             .iter()
@@ -490,8 +443,6 @@ impl WindowView {
             .count()
     }
 
-    /// The confirmation a delete needs (`use-file-tree-context-menus.ts:118-252`):
-    /// only when something unsaved is involved, and always for several items.
     pub fn delete_confirmation(&self, paths: &[PathBuf], cx: &App) -> Option<String> {
         if let [path] = paths {
             let name = file_name(path);
@@ -538,10 +489,6 @@ impl WindowView {
         .detach();
     }
 
-    /// Moves `paths` to the trash; their tabs close and unsaved text goes.
-    /// The trash runs off the main thread: on Windows it goes through a
-    /// COM single-threaded apartment that pumps window messages, which
-    /// re-enter GPUI while the App is borrowed ("RefCell already borrowed").
     pub fn delete_now(&mut self, paths: &[PathBuf], cx: &mut Context<Self>) {
         let Some(fs) = self.fs() else { return };
         let paths = paths.to_vec();
@@ -584,10 +531,6 @@ impl WindowView {
         }
     }
 
-    /// "Duplicate": `<stem> copy.md`, with the unsaved text when the file
-    /// has some, opened in a new tab (`duplicate-file.ts:26-73`). Its assets
-    /// folder is copied for it in the background (US-073); a copy still
-    /// running after 300 ms shows `Duplicating "foo"…`.
     pub fn duplicate(&mut self, path: &Path, cx: &mut Context<Self>) {
         let Some(fs) = self.fs() else { return };
         let unsaved = self
@@ -606,8 +549,6 @@ impl WindowView {
         self.duplicate_when_done(&source, work, cx);
     }
 
-    /// Opens the copy `work` makes of `source` once it is done, with the
-    /// notice of a copy still running after 300 ms.
     fn duplicate_when_done(
         &mut self,
         source: &Path,
@@ -678,8 +619,6 @@ impl WindowView {
         cx.notify();
     }
 
-    /// Runs `f` with this view's window, after the current update (events
-    /// arrive without one).
     fn with_window(
         &mut self,
         cx: &mut Context<Self>,
@@ -709,8 +648,6 @@ impl WindowView {
         self.core.settings()
     }
 
-    /// The settings changed (here or in a config file): the editors take
-    /// the new size, zoom and fonts, and every window takes the theme.
     pub fn settings_applied(&mut self, cx: &mut Context<Self>) {
         let config = EditorConfig::from_settings(&self.core.settings().merged());
         if config != self.config {
@@ -729,21 +666,17 @@ impl WindowView {
         cx.refresh_windows();
     }
 
-    /// Cmd+P, Cmd+O and Cmd+N need a folder: the workspace, or the compact
-    /// window's file (`use-keyboard-shortcuts.ts:53-97`).
     pub fn has_root(&self) -> bool {
         self.workspace.is_some()
             || (self.chrome == Chrome::Compact && self.tabs.active_path().is_some())
     }
 
-    /// A press on the sidebar's edge starts a resize.
     pub fn begin_resize(&mut self, cx: &mut Context<Self>) {
         self.resizing = true;
         cx.notify();
     }
 
     pub fn resize_sidebar(&mut self, x: f32, window: &Window, cx: &mut Context<Self>) {
-        // A client-decorated window's surface sits inside its margins.
         let free = frame::Free::of(window);
         let window_width = f32::from(window.viewport_size().width) - free.horizontal_margins();
         let width = sidebar::tree::clamp_width(x - free.left_margin(), window_width);
@@ -753,7 +686,6 @@ impl WindowView {
         }
     }
 
-    /// The release saves the width, if it changed.
     pub fn end_resize(&mut self, cx: &mut Context<Self>) {
         if !std::mem::take(&mut self.resizing) {
             return;
@@ -774,7 +706,6 @@ impl WindowView {
         cx.notify();
     }
 
-    /// Shows `value` at once and writes the global config in the background.
     pub fn write_setting(
         &self,
         key: &str,
@@ -822,8 +753,6 @@ impl WindowView {
         .detach();
     }
 
-    /// A setting changed from this window: everything that reads one
-    /// follows.
     pub fn setting_written(&mut self, cx: &mut Context<Self>) {
         self.settings_applied(cx);
         self.read_sidebar_settings();
@@ -836,7 +765,6 @@ impl WindowView {
         cx.notify();
     }
 
-    /// The settings panel, created the first time Settings open.
     pub(super) fn ensure_settings_panel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.settings_panel.is_some() {
             return;
@@ -869,7 +797,6 @@ impl WindowView {
         self.workspace.as_ref().map(|info| info.root.as_path())
     }
 
-    /// `true` for events of the workspace this window shows now.
     pub fn owns(&self, envelope: &WatchEnvelope) -> bool {
         self.core
             .snapshot()
@@ -904,7 +831,6 @@ impl WindowView {
                     self.seed_doc(file, cx);
                 }
                 self.drop_missing_paths();
-                // The active tab shows first; the others load after it.
                 let paths: Vec<PathBuf> = self
                     .tabs
                     .tabs()
@@ -920,7 +846,6 @@ impl WindowView {
         self.tabs_changed(window, cx);
     }
 
-    /// Asks the library for a reconciliation pass (US-084).
     fn reconcile(&self, trigger: ReconcileTrigger) {
         if let Some(runtime) = self.core.runtime() {
             runtime.request_reconcile(trigger);
@@ -935,8 +860,6 @@ impl WindowView {
             .unwrap_or(true)
     }
 
-    /// Restored tabs and history entries whose file is gone are removed,
-    /// and each removal is logged.
     fn drop_missing_paths(&mut self) {
         let missing: Vec<PathBuf> = self
             .tabs
@@ -952,8 +875,6 @@ impl WindowView {
             self.tabs.remove_prefix(&path);
         }
     }
-
-    // ---- File systems and autosave ----
 
     fn fs(&self) -> Option<WorkspaceFs> {
         if let Some(runtime) = self.core.runtime() {
@@ -980,7 +901,6 @@ impl WindowView {
         }
     }
 
-    /// Applies the save results queued by the save threads.
     pub fn drain_saves(&mut self, cx: &mut Context<Self>) {
         for result in self.bridge.take_results() {
             self.on_save_result(result, cx);
@@ -1009,8 +929,6 @@ impl WindowView {
                 self.refresh_sidebar_for(&path, cx);
             }
             SaveResult::Conflicted { path, .. } => {
-                // Decided as a watched change; a disk that matches again
-                // lets the edit go out.
                 self.check_disk(&path, cx);
                 let resume = self.docs.get(&path).is_some_and(|doc| {
                     doc.conflict.is_none() && doc.editor.read(cx).state.is_dirty()
@@ -1024,7 +942,6 @@ impl WindowView {
                 let Some(doc) = self.docs.get_mut(&path) else {
                     return;
                 };
-                // Said once per failure streak; the tab keeps a dot.
                 let first = doc.save_error.is_none();
                 doc.save_error = Some(error.clone());
                 if first {
@@ -1048,8 +965,6 @@ impl WindowView {
                 .as_ref()
                 .is_some_and(|saver| saver.is_in_flight(path))
     }
-
-    // ---- Documents ----
 
     fn new_editor(&mut self, path: &Path, text: String, cx: &mut Context<Self>) -> Entity<Editor> {
         let root = self.workspace_root().map(Path::to_path_buf);
@@ -1091,7 +1006,6 @@ impl WindowView {
         editor
     }
 
-    /// A document already read (startup prefetch).
     fn seed_doc(&mut self, file: FileContent, cx: &mut Context<Self>) {
         let editor = self.new_editor(&file.path, file.content.clone(), cx);
         let mut doc = Doc::new(editor.clone(), false);
@@ -1103,9 +1017,6 @@ impl WindowView {
         self.docs.insert(file.path, doc);
     }
 
-    /// Starts reading `path` unless it is open or already being read: two
-    /// opens of the same file share one read. `undo` rolls the navigation
-    /// back if the read fails.
     fn ensure_doc(&mut self, path: &Path, undo: Option<Undo>, cx: &mut Context<Self>) {
         if let Some(doc) = self.docs.get(path) {
             if doc.loading_since.is_some() {
@@ -1180,7 +1091,6 @@ impl WindowView {
                     rolled_back |= self.tabs.rollback(undo);
                 }
                 if !rolled_back {
-                    // A restored tab with no navigation to undo.
                     self.tabs.remove_prefix(path);
                 }
                 let name = file_name(path);
@@ -1194,7 +1104,6 @@ impl WindowView {
         if let Some(doc) = self.docs.remove(path) {
             self.editor_subscriptions.remove(&doc.editor.entity_id());
         }
-        // Its tab closed: the pending save version is written now (US-089).
         if let Some(runtime) = self.core.runtime() {
             runtime.flush_history(Some(path), None);
         }
@@ -1232,8 +1141,6 @@ impl WindowView {
             doc.first_version_offered |= dirty;
         }
         if first_edit {
-            // What the note held before this session's first edit, kept if
-            // it has no history yet.
             self.offer_first_version(&path);
         }
         if dirty && !conflicted {
@@ -1247,7 +1154,6 @@ impl WindowView {
         cx.notify();
     }
 
-    /// Drops documents no tab references that hold nothing unsaved.
     fn prune(&mut self, cx: &App) {
         let unreferenced = self.docs.unreferenced(
             |path| self.tabs.references(path),
@@ -1257,8 +1163,6 @@ impl WindowView {
             self.forget_doc(&path);
         }
     }
-
-    // ---- Tabs ----
 
     pub fn page(&self, cx: &App) -> Page {
         match &self.tabs.active().location {
@@ -1283,7 +1187,6 @@ impl WindowView {
         self.docs.get(self.tabs.active_path()?)
     }
 
-    /// Opens `path` as a click does (replaces a launcher or navigates).
     pub fn open_file(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
         let undo = self.tabs.open(path);
         if undo.is_some() {
@@ -1292,8 +1195,6 @@ impl WindowView {
         self.tabs_changed(window, cx);
     }
 
-    /// Opens `path` as a link does, then scrolls to the heading whose slug
-    /// is `anchor` (once the note has loaded).
     pub fn open_note_at(
         &mut self,
         path: &Path,
@@ -1367,12 +1268,7 @@ impl WindowView {
         self.tabs_changed(window, cx);
     }
 
-    /// A file or folder was renamed or moved inside Cerata.
     pub fn path_renamed(&mut self, old: &Path, new: &Path, cx: &mut Context<Self>) {
-        // A save that ended before the rename reports under the old path:
-        // moved to the new one, it still updates the document's disk text,
-        // so the watcher's events for the new path are not taken for an
-        // outside change.
         let pending = self.bridge.take_results();
         self.tabs.rewrite_prefix(old, new);
         for (from, to) in self.docs.rewrite_prefix(old, new) {
@@ -1398,10 +1294,6 @@ impl WindowView {
         self.after_tabs_change(cx);
     }
 
-    /// The note now at `path` was renamed and its assets folder followed it
-    /// or stayed (EP-015): its destinations into the folder are rewritten,
-    /// in its buffer when it is open (one undo step, saved by the autosave),
-    /// else on disk, as a write the watcher knows is Cerata's.
     pub fn rewrite_asset_links(
         &mut self,
         path: &Path,
@@ -1444,7 +1336,6 @@ impl WindowView {
         }
     }
 
-    /// A file or folder was deleted inside Cerata.
     pub fn path_removed(&mut self, path: &Path, cx: &mut Context<Self>) {
         self.tabs.remove_prefix(path);
         let gone: Vec<PathBuf> = self
@@ -1459,7 +1350,6 @@ impl WindowView {
         self.after_tabs_change(cx);
     }
 
-    /// Any tab change leaves Settings for the tab.
     fn tabs_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let leaving_settings = std::mem::take(&mut self.settings_open);
         self.after_tabs_change(cx);
@@ -1479,8 +1369,6 @@ impl WindowView {
         cx.notify();
     }
 
-    /// The editor of the active tab gets the focus; the one it replaces is
-    /// told it is inactive (its search closes).
     fn sync_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let active = match self.page(cx) {
             Page::Editor(editor) => Some(editor),
@@ -1509,8 +1397,6 @@ impl WindowView {
         }
     }
 
-    /// Writes the edits the autosave throttle still holds: dropping the
-    /// saver or a document would lose them.
     pub fn flush_saves(&self) {
         if let Some(saver) = &self.saver
             && !saver.flush(FLUSH_TIMEOUT)
@@ -1519,11 +1405,6 @@ impl WindowView {
         }
     }
 
-    /// The window is about to close (or the app to quit): pending edits
-    /// reach the disk, then their versions the history (US-089), and the
-    /// session is saved. A note whose outside change was never reviewed is
-    /// written too: its disk state is already an `external` version, so
-    /// neither side is lost (US-092).
     pub fn before_close(&mut self, cx: &mut Context<Self>) {
         let unresolved: Vec<PathBuf> = self
             .docs
@@ -1547,12 +1428,10 @@ impl WindowView {
         self.save_session_now();
     }
 
-    /// The library's history, if it has one.
     pub fn history(&self) -> Option<cerata_core::history::History> {
         self.core.runtime()?.history.read().clone()
     }
 
-    /// Records a version of `path` holding `text` in the note's format.
     pub fn record_version(
         &self,
         path: &Path,
@@ -1592,8 +1471,6 @@ impl WindowView {
         history.record(request);
     }
 
-    // ---- Session ----
-
     fn schedule_session_save(&mut self, cx: &mut Context<Self>) {
         if self.workspace.is_none() || self.chrome == Chrome::Compact {
             return;
@@ -1617,10 +1494,6 @@ impl WindowView {
         }
     }
 
-    // ---- Workspace and chrome changes ----
-
-    /// Opens `root` in this window (an empty workspace window), then
-    /// `file` or the saved session.
     pub fn open_workspace(
         &mut self,
         root: &Path,
@@ -1667,7 +1540,6 @@ impl WindowView {
         Ok(())
     }
 
-    /// Turns this rootless window into a compact window on `file`.
     pub fn make_compact(
         &mut self,
         file: &Path,
@@ -1685,8 +1557,6 @@ impl WindowView {
         self.tabs_changed(window, cx);
         Ok(())
     }
-
-    // ---- Disk changes (US-025) ----
 
     pub fn on_watch_event(
         &mut self,
@@ -1744,20 +1614,16 @@ impl WindowView {
         }
     }
 
-    /// A note renamed outside Cerata (US-085): its pins, tabs and buffer
-    /// follow it, as after a rename in the sidebar, and nothing is written.
     fn renamed_outside(&mut self, from: &Path, to: &Path, cx: &mut Context<Self>) {
         if let Some(runtime) = self.core.runtime() {
             runtime.self_writes.renamed(from, to);
         }
         match self.sidebar.clone() {
-            // The sidebar's bookkeeping ends with `SidebarEvent::Renamed`.
             Some(sidebar) => sidebar.update(cx, |sidebar, cx| sidebar.moved_outside(from, to, cx)),
             None => self.path_renamed(from, to, cx),
         }
     }
 
-    /// A file's title or time changed: its folder and the sections follow.
     fn refresh_sidebar_for(&mut self, path: &Path, cx: &mut Context<Self>) {
         let Some(sidebar) = self.sidebar.clone() else {
             return;
@@ -1777,8 +1643,6 @@ impl WindowView {
         });
     }
 
-    /// Compares the disk with the text last read or written, then reloads
-    /// a clean document or raises a conflict on a dirty one.
     fn check_disk(&mut self, path: &Path, cx: &mut Context<Self>) {
         let Some(fs) = self.fs() else { return };
         match fs.read_file(path) {
@@ -1800,7 +1664,6 @@ impl WindowView {
         if dirty {
             self.merge_disk_change(path, file, cx);
         } else {
-            // The disk state is a version before the buffer follows it.
             self.record_version(
                 path,
                 &file.content,
@@ -1831,7 +1694,6 @@ impl WindowView {
             return;
         };
         if !doc.editor.read(cx).state.is_dirty() {
-            // Nothing unsaved is at risk (Writer ignores deletions too).
             return;
         }
         doc.conflict = Some(Conflict::Deleted);
@@ -1839,7 +1701,6 @@ impl WindowView {
         cx.notify();
     }
 
-    /// No autosave may write `path` until the user decides.
     fn hold_saves(&mut self, path: &Path) {
         self.bridge.clear(path);
         if let Some(saver) = &self.saver {
@@ -1847,7 +1708,6 @@ impl WindowView {
         }
     }
 
-    /// "Keep my version": the editor's text wins and is written.
     pub fn keep_mine(&mut self, cx: &mut Context<Self>) {
         let Some(path) = self.tabs.active_path().map(Path::to_path_buf) else {
             return;
@@ -1863,7 +1723,6 @@ impl WindowView {
         self.resume_saves(&path, cx);
     }
 
-    /// "Recreate": writes the editor's text back to the deleted path.
     pub fn recreate(&mut self, cx: &mut Context<Self>) {
         let Some(path) = self.tabs.active_path().map(Path::to_path_buf) else {
             return;
@@ -1895,7 +1754,6 @@ impl WindowView {
         cx.notify();
     }
 
-    /// "Reload": the disk's text replaces the editor's.
     pub fn reload_from_disk(&mut self, cx: &mut Context<Self>) {
         let Some(path) = self.tabs.active_path().map(Path::to_path_buf) else {
             return;
@@ -1920,7 +1778,6 @@ impl WindowView {
         cx.notify();
     }
 
-    /// "Close" on a deleted file: its unsaved text is discarded.
     pub fn discard_deleted(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(path) = self.tabs.active_path().map(Path::to_path_buf) else {
             return;
@@ -1929,8 +1786,6 @@ impl WindowView {
         self.tabs.remove_prefix(&path);
         self.tabs_changed(window, cx);
     }
-
-    // ---- Notices and drops ----
 
     pub fn show_notice(&mut self, notice: impl Into<SharedString>, cx: &mut Context<Self>) {
         self.notice = Some(notice.into());
@@ -1943,7 +1798,6 @@ impl WindowView {
         }
     }
 
-    /// The window title (`window-title/index.tsx`).
     pub fn title(&self, cx: &App) -> String {
         if self.settings_open {
             return "Settings - Cerata".into();
@@ -1981,12 +1835,8 @@ impl Focusable for WindowView {
     }
 }
 
-/// The notice for a drop holding nothing Cerata opens.
 pub const DROP_REFUSED: &str = "Only folders and Markdown files can be opened";
 
-/// Opens what a drop on `window` holds (folders, Markdown files): the
-/// window's own drop, and the editor's for what it does not insert.
-/// `false` when nothing can be opened.
 pub fn open_dropped(paths: &[PathBuf], window: &Window, cx: &mut App) -> bool {
     let requests: Vec<OpenRequest> = paths
         .iter()
@@ -1996,7 +1846,6 @@ pub fn open_dropped(paths: &[PathBuf], window: &Window, cx: &mut App) -> bool {
         return false;
     }
     let origin = window.window_handle().downcast::<WindowView>();
-    // Deferred: a route may update this very window.
     cx.defer(move |cx| {
         for request in requests {
             crate::app::open(cx, request, origin);
@@ -2007,7 +1856,6 @@ pub fn open_dropped(paths: &[PathBuf], window: &Window, cx: &mut App) -> bool {
 
 impl Render for WindowView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // A file that finished loading becomes the active editor here.
         if self.palette.is_none() && self.recents_picker.is_none() && !self.settings_open {
             self.sync_active(window, cx);
         }
@@ -2142,9 +1990,6 @@ impl Render for WindowView {
             }
             let mut content = div().relative().flex_1().min_h_0().w_full();
             let editing = matches!(page, Page::Editor(_));
-            // The merge review, then the history panel, take the place of
-            // the page and its banner: drawn over them, a translucent theme
-            // would show them through.
             let overlay = self
                 .merge_review
                 .clone()

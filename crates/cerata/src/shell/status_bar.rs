@@ -1,8 +1,3 @@
-//! The status bar under a note (`document-footer.tsx:19-56`): words,
-//! characters and paragraphs, each shown by its `statusbar.show-*`
-//! setting and toggled from the bar's context menu; hidden when all three
-//! are off. The counts follow `document-stats.ts:26-47`.
-
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
     ParentElement, Styled, div, px,
@@ -21,8 +16,6 @@ pub struct Stats {
     pub paragraphs: usize,
 }
 
-/// `(setting key, footer label for one, for any other count, menu label)`
-/// in display order.
 pub const METRICS: [(&str, &str, &str, &str); 3] = [
     ("statusbar.show-words", "word", "words", "Words"),
     (
@@ -39,7 +32,6 @@ pub const METRICS: [(&str, &str, &str, &str); 3] = [
     ),
 ];
 
-/// `^[ \t]{0,3}(?:#{1,6}|[-*+]|\d+[.)]|>)[ \t]+` removed from a line.
 fn strip_block_prefix(line: &str) -> &str {
     let bytes = line.as_bytes();
     let mut i = 0;
@@ -75,7 +67,6 @@ fn strip_block_prefix(line: &str) -> &str {
     &line[i..]
 }
 
-/// `\[\[([^\]]+)\]\]` replaced by its content.
 fn unwrap_wiki_links(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
@@ -98,7 +89,6 @@ fn unwrap_wiki_links(text: &str) -> String {
     out
 }
 
-/// `\[([^\]]+)\]\([^)]*\)` replaced by the link text.
 fn unwrap_links(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
@@ -168,7 +158,6 @@ pub fn document_stats(content: &str) -> Stats {
     stats
 }
 
-/// `1234567` as `1,234,567`.
 pub fn group_digits(n: usize) -> String {
     let digits = n.to_string();
     let mut out = String::new();
@@ -190,7 +179,6 @@ impl WindowView {
             .unwrap_or(true)
     }
 
-    /// The active note's counts, cached per editor and revision.
     pub fn active_stats(&mut self, cx: &gpui::App) -> Option<Stats> {
         let doc = self.active_doc()?;
         if doc.loading_since.is_some() {
@@ -245,8 +233,6 @@ pub fn render(view: &mut WindowView, cx: &mut Context<WindowView>) -> Option<Any
     let stats = view.active_stats(cx)?;
     let mut bar = div()
         .id("status-bar")
-        // In the flow under the editor: drawn over it, it covered the last
-        // lines at large zoom.
         .flex_none()
         .w_full()
         .h(px(HEIGHT))
@@ -286,8 +272,6 @@ pub fn render(view: &mut WindowView, cx: &mut Context<WindowView>) -> Option<Any
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // Ported from Writer `tests/document-stats.test.ts`.
 
     #[test]
     fn an_empty_document_counts_nothing() {

@@ -1,11 +1,3 @@
-//! The editor's context menu, drawn in the app (`editor-context-menu.ts:20-143`,
-//! `editor-body-menu.ts:10-70`): Cut, Copy, Paste in plain text, the
-//! Format, Paragraph and Insert submenus from the command registry with
-//! their shortcuts, a Table submenu with the caret in a drawn table
-//! (US-053), Select all, and Open or Copy link over a link. On a block
-//! image the Image section comes first: its widths and actions (US-068,
-//! US-069). The app's menu (`crate::menu`) draws it.
-
 use cerata_markdown::NodeKind;
 use cerata_markdown::commands::command;
 use gpui::{ClipboardItem, Context, Pixels, Point, SharedString, Window};
@@ -24,12 +16,8 @@ pub enum MenuAction {
     OpenLink(String),
     CopyLink(String),
     Command(&'static str),
-    /// "Image…": the file picker, which a pure state command cannot open.
     InsertImage,
-    /// A preset width of the block image whose node is the range (US-068),
-    /// computed on the view's column.
     ImageWidth(super::resize::Preset, std::ops::Range<usize>),
-    /// An action on the block image whose node is the range (US-069).
     Image(super::image_actions::ImageAction, std::ops::Range<usize>),
 }
 
@@ -48,9 +36,6 @@ pub enum MenuItem {
     },
 }
 
-/// `FORMAT_SUBMENU`, `PARAGRAPH_SUBMENU` and `INSERT_SUBMENU`; `None` is a
-/// separator, a label overrides the registry's.
-/// A command id and its label override, or `None` for a separator.
 type SubmenuEntry = Option<(&'static str, Option<&'static str>)>;
 
 const SUBMENUS: &[(&str, &[SubmenuEntry])] = &[
@@ -99,8 +84,6 @@ const SUBMENUS: &[(&str, &[SubmenuEntry])] = &[
     ),
 ];
 
-/// The Table submenu (US-053): rows, columns, alignment, sorting, then the
-/// whole table; `None` is a separator.
 const TABLE_SUBMENU: &[Option<&str>] = &[
     Some("table.rowAbove"),
     Some("table.rowBelow"),
@@ -130,8 +113,6 @@ const TABLE_SUBMENU: &[Option<&str>] = &[
     Some("table.delete"),
 ];
 
-/// The Table submenu for `state`, when its caret is in a drawn table: each
-/// command enabled where it applies.
 fn table_submenu(state: &cerata_markdown::EditorState) -> Option<MenuItem> {
     cerata_markdown::cells::grid_at(state, state.selection().main().head)?;
     let items = TABLE_SUBMENU
@@ -152,9 +133,6 @@ fn table_submenu(state: &cerata_markdown::EditorState) -> Option<MenuItem> {
     })
 }
 
-/// The body menu's items. `link` is the destination under the pointer;
-/// `state` gives the Table submenu, `image` the Image section of the block
-/// image at the caret (US-068, US-069).
 pub fn body_items(
     has_clipboard_text: bool,
     link: Option<String>,
@@ -213,7 +191,6 @@ pub fn body_items(
             })
             .collect::<Vec<_>>();
         if *label == "Insert" {
-            // After the block insertions, before the dates.
             let at = sub
                 .iter()
                 .position(|item| *item == MenuItem::Separator)
@@ -236,8 +213,6 @@ pub fn body_items(
     items
 }
 
-/// The Image width submenu of `image`: its presets, each enabled where it
-/// applies.
 pub fn width_items(image: &super::image_actions::ImageMenu) -> Vec<MenuItem> {
     image
         .presets
@@ -251,9 +226,6 @@ pub fn width_items(image: &super::image_actions::ImageMenu) -> Vec<MenuItem> {
         .collect()
 }
 
-/// The open menu: the app's menu that draws it, each item running its
-/// action through [`Editor::run_menu_action`]; the tests read what it
-/// offers as data.
 pub struct ContextMenu {
     #[cfg(test)]
     pub items: Vec<MenuItem>,
@@ -300,7 +272,6 @@ fn popup_items(items: &[MenuItem]) -> Vec<Item<Editor>> {
         .collect()
 }
 
-/// The actions that delete part of the note, drawn as destructive.
 fn removes(action: &MenuAction) -> bool {
     matches!(
         action,
@@ -319,8 +290,6 @@ impl HasMenu for Editor {
     }
 }
 
-/// The destination of the link at `pos`: a link's URL, an autolink or a
-/// bare URL (`link-navigation.ts:67-93`).
 pub fn link_at(state: &cerata_markdown::EditorState, pos: usize) -> Option<String> {
     let tree = state.tree();
     let node = tree.resolve(pos, 0);
@@ -367,8 +336,6 @@ impl Editor {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // Run while the menu is open (not chosen in it): its focus goes
-        // with it, back to the text the action edits.
         if self.menu.take().is_some() {
             window.focus(&self.focus_handle, cx);
         }
@@ -406,18 +373,11 @@ impl Editor {
     }
 }
 
-/// Documents the OS shows rather than runs. A note is untrusted content:
-/// every local file a link names opens after a confirmation that shows its
-/// path (US-033), a stronger one for anything else.
 const OPENABLE: &[&str] = &[
     "avif", "bmp", "gif", "heic", "jpeg", "jpg", "markdown", "md", "pdf", "png", "tif", "tiff",
     "txt", "webp",
 ];
 
-/// The existing folder or document a local link opens, checked under its
-/// own name and through symlinks. A folder with an extension is refused:
-/// macOS runs bundles (`.app`, `.prefPane`, `.workflow`...) rather than
-/// showing them.
 pub(super) fn openable(path: &std::path::Path) -> Option<std::path::PathBuf> {
     let real = std::fs::canonicalize(path).ok()?;
     if real.is_dir() {
@@ -579,9 +539,6 @@ mod tests {
             .collect()
     }
 
-    /// US-053: the Table submenu shows with the caret in a drawn table,
-    /// its row commands off in the header, column deletion off in a lone
-    /// column while table deletion stays.
     #[test]
     fn the_table_submenu_follows_the_caret() {
         let doc = "x\n\n| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |\n";

@@ -1,7 +1,3 @@
-//! Window-level behavior through the real entry points: launches (first
-//! and forwarded), drops, tab actions, session save and restore, and disk
-//! changes delivered as watcher events.
-
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -66,7 +62,6 @@ fn setup(cx: &mut TestAppContext) -> Env {
     }
 }
 
-/// The library key of `root`, registering it as opening it would.
 fn key_of(cx: &App, root: &Path) -> cerata_core::library::LibraryKey {
     app::core(cx).libraries.resolve(root).unwrap().library.key()
 }
@@ -102,8 +97,6 @@ fn update<R>(
     result
 }
 
-/// Waits for work on real threads (autosave), then applies its results to
-/// every window, as the production wake-up does.
 fn wait_until(cx: &mut TestAppContext, mut done: impl FnMut(&mut TestAppContext) -> bool) {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
@@ -146,8 +139,6 @@ fn type_text(cx: &mut TestAppContext, handle: WindowHandle<WindowView>, text: &s
         });
     });
 }
-
-// ---- US-023: windows, single instance, open flow ----
 
 #[gpui::test]
 fn one_window_per_workspace_and_reopening_reveals_it(cx: &mut TestAppContext) {
@@ -288,7 +279,6 @@ fn the_first_frame_already_shows_the_session_file(cx: &mut TestAppContext) {
     let handle = cx
         .update(|cx| app::open_window(cx, Some(OpenTarget::Workspace(root)), None))
         .unwrap();
-    // No executor turn: the bundle's prefetched file is already shown.
     let text = read(cx, handle, |view, cx| match view.page(cx) {
         Page::Editor(editor) => editor.read(cx).state.doc().to_owned(),
         _ => String::new(),
@@ -305,8 +295,6 @@ fn main_window_opens_at_writer_geometry(cx: &mut TestAppContext) {
     let bounds = handle.update(cx, |_, window, _| window.bounds()).unwrap();
     assert_eq!(bounds.size, size(px(1200.0), px(800.0)));
 }
-
-// ---- US-024: tabs, history, session ----
 
 fn workspace(cx: &mut TestAppContext, env: &Env) -> WindowHandle<WindowView> {
     let root = env.root();
@@ -332,11 +320,9 @@ fn back_and_forward_keys_work_outside_the_text(cx: &mut TestAppContext) {
     assert_eq!(editor_text(cx, handle), "b");
 
     let mut vcx = VisualTestContext::from_window(handle.into(), cx);
-    // The editor has the focus: Alt+Left stays in the text.
     vcx.simulate_keystrokes("alt-left");
     vcx.run_until_parked();
     assert_eq!(editor_text(cx, handle), "b");
-    // Outside the text the tab goes back, then forward.
     update(cx, handle, |view, window, cx| {
         window.focus(&view.focus_handle, cx)
     });
@@ -526,8 +512,6 @@ fn the_spinner_waits_40_ms() {
     assert!(shows(40));
 }
 
-// ---- US-025: conflicts with changes on disk ----
-
 fn file_event(path: &Path, change: FileChange) -> WatchEvent {
     WatchEvent::FileChanged {
         path: path.to_path_buf(),
@@ -535,9 +519,6 @@ fn file_event(path: &Path, change: FileChange) -> WatchEvent {
     }
 }
 
-/// Leaves the active document with unsaved text and no write in flight:
-/// a first edit is saved (autosave writes at once), a second one waits for
-/// the one-second throttle.
 fn make_dirty(cx: &mut TestAppContext, handle: WindowHandle<WindowView>, path: &Path) {
     type_text(cx, handle, " mine");
     wait_until(cx, |cx| {
@@ -549,8 +530,6 @@ fn make_dirty(cx: &mut TestAppContext, handle: WindowHandle<WindowView>, path: &
     type_text(cx, handle, " more");
 }
 
-/// US-085: a note renamed outside Cerata keeps its tab, its unsaved text
-/// and its pin, and the detection writes nothing.
 #[gpui::test]
 fn a_note_renamed_outside_cerata_keeps_its_tab_buffer_and_pin(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -599,7 +578,6 @@ fn a_note_renamed_outside_cerata_keeps_its_tab_buffer_and_pin(cx: &mut TestAppCo
     );
     let pins = cx.update(|cx| app::core(cx).pins.load(&library).unwrap());
     assert_eq!(pins, std::slice::from_ref(&new));
-    // The unsaved text is saved where the note now lives.
     wait_until(cx, |_| {
         std::fs::read_to_string(&new).is_ok_and(|text| text.contains("more"))
     });
@@ -612,8 +590,6 @@ fn conflict(cx: &mut TestAppContext, handle: WindowHandle<WindowView>) -> Option
     })
 }
 
-/// Also ports Writer `stores.test.ts:481`: a reload with shorter text keeps
-/// the caret inside the text.
 #[gpui::test]
 fn a_clean_file_reloads_and_keeps_the_caret(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -668,7 +644,6 @@ fn a_dirty_file_is_neither_reloaded_nor_saved(cx: &mut TestAppContext) {
         "no autosave"
     );
 
-    // The overlap waits for "Review Changes", which opens the review.
     update(cx, handle, |view, window, cx| {
         view.review_changes(window, cx)
     });
@@ -706,9 +681,6 @@ fn reload_takes_the_disk_version(cx: &mut TestAppContext) {
     assert!(!dirty);
 }
 
-/// US-057: a disk change while a cell is edited, then Keep or Reload in
-/// the banner: the caret is valid either way, in a drawn cell or out of
-/// the table, never on its structure.
 #[gpui::test]
 fn keep_or_reload_leaves_a_valid_caret_in_a_table(cx: &mut TestAppContext) {
     let caret_is_valid = |cx: &mut TestAppContext, handle: WindowHandle<WindowView>| {
@@ -728,7 +700,6 @@ fn keep_or_reload_leaves_a_valid_caret_in_a_table(cx: &mut TestAppContext) {
             view.open_file(&a, window, cx)
         });
         make_dirty(cx, handle, &a);
-        // Then typing in a cell: the caret is in it when the disk changes.
         let at = doc.find("first").unwrap() + 5;
         update(cx, handle, |view, _, cx| {
             let editor = view.active_doc().unwrap().editor.clone();
@@ -741,7 +712,6 @@ fn keep_or_reload_leaves_a_valid_caret_in_a_table(cx: &mut TestAppContext) {
         });
         let text = editor_text(cx, handle);
         assert!(text.contains("| first edited | 1 |"), "{text:?}");
-        // Theirs: the old caret offset falls on a pipe of a narrower table.
         std::fs::write(
             &a,
             "x\n\n| n | v |\n|---|---|\n| f | 1 |\n| s | 2 |\n| t | 3 |\n",
@@ -803,9 +773,6 @@ fn a_deleted_dirty_file_offers_recreate_and_close(cx: &mut TestAppContext) {
     assert_eq!(tabs, [Location::Launcher]);
 }
 
-/// A file rewritten on disk before the watcher reports it (a sync client,
-/// `git checkout`) is not overwritten by the autosave that was due: the save
-/// reads the disk first and raises the conflict itself.
 #[gpui::test]
 fn an_unreported_external_change_is_not_overwritten(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -827,8 +794,6 @@ fn an_unreported_external_change_is_not_overwritten(cx: &mut TestAppContext) {
     assert_eq!(editor_text(cx, handle), "base mine more");
 }
 
-/// A clean file deleted on disk is not brought back by the next edit's
-/// autosave: the edit raises the deleted-file banner.
 #[gpui::test]
 fn an_edit_after_a_deletion_asks_before_recreating(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -855,13 +820,11 @@ fn a_change_during_a_save_is_compared_with_the_last_write(cx: &mut TestAppContex
     update(cx, handle, |view, window, cx| {
         view.open_file(&a, window, cx)
     });
-    // The change event arrives while a write is in flight: it is held.
     update(cx, handle, |view, window, cx| {
         view.docs.get_mut(&a).unwrap().change_pending = true;
         let _ = window;
         let _ = cx;
     });
-    // The save completes with what it wrote, which is what is on disk.
     std::fs::write(&a, "written\n").unwrap();
     let revision = read(cx, handle, |v, cx| {
         v.active_doc().unwrap().editor.read(cx).state.revision()
@@ -880,7 +843,6 @@ fn a_change_during_a_save_is_compared_with_the_last_write(cx: &mut TestAppContex
     assert_eq!(conflict(cx, handle), None, "our own write is not a change");
     assert_eq!(editor_text(cx, handle), "base");
 
-    // This time another program wrote after us.
     type_text(cx, handle, "!");
     update(cx, handle, |view, _, _| {
         view.docs.get_mut(&a).unwrap().change_pending = true
@@ -904,8 +866,6 @@ fn a_change_during_a_save_is_compared_with_the_last_write(cx: &mut TestAppContex
         })
     );
 }
-
-// ---- Shared by US-027 to US-030 ----
 
 fn keys(cx: &mut TestAppContext, handle: WindowHandle<WindowView>, keystrokes: &str) {
     let mut vcx = VisualTestContext::from_window(handle.into(), cx);
@@ -960,8 +920,6 @@ fn palette_intent(
         view.palette.as_ref().map(|p| p.read(cx).intent)
     })
 }
-
-// ---- US-027: tab menu, delete, duplicate ----
 
 #[gpui::test]
 fn the_tab_menu_closes_reveals_and_copies(cx: &mut TestAppContext) {
@@ -1058,7 +1016,6 @@ fn delete_asks_only_for_unsaved_work_and_uses_the_trash(cx: &mut TestAppContext)
     cx.run_until_parked();
     let notice = read(cx, handle, |view, _| view.notice.clone());
     match notice {
-        // Headless sessions may have no trash: the file must survive.
         Some(notice) if notice.contains("Failed to delete") => assert!(b.exists()),
         _ => assert!(!b.exists(), "moved to the trash"),
     }
@@ -1081,8 +1038,6 @@ fn duplicate_copies_unsaved_text_into_a_new_tab(cx: &mut TestAppContext) {
     assert_eq!(active.as_deref(), Some("a copy.md"));
     assert_eq!(read(cx, handle, |view, _| view.tabs.tabs().len()), 2);
 }
-
-// ---- US-073: a duplicate gets its own assets folder ----
 
 fn notice_text(cx: &mut TestAppContext, handle: WindowHandle<WindowView>) -> Option<String> {
     read(cx, handle, |view, _| {
@@ -1142,7 +1097,6 @@ fn a_taken_copy_folder_keeps_the_links_and_says_so(cx: &mut TestAppContext) {
     );
 }
 
-/// A copy still running after 300 ms says so; the tab opens when it ends.
 #[gpui::test]
 fn a_slow_duplicate_shows_a_notice_until_it_opens(cx: &mut TestAppContext) {
     use cerata_core::fs::assets::{AssetsOutcome, NoteOperation};
@@ -1200,8 +1154,6 @@ fn a_failed_duplicate_opens_nothing_and_says_why(cx: &mut TestAppContext) {
     );
     assert_eq!(read(cx, handle, |view, _| view.tabs.tabs().len()), tabs);
 }
-
-// ---- US-028: palette, welcome, new tab, compact window ----
 
 #[gpui::test]
 fn the_palette_keys_open_it_and_files_follow_50_ms_after_typing(cx: &mut TestAppContext) {
@@ -1292,7 +1244,6 @@ fn the_palette_commands_are_writers_filtered_by_substring(cx: &mut TestAppContex
         commands,
         [Command::ZoomIn, Command::ZoomOut, Command::ResetZoom].map(Choice::Command)
     );
-    // Enter runs the first one.
     keys(cx, handle, "enter");
     assert!(read(cx, handle, |view, _| view.palette.is_none()));
     assert_eq!(
@@ -1301,9 +1252,6 @@ fn the_palette_commands_are_writers_filtered_by_substring(cx: &mut TestAppContex
     );
 }
 
-/// US-053: with the caret in a drawn table, the palette lists the table
-/// commands that apply there, and choosing one edits the table in one
-/// undo step.
 #[gpui::test]
 fn the_palette_lists_the_table_commands_in_a_table(cx: &mut TestAppContext) {
     use crate::palette::{Choice, Command};
@@ -1403,9 +1351,6 @@ fn without_a_workspace_the_palette_offers_commands_and_says_why(cx: &mut TestApp
     assert!(list.iter().all(|c| matches!(c, Choice::Command(_))));
 }
 
-/// US-079 (amends US-028): "Open Folder…" opens a library in this window,
-/// "Open File…" opens a file outside every library in a compact window
-/// without registering its folder, and a file inside a library in it.
 #[gpui::test]
 fn the_welcome_screen_opens_a_folder_or_a_file_without_making_it_a_library(
     cx: &mut TestAppContext,
@@ -1425,7 +1370,6 @@ fn the_welcome_screen_opens_a_folder_or_a_file_without_making_it_a_library(
         assert!(vcx.debug_bounds(id).is_some(), "{id}");
     }
 
-    // "Open Folder…" once the folder is picked: it opens in this window.
     cx.update(|cx| super::commands::open_picked_folder(cx, other.clone(), Some(handle)));
     cx.run_until_parked();
     let root = |cx: &mut TestAppContext, handle| {
@@ -1436,8 +1380,6 @@ fn the_welcome_screen_opens_a_folder_or_a_file_without_making_it_a_library(
     assert_eq!(root(cx, handle), Some(other.clone()));
     assert_eq!(windows(cx).len(), 1);
 
-    // "Open File…" from a window without a library, on a file in a library
-    // that another window shows: that window gets the file.
     let rootless = cx.update(|cx| app::open_window(cx, None, None)).unwrap();
     cx.run_until_parked();
     cx.update(|cx| libraries::open_picked_file(cx, inside.clone(), Some(rootless)));
@@ -1451,7 +1393,6 @@ fn the_welcome_screen_opens_a_folder_or_a_file_without_making_it_a_library(
     assert_eq!(active(cx, handle), Some(inside.clone()));
     assert_eq!(root(cx, rootless), None);
 
-    // Once that window lets the library go, the file opens in it here.
     update(cx, handle, |view, window, cx| {
         view.close_workspace(window, cx)
     });
@@ -1460,7 +1401,6 @@ fn the_welcome_screen_opens_a_folder_or_a_file_without_making_it_a_library(
     assert_eq!(root(cx, rootless), Some(other.clone()));
     assert_eq!(active(cx, rootless), Some(inside));
 
-    // A file outside every library: a compact window, its folder untouched.
     assert!(matches!(
         read(cx, handle, |view, cx| view.page(cx)),
         Page::Welcome
@@ -1476,7 +1416,6 @@ fn the_welcome_screen_opens_a_folder_or_a_file_without_making_it_a_library(
     assert_eq!(registered, None);
 }
 
-/// New windows open on the welcome screen instead of the last library.
 fn no_restore(env: &Env) {
     std::fs::write(
         env._config.path().join("config"),
@@ -1510,8 +1449,6 @@ fn welcome_problem(cx: &mut TestAppContext, handle: WindowHandle<WindowView>) ->
     })
 }
 
-/// US-078: on a first launch, "Create" makes `{location}/Cerata` the
-/// default library and opens it in the window, in one click.
 #[gpui::test]
 fn first_launch_creates_the_default_library_in_one_click(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -1539,12 +1476,10 @@ fn first_launch_creates_the_default_library_in_one_click(cx: &mut TestAppContext
     assert_eq!(default.name, "Cerata");
     assert!(cerata_core::paths::library_marker_path(&library).is_file());
 
-    // The next launch restores the most recently opened library.
     let first = cx.update(|cx| app::core(cx).libraries.list().unwrap()[0].path.clone());
     assert_eq!(first, library);
 }
 
-/// US-078: a folder already at the place, invalid names and failures.
 #[gpui::test]
 fn the_create_form_validates_and_refuses_without_writing(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -1556,8 +1491,6 @@ fn the_create_form_validates_and_refuses_without_writing(cx: &mut TestAppContext
         view.set_library_location(parent.clone(), cx)
     });
 
-    // A non-empty folder without a marker: nothing is created, "Open"
-    // takes it. Enter in the name field submits the form.
     update(cx, handle, |view, window, cx| {
         let focus = view.welcome.name.read(cx).focus_handle.clone();
         window.focus(&focus, cx);
@@ -1580,7 +1513,6 @@ fn the_create_form_validates_and_refuses_without_writing(cx: &mut TestAppContext
     let default = cx.update(|cx| app::core(cx).libraries.default_library().unwrap());
     assert_eq!(default.map(|l| l.path), Some(parent.join("Cerata")));
 
-    // An invalid name keeps "Create" inactive, with the reason under it.
     let other = welcome_window(cx);
     update(cx, other, |view, _, cx| {
         view.set_library_location(parent.clone(), cx);
@@ -1597,7 +1529,6 @@ fn the_create_form_validates_and_refuses_without_writing(cx: &mut TestAppContext
     assert!(read(cx, other, |view, _| view.workspace.is_none()));
     assert!(!parent.join("a").exists());
 
-    // A creation error: nothing is recorded, the OS error is shown.
     let missing = parent.join("no-such-folder");
     update(cx, other, |view, _, cx| {
         view.set_library_location(missing.clone(), cx);
@@ -1616,8 +1547,6 @@ fn the_create_form_validates_and_refuses_without_writing(cx: &mut TestAppContext
     assert_eq!(count, 1);
 }
 
-/// US-078: the cloud warning, the "Not found" mark with its actions, and
-/// the list cap; Tab leaves the name field for the next control.
 #[gpui::test]
 fn the_welcome_list_marks_missing_libraries_and_warns_about_sync(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -1632,7 +1561,6 @@ fn the_welcome_list_marks_missing_libraries_and_warns_about_sync(cx: &mut TestAp
     cx.update(|cx| {
         let registry = &app::core(cx).libraries;
         for root in [&third, &kept, &gone] {
-            // Same second or not, the order is gone, kept, third.
             registry.resolve(root).unwrap();
         }
     });
@@ -1684,11 +1612,6 @@ fn the_welcome_list_marks_missing_libraries_and_warns_about_sync(cx: &mut TestAp
     assert!(!focused(cx), "Tab moves on to the next control");
 }
 
-/// The actions of a library that is not found sit under its name and
-/// path instead of squeezing them to about 100 px (found in the EP-016
-/// review), and a list taller than the window keeps the heading on
-/// screen. The heading above the scroll origin was seen in the real app
-/// only: this headless layout did not reproduce it.
 #[gpui::test]
 fn missing_library_actions_sit_under_the_text_of_a_long_list(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -1769,7 +1692,6 @@ fn the_compact_window_has_no_tabs_sidebar_close_key_or_settings(cx: &mut TestApp
             .collect::<Vec<_>>()
     });
     assert_eq!(tabs, [Location::File { path: a }]);
-    // Cmd+N still works, on the file's folder.
     keys(cx, handle, secondary!("n"));
     assert_eq!(
         palette_intent(cx, handle),
@@ -1811,8 +1733,6 @@ fn the_compact_title_lists_global_recents_without_the_active_file(cx: &mut TestA
         "removed from the store"
     );
 
-    // Escape closes the picker and gives the note its focus back; a recent
-    // opens in the same window.
     keys(cx, handle, "escape");
     assert!(read(cx, handle, |view, _| view.recents_picker.is_none()));
     let editor_focused = update(cx, handle, |view, window, cx| {
@@ -1833,8 +1753,6 @@ fn the_compact_title_lists_global_recents_without_the_active_file(cx: &mut TestA
     assert_eq!(active, Some(file_name(&next)));
     assert_eq!(windows(cx).len(), 1);
 }
-
-// ---- US-029: settings panel ----
 
 fn settings_panel(
     cx: &mut TestAppContext,
@@ -1998,8 +1916,6 @@ fn a_font_pick_replaces_only_the_first_family_and_presets_apply(cx: &mut TestApp
     assert_eq!(text(cx, "theme.dark.background"), "#1F1A14");
 }
 
-// ---- US-030: theme, zoom, status bar, title ----
-
 #[gpui::test]
 fn zoom_keys_walk_the_ladder_without_touching_the_font_size(cx: &mut TestAppContext) {
     use cerata_core::settings::ConfigValue;
@@ -2025,7 +1941,6 @@ fn zoom_keys_walk_the_ladder_without_touching_the_font_size(cx: &mut TestAppCont
     assert_eq!(zoom(cx), Some(ConfigValue::Number(90.0)));
     keys(cx, handle, secondary!("0"));
     assert_eq!(zoom(cx), Some(ConfigValue::Number(100.0)));
-    // Persisted in the global config, so it survives a relaunch.
     let path = read(cx, handle, |view, _| view.settings().global_path());
     wait_until(cx, |_| {
         std::fs::read_to_string(&path).is_ok_and(|text| text.contains("editor.zoom = 100"))
@@ -2120,7 +2035,6 @@ fn the_theme_preference_sets_the_palette(cx: &mut TestAppContext) {
     let palette = crate::editor::theme::palette();
     assert!(palette.dark);
     assert_eq!(palette.text, gpui::Hsla::from(gpui::rgb(0xFCFCFC)));
-    // "Toggle Dark Mode" cycles system, light, dark.
     update(cx, handle, |view, _, cx| view.cycle_theme(cx));
     assert_eq!(
         setting(cx, handle, crate::theme::THEME_KEY),
@@ -2134,8 +2048,6 @@ fn the_theme_preference_sets_the_palette(cx: &mut TestAppContext) {
     assert!(!crate::editor::theme::palette().dark);
 }
 
-/// An edit the autosave throttle still holds reaches the disk when the
-/// window closes from its menu.
 #[gpui::test]
 fn closing_the_window_writes_the_edit_the_throttle_holds(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -2156,8 +2068,6 @@ fn closing_the_window_writes_the_edit_the_throttle_holds(cx: &mut TestAppContext
     );
 }
 
-/// Quitting skips `on_window_should_close`; the quit hook writes the edit
-/// the throttle still holds.
 #[gpui::test]
 fn quitting_writes_the_edit_the_throttle_holds(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -2175,8 +2085,6 @@ fn quitting_writes_the_edit_the_throttle_holds(cx: &mut TestAppContext) {
     );
 }
 
-/// The keyboard runs a shell menu: it takes the focus, arrows pick an item,
-/// Enter runs it, Escape closes another one and gives the focus back.
 #[gpui::test]
 fn a_menu_takes_the_keyboard_and_gives_the_focus_back(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -2197,15 +2105,12 @@ fn a_menu_takes_the_keyboard_and_gives_the_focus_back(cx: &mut TestAppContext) {
         .unwrap();
     assert!(shell_focused, "the focus went back to the shell");
 
-    // Close (the first item) on the second tab.
     update(cx, handle, |view, _, cx| view.open_tab_menu(1, at, cx));
     keys(cx, handle, "down enter");
     assert!(read(cx, handle, |view, _| view.tab_menu.is_none()));
     assert_eq!(read(cx, handle, |view, _| view.tabs.tabs().len()), 1);
 }
 
-/// A failed save says so in words, with what happens to the changes; the
-/// tab's red dot alone carried it by color.
 #[gpui::test]
 fn a_failed_save_shows_a_notice(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -2230,8 +2135,6 @@ fn a_failed_save_shows_a_notice(cx: &mut TestAppContext) {
     );
 }
 
-/// Every shortcut on a digit or punctuation key also has a binding by key
-/// position (AZERTY gives `ctrl-à` for Ctrl+0).
 #[gpui::test]
 fn digit_and_punctuation_shortcuts_also_bind_by_position(cx: &mut TestAppContext) {
     let _env = setup(cx);
@@ -2239,10 +2142,6 @@ fn digit_and_punctuation_shortcuts_also_bind_by_position(cx: &mut TestAppContext
     assert_eq!(count, 13);
 }
 
-// ---- EP-004: Writer store invariants ----
-
-/// Ports Writer `stores.test.ts:321`: closing a tab activates its neighbor
-/// and drops the tab's clean document.
 #[gpui::test]
 fn closing_a_tab_drops_its_clean_document(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -2269,8 +2168,6 @@ fn closing_a_tab_drops_its_clean_document(cx: &mut TestAppContext) {
     assert!(!has_b, "the clean document of the closed tab is dropped");
 }
 
-/// Ports Writer `stores.test.ts:500`: a caret left beyond the text by a
-/// reload while its tab was inactive is inside the text on switching back.
 #[gpui::test]
 fn a_stale_caret_is_clamped_when_its_tab_comes_back(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -2303,8 +2200,6 @@ fn a_stale_caret_is_clamped_when_its_tab_comes_back(cx: &mut TestAppContext) {
     assert!(caret <= "short".len(), "caret {caret} is inside the text");
 }
 
-/// Ports Writer `stores.test.ts:847`: a closed palette keeps no search
-/// text; the next one opens empty.
 #[gpui::test]
 fn reopening_the_palette_shows_an_empty_query(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -2332,9 +2227,6 @@ fn reopening_the_palette_shows_an_empty_query(cx: &mut TestAppContext) {
     assert_eq!(query(cx), "");
 }
 
-/// Ports Writer `stores.test.ts:1005`: a compact window that navigates to
-/// another file now stands for that file (the one routing, reads and saves
-/// follow) and no longer for the first.
 #[gpui::test]
 fn a_compact_window_moves_its_standalone_file_on_navigation(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -2365,10 +2257,6 @@ fn a_compact_window_moves_its_standalone_file_on_navigation(cx: &mut TestAppCont
     assert_eq!(windows(cx).len(), 2, "a is no longer this window's file");
 }
 
-/// Ports Writer `stores.test.ts:1188`: closing a workspace tells the core
-/// first (the session is saved, the window state lets go of the
-/// workspace), then clears the root, the listings, the documents and the
-/// tabs.
 #[gpui::test]
 fn closing_the_workspace_tells_the_core_then_clears_the_window(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -2406,8 +2294,6 @@ fn closing_the_workspace_tells_the_core_then_clears_the_window(cx: &mut TestAppC
     assert!(!sidebar, "the sidebar and its listings are gone");
 }
 
-/// Ports Writer `stores.test.ts:1213`: closing with no workspace open does
-/// nothing.
 #[gpui::test]
 fn closing_without_a_workspace_does_nothing(cx: &mut TestAppContext) {
     let _env = setup(cx);
@@ -2431,8 +2317,6 @@ fn closing_without_a_workspace_does_nothing(cx: &mut TestAppContext) {
     assert!(read(cx, handle, |view, _| view.core.runtime().is_none()));
 }
 
-// ---- US-033: links and wiki links ----
-
 mod links {
     use super::*;
     use gpui::{Entity, Modifiers, MouseButton, MouseDownEvent, MouseUpEvent, point, px};
@@ -2445,7 +2329,6 @@ mod links {
         })
     }
 
-    /// Clicks just right of the caret position `pos` of the active note.
     fn click(cx: &mut TestAppContext, handle: WindowHandle<WindowView>, pos: usize) {
         let editor = editor(cx, handle);
         let mut vcx = VisualTestContext::from_window(handle.into(), cx);
@@ -2509,8 +2392,6 @@ mod links {
         text
     }
 
-    /// A click on a folded wiki link opens the note it names, at the heading
-    /// its fragment names, in the same window.
     #[gpui::test]
     fn a_wiki_link_opens_its_note_at_its_heading(cx: &mut TestAppContext) {
         let env = setup(cx);
@@ -2550,7 +2431,6 @@ mod links {
         );
     }
 
-    /// A missing note or heading shows a notice; nothing is created.
     #[gpui::test]
     fn a_missing_note_or_heading_shows_a_notice(cx: &mut TestAppContext) {
         let env = setup(cx);
@@ -2578,9 +2458,6 @@ mod links {
         );
     }
 
-    /// US-038 from the keyboard: Ctrl+M lets Tab leave the text, a rail
-    /// mark takes the focus, Enter jumps to its heading and Shift+F10 opens
-    /// its menu; Ctrl+M again makes Tab indent.
     #[gpui::test]
     fn the_rail_works_from_the_keyboard(cx: &mut TestAppContext) {
         let env = setup(cx);
@@ -2613,7 +2490,6 @@ mod links {
         assert!(left, "Tab left the text");
 
         assert_eq!(doc(cx, handle), note, "nothing indented");
-        // A key press as the OS sends it: down, then up (the click).
         let mut vcx = VisualTestContext::from_window(handle.into(), cx);
         let enter = gpui::Keystroke::parse("enter").unwrap();
         vcx.simulate_event(gpui::KeyDownEvent {
@@ -2636,7 +2512,6 @@ mod links {
             link.contains("CopyLink(\"[Section 0](#section-0)\")"),
             "Shift+F10 opens the mark's menu: {link}"
         );
-        // Enter runs it, without jumping again.
         update(cx, handle, |_, _, cx| {
             let editor = editor.clone();
             editor.update(cx, |e, _| e.set_scroll_top(500.0));
@@ -2697,8 +2572,6 @@ mod links {
         vcx.run_until_parked();
     }
 
-    /// `[[` and a non-blank character list 20 notes (name, folder); Enter
-    /// writes the name and `]]`, absorbing the `]]` already there.
     #[gpui::test]
     fn wiki_completion_lists_twenty_notes_and_absorbs_the_brackets(cx: &mut TestAppContext) {
         let env = setup(cx);
@@ -2731,7 +2604,6 @@ mod links {
         assert_eq!(list.items[0].folder, "notes");
         keys(cx, handle, "down");
         assert_eq!(completion(cx, handle).unwrap().selected, 1);
-        // The list scrolls to keep the selection in view.
         keys(cx, handle, "up up");
         let last = completion(cx, handle).unwrap();
         assert_eq!(last.selected, 19);
@@ -2742,13 +2614,11 @@ mod links {
         keys(cx, handle, "escape");
         assert!(completion(cx, handle).is_none());
 
-        // Moving the caret back into a query does not open the list.
         let end = doc(cx, handle).find("Note").unwrap() + 4;
         set_cursor(cx, handle, 0);
         set_cursor(cx, handle, end);
         assert!(completion(cx, handle).is_none());
 
-        // A `]]` after the caret is absorbed.
         let editor = editor(cx, handle);
         update(cx, handle, |_, _, cx| {
             editor.update(cx, |e, cx| {
@@ -2773,8 +2643,6 @@ mod links {
         assert_eq!(caret, "[[Roadmap]]".len());
     }
 }
-
-// ---- EP-012: images dropped on the editor and picked ----
 
 mod images {
     use super::*;
@@ -2818,8 +2686,6 @@ mod images {
         (handle, note)
     }
 
-    /// A mixed drop on the editor: the image goes in at the block boundary
-    /// under the drop point, the note opens through the shell's routing.
     #[gpui::test]
     fn a_mixed_drop_inserts_images_and_routes_notes(cx: &mut TestAppContext) {
         let env = setup(cx);
@@ -2856,8 +2722,6 @@ mod images {
         assert!(env.root().join("notes/a-assets/shot.png").is_file());
     }
 
-    /// A drop of anything but notes, folders and images keeps the window's
-    /// notice; on the sidebar or welcome screen the shell's own drop runs.
     #[gpui::test]
     fn a_drop_without_images_is_routed_as_before(cx: &mut TestAppContext) {
         let env = setup(cx);
@@ -2880,9 +2744,6 @@ mod images {
         assert_eq!(editor_doc, "text\n", "nothing inserted");
     }
 
-    /// US-068: with the caret in a block image's source the palette offers
-    /// its preset widths, Original size only once it has a size; the
-    /// command writes the width in the active note.
     #[gpui::test]
     fn the_palette_offers_the_preset_widths_of_the_image_at_the_caret(cx: &mut TestAppContext) {
         use crate::editor::resize::Preset;
@@ -2933,9 +2794,6 @@ mod images {
         assert_eq!(doc(cx, handle), "Intro\n\n![a](a.png)\n");
     }
 
-    /// US-069: with the caret in a block image's source the palette offers
-    /// the image's actions that apply (Copy and Open need its file); they
-    /// run in the active note.
     #[gpui::test]
     fn the_palette_offers_the_actions_of_the_image_at_the_caret(cx: &mut TestAppContext) {
         use crate::editor::image_actions::ImageAction;
@@ -2989,8 +2847,6 @@ mod images {
         );
     }
 
-    /// "Insert image…" in the palette reaches the active note and inserts
-    /// what the picker returns at the caret.
     #[gpui::test]
     fn the_palette_command_inserts_picked_images(cx: &mut TestAppContext) {
         let env = setup(cx);
@@ -3024,8 +2880,6 @@ mod images {
         );
     }
 
-    /// A tab closed while its images are copied: nothing is inserted, the
-    /// note on disk is untouched, and the copies stay.
     #[gpui::test]
     fn closing_the_tab_during_a_copy_inserts_nothing(cx: &mut TestAppContext) {
         let env = setup(cx);
@@ -3035,7 +2889,6 @@ mod images {
         std::fs::write(&a, png()).unwrap();
         let editor = editor(cx, handle);
         let weak = editor.downgrade();
-        // Added and closed in one turn: the copy is still pending.
         handle
             .update(cx, |view, window, cx| {
                 editor.update(cx, |e, cx| {
@@ -3070,21 +2923,17 @@ mod images {
     }
 }
 
-// ---- EP-016: Ctrl+N without a library (US-079), the switcher (US-080) ----
-
 fn new_note_key(cx: &mut TestAppContext, handle: WindowHandle<WindowView>) {
     focus_shell(cx, handle);
     keys(cx, handle, secondary!("n"));
 }
 
-/// US-079: Ctrl+N in a window without a library, in its three cases.
 #[gpui::test]
 fn ctrl_n_without_a_library_goes_to_the_default_one(cx: &mut TestAppContext) {
     use crate::palette::Intent;
     let env = setup(cx);
     no_restore(&env);
 
-    // No default library: the form's Name field takes the focus.
     let handle = welcome_window(cx);
     new_note_key(cx, handle);
     let focused = update(cx, handle, |view, window, cx| {
@@ -3093,7 +2942,6 @@ fn ctrl_n_without_a_library_goes_to_the_default_one(cx: &mut TestAppContext) {
     assert!(focused);
     assert!(read(cx, handle, |view, _| view.workspace.is_none()));
 
-    // A default library: it opens here, with "Create New File" at its root.
     let parent = env.root();
     let library = cx
         .update(|cx| app::core(cx).libraries.create(&parent, "Notes"))
@@ -3107,8 +2955,6 @@ fn ctrl_n_without_a_library_goes_to_the_default_one(cx: &mut TestAppContext) {
     );
     assert_eq!(palette_intent(cx, handle), Some(Intent::CreateFile));
 
-    // A default library that is gone: nothing is created, the notice says
-    // so with "Locate…" and "Remove from List".
     update(cx, handle, |view, window, cx| {
         view.close_palette(window, cx);
         view.close_workspace(window, cx);
@@ -3173,8 +3019,6 @@ fn a_long_notice_wraps_and_keeps_its_dismiss_button_in_the_window(cx: &mut TestA
     );
 }
 
-/// Renames `from` to `to`, retrying while Windows still holds a handle of
-/// a closed library (its watcher drops on another thread).
 fn rename_folder(from: &Path, to: &Path) {
     let deadline = Instant::now() + Duration::from_secs(10);
     while let Err(error) = std::fs::rename(from, to) {
@@ -3194,9 +3038,6 @@ fn palette_choose(
     });
 }
 
-/// US-080: "Switch Library…" lists the registry, opens by the routing,
-/// offers its actions with Tab, and a library that is not found is
-/// located, or a wrong folder refused.
 #[gpui::test]
 fn switch_library_opens_sets_default_removes_and_locates(cx: &mut TestAppContext) {
     use crate::palette::{Choice, Command, Intent, LibraryAction};
@@ -3216,7 +3057,6 @@ fn switch_library_opens_sets_default_removes_and_locates(cx: &mut TestAppContext
         .unwrap();
     cx.run_until_parked();
 
-    // The command lists every library, filtered by typing.
     update(cx, first, |view, window, cx| {
         view.run_command(Command::SwitchLibrary, window, cx)
     });
@@ -3229,7 +3069,6 @@ fn switch_library_opens_sets_default_removes_and_locates(cx: &mut TestAppContext
     vcx.run_until_parked();
     assert_eq!(choices(cx, first), [Choice::Library(lib_b.id.clone())]);
 
-    // Tab lists its actions; "Set as Default" makes it the default.
     keys(cx, first, "tab");
     assert_eq!(
         choices(cx, first),
@@ -3244,8 +3083,6 @@ fn switch_library_opens_sets_default_removes_and_locates(cx: &mut TestAppContext
     let default = cx.update(|cx| app::core(cx).libraries.default_library().unwrap());
     assert_eq!(default.map(|l| l.id), Some(lib_b.id.clone()));
 
-    // Choosing it opens a new window (this one shows Alpha); choosing
-    // Alpha from there brings the first window forward.
     update(cx, first, |view, window, cx| {
         view.open_palette(Intent::Libraries, window, cx)
     });
@@ -3267,7 +3104,6 @@ fn switch_library_opens_sets_default_removes_and_locates(cx: &mut TestAppContext
     palette_choose(cx, second, Choice::Library(lib_a.id.clone()));
     assert_eq!(windows(cx).len(), 2, "Alpha's window is revealed");
 
-    // "Remove from List" forgets it and touches no file.
     update(cx, second, |view, window, cx| {
         view.open_palette(Intent::Libraries, window, cx)
     });
@@ -3288,8 +3124,6 @@ fn switch_library_opens_sets_default_removes_and_locates(cx: &mut TestAppContext
     assert_eq!(ids, std::slice::from_ref(&lib_b.id));
     assert!(cerata_core::paths::library_marker_path(&a).is_file());
 
-    // A library that is not found: choosing it shows "Locate…" and
-    // "Remove from List" instead of opening it.
     let gamma = env.folder("Gamma");
     let lib_c = cx.update(|cx| app::core(cx).libraries.resolve(&gamma).unwrap().library);
     let moved = env.root().join("Gamma moved");
@@ -3311,8 +3145,6 @@ fn switch_library_opens_sets_default_removes_and_locates(cx: &mut TestAppContext
     keys(cx, second, "escape");
     assert!(read(cx, second, |view, _| view.palette.is_none()));
 
-    // "Locate…" on the wrong folder: nothing changes, and the notice
-    // offers to open it as a new library.
     cx.update(|cx| libraries::located(cx, &lib_c.id, b.clone(), Some(second)));
     cx.run_until_parked();
     assert_eq!(
@@ -3336,7 +3168,6 @@ fn switch_library_opens_sets_default_removes_and_locates(cx: &mut TestAppContext
     });
     assert_eq!(path_of_c, gamma);
 
-    // On the right folder: its place is updated and it opens.
     cx.update(|cx| libraries::located(cx, &lib_c.id, moved.clone(), Some(second)));
     cx.run_until_parked();
     let path_of_c = cx.update(|cx| {
@@ -3356,8 +3187,6 @@ fn switch_library_opens_sets_default_removes_and_locates(cx: &mut TestAppContext
     assert!(opened);
 }
 
-/// Escape out of the palette on a page without an editor gives the focus
-/// back to the shell: the shortcuts work again (found in the EP-016 run).
 #[gpui::test]
 fn dismissing_the_palette_on_a_new_tab_keeps_the_shortcuts(cx: &mut TestAppContext) {
     use crate::palette::Intent;

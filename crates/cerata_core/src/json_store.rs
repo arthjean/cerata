@@ -1,15 +1,3 @@
-//! Small JSON files in the app data directory (sessions, pins, the library
-//! registry), read and written under an inter-process lock and replaced
-//! atomically.
-//!
-//! Fixes Writer defect 6: sessions and recent workspaces were written with
-//! a plain `fs::write`, without a lock, so two windows or two processes
-//! could interleave and a crash could leave a truncated file. A corrupt
-//! file is set aside as `{name}.corrupt-{YYYYMMDD-HHMMSS}` and replaced by
-//! an empty value instead of being silently discarded. Any other read
-//! error fails the call (US-074): an unreadable file is never replaced by
-//! an empty value.
-
 use crate::fs::atomic::atomic_write;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -34,7 +22,6 @@ pub enum StoreError {
     },
 }
 
-/// One JSON file holding a `T`.
 #[derive(Debug, Clone)]
 pub struct JsonStore {
     path: PathBuf,
@@ -49,15 +36,11 @@ impl JsonStore {
         &self.path
     }
 
-    /// Reads the value under the lock: a missing file is `T::default()`, a
-    /// corrupt one is set aside and read as `T::default()`, and any other
-    /// read error is returned.
     pub fn load<T: DeserializeOwned + Default>(&self) -> Result<T, StoreError> {
         let _lock = self.lock()?;
         self.read_unlocked(|_| None)
     }
 
-    /// Reads with a fallback decoder for older formats, under the lock.
     pub fn load_with<T: DeserializeOwned + Default>(
         &self,
         migrate: impl Fn(&str) -> Option<T>,
@@ -66,8 +49,6 @@ impl JsonStore {
         self.read_unlocked(migrate)
     }
 
-    /// Read-modify-write under the lock, then an atomic replace. A read
-    /// error returns before `change` runs, and nothing is written.
     pub fn update<T, R>(&self, change: impl FnOnce(&mut T) -> R) -> Result<R, StoreError>
     where
         T: DeserializeOwned + Serialize + Default,
@@ -102,7 +83,6 @@ impl JsonStore {
             Ok(data) => data,
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(T::default()),
             Err(error) if error.kind() == io::ErrorKind::InvalidData => {
-                // Not UTF-8: as unusable as invalid JSON.
                 self.quarantine(&error)?;
                 return Ok(T::default());
             }
@@ -120,10 +100,6 @@ impl JsonStore {
         })
     }
 
-    /// Moves the file to `{name}.corrupt-{YYYYMMDD-HHMMSS}` (UTC), with a
-    /// `-2`, `-3`, ... suffix when that name is taken, so an earlier
-    /// quarantine is never replaced. A file that cannot be set aside is an
-    /// error: reading it as empty would let `update` write over it.
     fn quarantine(&self, error: &dyn std::fmt::Display) -> Result<(), StoreError> {
         let stamp = utc_stamp(SystemTime::now());
         let corrupt = (1..10_000)
@@ -157,8 +133,6 @@ impl JsonStore {
         }
     }
 
-    /// Exclusive lock on `{path}.lock`, held until the guard drops. Blocks
-    /// other Cerata processes and other threads alike.
     fn lock(&self) -> Result<File, StoreError> {
         if let Some(dir) = self.path.parent() {
             std::fs::create_dir_all(dir).map_err(|source| self.io(source))?;
@@ -183,8 +157,6 @@ impl JsonStore {
     }
 }
 
-/// `YYYYMMDD-HHMMSS` in UTC (days to civil date: Howard Hinnant's
-/// `civil_from_days`).
 pub fn utc_stamp(time: SystemTime) -> String {
     let secs = time
         .duration_since(UNIX_EPOCH)
@@ -300,8 +272,6 @@ mod tests {
         assert_eq!(contents, ["first", "second"]);
     }
 
-    /// A folder in place of the file stands for an unreadable file
-    /// (permission denied on Windows, `EISDIR` on Unix).
     #[test]
     fn unreadable_file_fails_load_and_update_without_writing() {
         let dir = TempDir::new().unwrap();
@@ -328,16 +298,12 @@ mod tests {
         assert!(quarantined(dir.path(), "sessions.json").is_empty());
     }
 
-    /// A corrupt file that cannot be moved aside (held open without delete
-    /// sharing on Windows, in a read-only folder on Unix) fails the call:
-    /// `update` must not write over it.
     #[test]
     fn a_corrupt_file_that_cannot_be_set_aside_is_never_overwritten() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("pins.json");
         std::fs::write(&path, "{ not json").unwrap();
         let store = JsonStore::new(path.clone());
-        // The lock file exists before the folder is locked.
         drop(store.lock().unwrap());
         #[cfg(windows)]
         let _held = {
@@ -375,9 +341,7 @@ mod tests {
     fn utc_stamps_are_civil_dates() {
         let at = |secs| utc_stamp(UNIX_EPOCH + std::time::Duration::from_secs(secs));
         assert_eq!(at(0), "19700101-000000");
-        // 2026-11-03T14:05:09Z
         assert_eq!(at(1_793_714_709), "20261103-140509");
-        // 2024-02-29T23:59:59Z
         assert_eq!(at(1_709_251_199), "20240229-235959");
     }
 }

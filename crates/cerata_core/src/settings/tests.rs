@@ -1,9 +1,3 @@
-//! Settings tests, through the public API the app calls.
-//!
-//! Ported from Writer `config.rs` (21 tests), `commands/settings.rs` (1 test)
-//! and `tests/settings-write-order.test.ts` (7 tests); each port names its
-//! Writer original. Adapted expectations are marked "Adapted".
-
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -35,7 +29,6 @@ fn list(items: &[&str]) -> ConfigValue {
     ConfigValue::List(items.iter().map(|item| item.to_string()).collect())
 }
 
-/// Replaces the global config file with a directory so the next read fails.
 fn break_file(path: &Path) {
     let _ = fs::remove_file(path);
     fs::create_dir(path).unwrap();
@@ -44,8 +37,6 @@ fn break_file(path: &Path) {
 fn repair_file(path: &Path) {
     fs::remove_dir(path).unwrap();
 }
-
-// ---------- Criterion 1: schema and defaults ----------
 
 #[test]
 fn schema_loads_all_43_keys_with_writer_defaults() {
@@ -77,8 +68,6 @@ fn schema_loads_all_43_keys_with_writer_defaults() {
     assert_eq!(settings.get("not.a-key"), None);
 }
 
-/// Ported from Writer `tests/settings-schema.test.ts` (typography and
-/// default terminal contracts).
 #[test]
 fn schema_keeps_writer_typography_and_terminal_contracts() {
     let schema = Schema::embedded().unwrap();
@@ -106,8 +95,6 @@ fn schema_keeps_writer_typography_and_terminal_contracts() {
     let prose = r#"-apple-system-body, ui-sans-serif, -apple-system, system-ui, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol""#;
     let mono = r#"ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace"#;
     let default_of = |key: &str| schema.get(key).unwrap().default.clone();
-    // Writer's stacks on macOS; elsewhere without the San Francisco
-    // families (US-029).
     let os = |stack: String| {
         text(&crate::settings::schema::platform_font_stack(
             &stack,
@@ -161,9 +148,6 @@ fn every_schema_default_matches_its_type_and_bounds() {
     }
 }
 
-// ---------- Criterion 2: layers ----------
-
-/// Ported from Writer `test_settings_merge_order`.
 #[test]
 fn test_settings_merge_order() {
     let dir = tempfile::tempdir().unwrap();
@@ -190,7 +174,6 @@ fn test_settings_merge_order() {
     assert_eq!(settings.get("editor.font-size"), Some(number(18.0)));
 }
 
-/// Ported from Writer `test_settings_workspace_override`.
 #[test]
 fn test_settings_workspace_override() {
     let dir = tempfile::tempdir().unwrap();
@@ -212,9 +195,6 @@ fn test_settings_workspace_override() {
     );
 }
 
-/// Ported from Writer `global_setting_lookup_ignores_workspace_overrides`.
-/// Adapted: the workspace line is also reported as a `GlobalOnly` warning,
-/// and the rejected write is a typed `SettingsError::GlobalOnly`.
 #[test]
 fn global_setting_lookup_ignores_workspace_overrides() {
     let dir = tempfile::tempdir().unwrap();
@@ -273,10 +253,6 @@ fn workspace_write_without_workspace_is_a_typed_error() {
     ));
 }
 
-// ---------- Criterion 3: format round trip ----------
-
-/// Ported from Writer `test_parse_simple`. Adapted: Writer's schema-less
-/// `key`, `number` and `bool` keys become schema keys of those types.
 #[test]
 fn test_parse_simple() {
     let dir = tempfile::tempdir().unwrap();
@@ -296,7 +272,6 @@ fn test_parse_simple() {
     );
 }
 
-/// Ported from Writer `test_parse_comments_and_blanks`.
 #[test]
 fn test_parse_comments_and_blanks() {
     let dir = tempfile::tempdir().unwrap();
@@ -308,7 +283,6 @@ fn test_parse_comments_and_blanks() {
     assert_eq!(settings.get("appearance.theme"), Some(text("dark")));
 }
 
-/// Ported from Writer `test_parse_dotted_keys`.
 #[test]
 fn test_parse_dotted_keys() {
     let dir = tempfile::tempdir().unwrap();
@@ -320,8 +294,6 @@ fn test_parse_dotted_keys() {
     assert_eq!(settings.get("appearance.theme"), Some(text("dark")));
 }
 
-/// Ported from Writer `test_parse_list_values`. Adapted: `files.exclude` is
-/// not a schema key; `files.associations` is the schema's list.
 #[test]
 fn test_parse_list_values() {
     let dir = tempfile::tempdir().unwrap();
@@ -357,8 +329,6 @@ fn list_writes_one_line_per_item_and_round_trips_an_empty_list() {
     assert_eq!(open(dir.path()).get("files.associations"), Some(list(&[])));
 }
 
-/// Ported from Writer `test_serialize_preserves_comments`. Adapted: asserts
-/// the exact text, so order is checked too.
 #[test]
 fn test_serialize_preserves_comments() {
     let dir = tempfile::tempdir().unwrap();
@@ -378,9 +348,6 @@ fn test_serialize_preserves_comments() {
     );
 }
 
-/// Ported from Writer `test_serialize_appends_new_keys`. Adapted: a new key
-/// goes to its schema position, not to the end (`editor.tab-size` precedes
-/// `appearance.theme` in the schema).
 #[test]
 fn test_serialize_appends_new_keys() {
     let dir = tempfile::tempdir().unwrap();
@@ -397,9 +364,6 @@ fn test_serialize_appends_new_keys() {
     );
 }
 
-/// Defect fix: Writer appended new keys in `HashMap` order. Cerata inserts
-/// them in schema order whatever the write order, keeps a comment attached
-/// to the key below it, and leaves unknown lines alone.
 #[test]
 fn new_keys_are_inserted_in_schema_order() {
     let dir = tempfile::tempdir().unwrap();
@@ -422,7 +386,6 @@ fn new_keys_are_inserted_in_schema_order() {
     );
 }
 
-/// Ported from Writer `test_remove_key`.
 #[test]
 fn test_remove_key() {
     let dir = tempfile::tempdir().unwrap();
@@ -437,9 +400,6 @@ fn test_remove_key() {
     );
 }
 
-/// Ported from Writer `test_roundtrip`. Adapted: rewriting a key to its
-/// current value leaves the file byte-identical, and a change touches only
-/// that key's line.
 #[test]
 fn test_roundtrip() {
     let dir = tempfile::tempdir().unwrap();
@@ -475,8 +435,6 @@ fn crlf_line_endings_are_preserved() {
     );
 }
 
-/// Ported from Writer `test_value_with_equals_sign`. Adapted: Writer's
-/// `template` key is not in the schema, and its value had no `=` in it.
 #[test]
 fn test_value_with_equals_sign() {
     let dir = tempfile::tempdir().unwrap();
@@ -487,8 +445,6 @@ fn test_value_with_equals_sign() {
     );
 }
 
-/// Ported from Writer `test_parse_false_value`. Adapted: `editor.spell-check`
-/// is not in the schema.
 #[test]
 fn test_parse_false_value() {
     let dir = tempfile::tempdir().unwrap();
@@ -499,7 +455,6 @@ fn test_parse_false_value() {
     );
 }
 
-/// Ported from Writer `test_parse_float`.
 #[test]
 fn test_parse_float() {
     let dir = tempfile::tempdir().unwrap();
@@ -507,7 +462,6 @@ fn test_parse_float() {
     assert_eq!(settings.get("editor.line-height"), Some(number(1.6)));
 }
 
-/// Ported from Writer `terminal_string_setting_preserves_lexical_value_across_reload_and_reset`.
 #[test]
 fn terminal_string_setting_preserves_lexical_value_across_reload_and_reset() {
     for value in ["TRUE", "00123", "1e3"] {
@@ -531,7 +485,6 @@ fn terminal_string_setting_preserves_lexical_value_across_reload_and_reset() {
     }
 }
 
-/// Ported from Writer `terminal_string_setting_trims_at_the_settings_boundary`.
 #[test]
 fn terminal_string_setting_trims_at_the_settings_boundary() {
     let dir = tempfile::tempdir().unwrap();
@@ -553,10 +506,6 @@ fn terminal_string_setting_trims_at_the_settings_boundary() {
     assert_eq!(settings.get("workspace.default-terminal"), Some(text("")));
 }
 
-// ---------- Criterion 4: write ordering ----------
-
-/// Ported from `settings-write-order.test.ts`: "serializes backend writes
-/// for the same key while updating UI optimistically".
 #[test]
 fn serializes_writes_for_the_same_key_while_reading_optimistically() {
     let dir = tempfile::tempdir().unwrap();
@@ -580,9 +529,6 @@ fn serializes_writes_for_the_same_key_while_reading_optimistically() {
     assert_eq!(settings.get("fonts.editor"), Some(text("Second, serif")));
 }
 
-/// Ported from `settings-write-order.test.ts`: "reconciles optimistic state
-/// to the canonical value returned by the backend". Adapted: validation runs
-/// before the optimistic update, so the canonical value is visible at once.
 #[test]
 fn optimistic_value_is_already_canonical() {
     let dir = tempfile::tempdir().unwrap();
@@ -610,8 +556,6 @@ fn optimistic_value_is_already_canonical() {
     assert_eq!(settings.get("editor.zoom"), Some(number(300.0)));
 }
 
-/// Ported from `settings-write-order.test.ts`: "does not republish settings
-/// when the backend returns the optimistic value unchanged".
 #[test]
 fn unchanged_commit_does_not_bump_the_revision() {
     let dir = tempfile::tempdir().unwrap();
@@ -625,8 +569,6 @@ fn unchanged_commit_does_not_bump_the_revision() {
     assert_eq!(settings.revision(), start + 1);
 }
 
-/// Ported from `settings-write-order.test.ts`: "does not republish an
-/// unchanged list returned as a fresh IPC array".
 #[test]
 fn unchanged_list_does_not_bump_the_revision() {
     let dir = tempfile::tempdir().unwrap();
@@ -650,8 +592,6 @@ fn unchanged_list_does_not_bump_the_revision() {
     assert_eq!(settings.revision(), start + 1);
 }
 
-/// Ported from `settings-write-order.test.ts`: "a stale failed write cannot
-/// roll back a newer optimistic value".
 #[test]
 fn stale_failed_write_cannot_roll_back_a_newer_value() {
     let dir = tempfile::tempdir().unwrap();
@@ -674,8 +614,6 @@ fn stale_failed_write_cannot_roll_back_a_newer_value() {
     assert_eq!(config(dir.path()), "fonts.editor = Second, serif\n");
 }
 
-/// Ported from `settings-write-order.test.ts`: "the latest failed write
-/// rolls back to the last successfully persisted value".
 #[test]
 fn latest_failed_write_rolls_back_to_the_last_persisted_value() {
     let dir = tempfile::tempdir().unwrap();
@@ -695,8 +633,6 @@ fn latest_failed_write_rolls_back_to_the_last_persisted_value() {
     repair_file(&path);
 }
 
-/// Ported from `settings-write-order.test.ts`: "reset stays ordered behind
-/// pending writes and wins in both backend and UI".
 #[test]
 fn reset_stays_ordered_behind_pending_writes_and_wins() {
     let dir = tempfile::tempdir().unwrap();
@@ -721,8 +657,6 @@ fn reset_stays_ordered_behind_pending_writes_and_wins() {
     assert_eq!(settings.get("fonts.editor"), default);
 }
 
-/// The same invariant when commits arrive out of order (background threads
-/// give no ordering guarantee): older writes behind the reset are skipped.
 #[test]
 fn reset_committed_first_supersedes_older_pending_writes() {
     let dir = tempfile::tempdir().unwrap();
@@ -757,7 +691,6 @@ fn dropped_pending_write_cancels_its_optimistic_value() {
     assert_eq!(config(dir.path()), "");
 }
 
-/// Ported from Writer `test_settings_reset`.
 #[test]
 fn test_settings_reset() {
     let dir = tempfile::tempdir().unwrap();
@@ -770,9 +703,6 @@ fn test_settings_reset() {
     assert_eq!(settings.get("editor.font-size"), Some(number(16.0)));
 }
 
-// ---------- Criterion 5: external edits and atomic writes ----------
-
-/// Ported from Writer `stale_settings_instances_merge_global_writes_and_resets`.
 #[test]
 fn stale_settings_instances_merge_global_writes_and_resets() {
     let dir = tempfile::tempdir().unwrap();
@@ -810,8 +740,6 @@ fn stale_settings_instances_merge_global_writes_and_resets() {
     );
 }
 
-/// Defect fix (global file): a write re-reads the file and keeps an edit
-/// made outside Cerata, which the handle also picks up.
 #[test]
 fn write_keeps_external_edit_of_the_global_config() {
     let dir = tempfile::tempdir().unwrap();
@@ -835,8 +763,6 @@ fn write_keeps_external_edit_of_the_global_config() {
     assert_eq!(settings.get("editor.tab-size"), Some(number(8.0)));
 }
 
-/// Defect fix: Writer's `set_workspace` rewrote the workspace config from a
-/// stale in-memory copy, losing an external edit.
 #[test]
 fn workspace_write_keeps_external_edit() {
     let dir = tempfile::tempdir().unwrap();
@@ -871,7 +797,6 @@ fn workspace_write_keeps_external_edit() {
     assert_eq!(settings.get("appearance.theme"), Some(text("dark")));
 }
 
-/// Ported from Writer `reload_global_treats_missing_as_empty_and_preserves_memory_on_read_error`.
 #[test]
 fn reload_global_treats_missing_as_empty_and_preserves_memory_on_read_error() {
     let dir = tempfile::tempdir().unwrap();
@@ -910,12 +835,6 @@ fn reload_global_treats_missing_as_empty_and_preserves_memory_on_read_error() {
     assert!(settings.global_path().is_dir());
 }
 
-/// Ported from Writer `commands/settings.rs`
-/// `global_mutation_and_window_initialization_share_one_process_lock`.
-/// Adapted: Writer blocked window initialization behind a writer to avoid
-/// reading a half-written file. Atomic replacement makes such a read
-/// impossible, so the invariant left to test is the lock's other job: two
-/// windows writing the global config at the same time lose no update.
 #[test]
 fn two_windows_writing_the_global_config_concurrently_lose_no_update() {
     let dir = tempfile::tempdir().unwrap();
@@ -930,7 +849,6 @@ fn two_windows_writing_the_global_config_concurrently_lose_no_update() {
                     window
                         .set(key, number(f64::from(value)), Layer::Global)
                         .unwrap();
-                    // A window opened mid-write always parses a whole file.
                     let (_, warnings) = Settings::open(&global_dir(&window)).unwrap();
                     assert!(warnings.is_empty());
                 }
@@ -948,8 +866,6 @@ fn two_windows_writing_the_global_config_concurrently_lose_no_update() {
 fn global_dir(settings: &Settings) -> PathBuf {
     settings.global_path().parent().unwrap().to_path_buf()
 }
-
-// ---------- Criterion 6: invalid values ----------
 
 #[test]
 fn invalid_value_falls_back_to_default_with_a_line_numbered_warning() {
@@ -977,15 +893,12 @@ fn invalid_value_falls_back_to_default_with_a_line_numbered_warning() {
     );
     assert_eq!(settings.get("editor.font-size"), Some(number(16.0)));
     assert_eq!(settings.get("editor.tab-size"), Some(number(4.0)));
-    // Loading never rewrites the file.
     assert_eq!(
         config(dir.path()),
         "# comment\neditor.font-size = abc\neditor.tab-size = 4\n"
     );
 }
 
-/// Writer's `lib/zoom.ts` clamps to the schema bounds and reads garbage as
-/// the default; Cerata applies that to every range key, on load and write.
 #[test]
 fn range_values_are_clamped_to_schema_bounds() {
     let dir = tempfile::tempdir().unwrap();
@@ -1077,8 +990,6 @@ fn malformed_unknown_and_duplicate_lines_warn_and_survive_writes() {
     );
 }
 
-// ---------- Criterion 7: paths and skipped migrations ----------
-
 #[test]
 fn config_paths_come_from_cerata_paths() {
     let dir = tempfile::tempdir().unwrap();
@@ -1096,9 +1007,6 @@ fn config_paths_come_from_cerata_paths() {
     );
 }
 
-/// Ported from Writer `test_theme_font_migration`. Adapted: the migration
-/// is Writer-legacy and skipped. The old keys are unknown keys: they warn,
-/// do not feed `fonts.*`, and stay in the file untouched.
 #[test]
 fn test_theme_font_migration() {
     let dir = tempfile::tempdir().unwrap();
@@ -1126,9 +1034,6 @@ fn test_theme_font_migration() {
     assert!(config(dir.path()).starts_with(legacy));
 }
 
-/// Ported from Writer `test_editor_width_migration`. Adapted: skipped like
-/// the font migration; `appearance.editor-width` is an unknown key and
-/// `editor.content-width` keeps its default.
 #[test]
 fn test_editor_width_migration() {
     let dir = tempfile::tempdir().unwrap();

@@ -1,8 +1,3 @@
-//! The US-031 corpus: one diagram per type Pele 1.13.0 supports (the
-//! `DiagramType` union of `dist/detect.d.ts`) and 100 common formulas.
-//! The first 22 diagrams are Writer's own samples
-//! (`apps/desktop/tests/mermaid.test.ts:22-45`).
-
 pub const DIAGRAMS: &[(&str, &str)] = &[
     (
         "flowchart",
@@ -114,7 +109,6 @@ pub const DIAGRAMS: &[(&str, &str)] = &[
     ),
 ];
 
-/// Common formulas, in the KaTeX subset Writer's notes use.
 pub const FORMULAS: &[&str] = &[
     r"x^2",
     r"x_i",

@@ -1,4 +1,3 @@
-//! US-031 binary weight: Pele 1.13.0 in QuickJS, bundle embedded.
 const PELE: &str = include_str!(concat!(
     env!("CERATA_SPIKE_JS"),
     "/pele/package/dist/pele.global.js"

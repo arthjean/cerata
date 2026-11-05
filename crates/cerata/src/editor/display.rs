@@ -1,15 +1,8 @@
-//! Display map of one line: buffer offsets to offsets in the shaped text
-//! once hidden syntax is removed and folded syntax replaced by its glyph.
-
 use std::ops::Range;
 
-/// A run of the line: source shown as is, or replaced (by an empty string
-/// when hidden).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Segment {
-    /// Line-relative buffer range.
     pub buffer: Range<usize>,
-    /// Range in [`DisplayLine::text`].
     pub display: Range<usize>,
     pub source: bool,
 }
@@ -22,8 +15,6 @@ pub struct DisplayLine {
 }
 
 impl DisplayLine {
-    /// `line` with each `(range, replacement)` applied; ranges are
-    /// line-relative, sorted and disjoint, and an empty replacement hides.
     pub fn new(line: &str, replacements: &[(Range<usize>, String)]) -> Self {
         let mut text = String::with_capacity(line.len());
         let mut segments = Vec::new();
@@ -74,8 +65,6 @@ impl DisplayLine {
         Self::new(line, &[])
     }
 
-    /// Display offset of a line-relative buffer offset. An offset inside a
-    /// replaced run maps to where the run starts.
     pub fn to_display(&self, buffer: usize) -> usize {
         for segment in &self.segments {
             if buffer < segment.buffer.end || buffer == segment.buffer.start {
@@ -89,11 +78,6 @@ impl DisplayLine {
         self.text.len()
     }
 
-    /// Buffer offset of a display offset. At the edge of hidden syntax the
-    /// offset skips it forward, so a selection that ends after visible text
-    /// includes the markup that follows it and a click at the start of a
-    /// heading lands after its hidden `# `. Inside a replacement glyph it
-    /// goes to the end of the replaced source.
     pub fn to_buffer(&self, display: usize) -> usize {
         for segment in &self.segments {
             if display < segment.display.end {
@@ -109,7 +93,6 @@ impl DisplayLine {
         self.buffer_len
     }
 
-    /// Visible source runs with their display start, for styling.
     pub fn source_runs(&self) -> impl Iterator<Item = &Segment> {
         self.segments.iter().filter(|s| !s.display.is_empty())
     }
@@ -126,7 +109,6 @@ mod tests {
 
     #[test]
     fn maps_offsets_across_hidden_ranges() {
-        // "a **b** c" with both `**` hidden: display "a b c".
         let line = DisplayLine::new("a **b** c", &hide(&[2..4, 5..7]));
         assert_eq!(line.text, "a b c");
         assert_eq!(line.to_display(0), 0);

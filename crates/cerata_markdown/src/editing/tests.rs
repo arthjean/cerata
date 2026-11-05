@@ -22,7 +22,6 @@ fn run(command: fn(&mut EditorState) -> bool, doc: &str) -> Option<String> {
     command(&mut s).then(|| marked_doc(&s))
 }
 
-// Ported from Writer `tests/blockquote-enter.test.ts:34-58`.
 #[test]
 fn enter_on_an_empty_quote_line_removes_one_level() {
     let enter = EditorState::blockquote_enter;
@@ -47,7 +46,6 @@ fn enter_on_an_empty_quote_line_removes_one_level() {
 #[test]
 fn enter_runs_the_handlers_in_writers_order() {
     let enter = EditorState::insert_newline;
-    // Quote, then list, then the indent-only line, then markup, then plain.
     assert_eq!(run(enter, "> a\n> |").as_deref(), Some("> a\n|"));
     assert_eq!(run(enter, "- a|").as_deref(), Some("- a\n- |"));
     assert_eq!(
@@ -63,12 +61,10 @@ fn enter_runs_the_handlers_in_writers_order() {
     assert_eq!(run(enter, "> - a|").as_deref(), Some("> - a\n> - |"));
     assert_eq!(run(enter, "  para|").as_deref(), Some("  para\n  |"));
     assert_eq!(run(enter, "plain|").as_deref(), Some("plain\n|"));
-    // In a fence nothing list-like happens.
     assert_eq!(
         run(enter, "```\n- |\n```").as_deref(),
         Some("```\n- \n|\n```")
     );
-    // Multiple carets each get a newline.
     let mut s = EditorState::new("a\nb");
     s.select(Selection::new(
         vec![SelectionRange::cursor(1), SelectionRange::cursor(3)],
@@ -137,17 +133,14 @@ fn home_and_end_go_to_visual_line_boundaries() {
     };
     assert_eq!(end("a|bc\nd"), "abc|\nd");
     assert_eq!(home("ab|c"), "|abc");
-    // Home stops at the first non-blank first, then at the line start.
     assert_eq!(home("   ab|c"), "   |abc");
     assert_eq!(home("   |abc"), "|   abc");
-    // A wrapped row: the renderer's visual line decides.
     let mut s = marked("hello |world again");
     let rows = |pos: usize| if pos < 6 { 0..6 } else { 6..17 };
     assert!(s.move_line_boundary(true, false, &rows));
     assert_eq!(s.selection().main().head, 17);
     assert!(s.move_line_boundary(false, true, &rows));
     assert_eq!(s.selection().main(), SelectionRange::new(17, 6));
-    // A row boundary on the wrong side falls back to the document line.
     let mut s = marked("abc|def");
     assert!(s.move_line_boundary(true, false, &|_| 0..1));
     assert_eq!(s.selection().main().head, 6);
@@ -180,12 +173,10 @@ fn code_blocks_label_their_language_and_copy_without_fences() {
         (blocks[2].kind, blocks[2].code.as_str()),
         (CodeBlockKind::Indented, "indented\ncode")
     );
-    // An unclosed fence of an unknown language: code to the end.
     assert_eq!(
         (blocks[3].label.as_str(), blocks[3].code.as_str()),
         ("FOO", "z\n")
     );
-    // The caret right after a closing fence is still in its block.
     let after = doc.find("```\n\n").unwrap() + 3;
     assert_eq!(
         code_block_at(s.tree(), after).map(|n| n.kind()),
@@ -247,7 +238,6 @@ fn code_quote_and_tab_chrome() {
         },
         block: false
     }));
-    // The nested quote's bar sits at its inner `>`.
     assert!(d.contains(&Decoration::Widget {
         pos: 19,
         widget: Widget::NestedQuoteBorder,

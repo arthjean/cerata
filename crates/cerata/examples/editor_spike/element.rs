@@ -1,7 +1,3 @@
-//! The virtualized editor element: lays out only the lines around the
-//! viewport, each at its own font size, and paints selection, text, block
-//! images, IME marked text and the caret.
-
 use gpui::{
     AnyElement, App, AvailableSpace, Bounds, ContentMask, CursorStyle, ElementId,
     ElementInputHandler, Entity, GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId,
@@ -25,7 +21,6 @@ pub struct PrepaintState {
     lines: Vec<(LaidLine, Pixels)>,
     blocks: Vec<AnyElement>,
     selections: Vec<Bounds<Pixels>>,
-    /// Selected image widgets, painted over the image.
     block_selections: Vec<Bounds<Pixels>>,
     caret: Option<Bounds<Pixels>>,
     hitbox: Hitbox,
@@ -39,7 +34,6 @@ impl IntoElement for EditorElement {
     }
 }
 
-/// The selection overlay of a block widget fully inside the selection.
 pub fn block_selection_rect(
     line: &LaidLine,
     top: Pixels,
@@ -57,8 +51,6 @@ pub fn block_selection_rect(
     )
 }
 
-/// Selection rectangles for the text of one laid-out line whose top is at
-/// `top`.
 pub fn selection_rects(
     line: &LaidLine,
     top: Pixels,
@@ -155,7 +147,6 @@ impl Element for EditorElement {
                 editor.set_scroll_top(max);
             }
 
-            // Lines from the anchor down to the viewport bottom plus margin.
             let anchor = editor.scroll_line;
             let budget = editor.scroll_offset + editor.viewport_height() + LAYOUT_MARGIN;
             let mut below = Vec::new();
@@ -168,8 +159,6 @@ impl Element for EditorElement {
                 }
                 ix += 1;
             }
-            // Then up to the margin above the anchor; their height
-            // corrections do not move the anchor on screen.
             let mut above = Vec::new();
             let mut ix = anchor;
             let mut height_above = 0.0;
@@ -243,8 +232,6 @@ impl Element for EditorElement {
                 window,
                 cx,
             );
-            // Criterion 4: the widget's laid-out height is the height the
-            // height map reserved for the line.
             debug_assert_eq!(measured.height, px(block.height));
             debug_assert_eq!(line.height, block.top + block.height);
             element.prepaint_at(point(column_left, *top + px(block.top)), window, cx);

@@ -1,10 +1,3 @@
-//! The section rail (US-038): one 8 x 1 px mark per heading on the right
-//! edge, the active one opaque, the others at 35 %; hovering opens a
-//! 260 px outline. A click scrolls its heading to the top of the safe zone;
-//! a right click offers "Copy heading link". Hidden under 5 headings.
-//! Ported from `section-rail.tsx:15-200`, `use-active-headings.ts:9-79`
-//! and `section-rail.css`.
-
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -21,33 +14,23 @@ use super::{Autoscroll, Editor, SAFE_MARGIN, SCROLLBAR_WIDTH, theme};
 const TICK_WIDTH: f32 = 8.0;
 const TICK_HEIGHT: f32 = 1.0;
 const TICK_GAP: f32 = 6.0;
-/// Below this many headings a note needs no map.
 pub const MIN_HEADINGS: usize = 5;
 const RAIL_INNER_WIDTH: f32 = TICK_WIDTH + 2.0;
 pub const POPOVER_WIDTH: f32 = 260.0;
 const POPOVER_TRANSITION: Duration = Duration::from_millis(180);
-/// The scroll-to-heading landing line, plus a little jitter
-/// (`ACTIVE_OFFSET_PX`).
 pub const ACTIVE_OFFSET: f64 = SAFE_MARGIN + 4.0;
-/// Writer's default outline depth (`use-document-headings.ts:18`).
 const MAX_DEPTH: u8 = 3;
-/// Headings follow an edit this long after the last keystroke, keeping the
-/// whole-document scan off the typing path (`use-document-headings.ts:85-87`).
 pub const HEADINGS_DEBOUNCE: Duration = Duration::from_millis(150);
-/// One outline row: 13 px text at 1.5, and the 4 px gap under it.
 const ROW_HEIGHT: f32 = 13.0 * 1.5 + 4.0;
 
 #[derive(Default)]
 pub struct Rail {
     pub(super) headings: Rc<Vec<Heading>>,
     revision: Option<u64>,
-    /// The parse waiting for typing to pause, and the revision it is for.
     refresh: Option<(u64, Task<()>)>,
-    /// The outline's rows, virtualized: a long note has thousands.
     outline: UniformListScrollHandle,
     over_rail: bool,
     over_popover: bool,
-    /// Bumped at each opening, to replay the popover's transition.
     openings: usize,
 }
 
@@ -64,14 +47,11 @@ impl Rail {
     }
 }
 
-/// `buildHeadingLink`.
 pub fn heading_link(heading: &Heading) -> String {
     format!("[{}](#{})", heading.text, heading.slug)
 }
 
 impl Editor {
-    /// The note's headings (h1 to h3): parsed when the note opens, then
-    /// [`HEADINGS_DEBOUNCE`] after the last edit.
     pub fn rail_headings(&mut self, cx: &mut Context<Self>) -> Rc<Vec<Heading>> {
         let revision = self.state.revision();
         if self.rail.revision.is_none() {
@@ -86,7 +66,6 @@ impl Editor {
             let task = cx.spawn(async move |this, cx| {
                 cx.background_executor().timer(HEADINGS_DEBOUNCE).await;
                 this.update(cx, |editor, cx| {
-                    // Typing inside a section moves no heading: no frame.
                     if editor.parse_rail_headings() {
                         cx.notify();
                     }
@@ -98,7 +77,6 @@ impl Editor {
         self.rail.headings.clone()
     }
 
-    /// `true` when the headings changed.
     fn parse_rail_headings(&mut self) -> bool {
         let parsed = headings::parse(self.state.doc(), MAX_DEPTH, MAX_DEPTH);
         let changed = *self.rail.headings != parsed;
@@ -110,15 +88,12 @@ impl Editor {
         changed
     }
 
-    /// The last heading above the top of the view plus 144 px, else the
-    /// first (`computeActive`).
     pub fn active_heading(&self, headings: &[Heading]) -> Option<usize> {
         if headings.is_empty() {
             return None;
         }
         let threshold = self.scroll_top() + ACTIVE_OFFSET;
         let mut active = 0;
-        // Lines from before the last edits until the debounced parse.
         let lines = self.heights.len();
         for (i, heading) in headings.iter().enumerate() {
             if self.heights.prefix(heading.line.min(lines)) > threshold {
@@ -165,9 +140,6 @@ impl Editor {
         let view_height = viewport.bounds.size.height.as_f32();
         let active = self.active_heading(&headings);
         let open = self.rail.is_open();
-        // Writer clips the marks to 70 % of the view (`section-rail.tsx`).
-        // Only the marks that fit are built, a window kept around the
-        // active one: a long note has thousands of headings.
         let step = TICK_HEIGHT + TICK_GAP;
         let shown = (((view_height * 0.7) / step).floor().max(1.0) as usize).min(headings.len());
         let first = active
@@ -184,8 +156,6 @@ impl Editor {
                 let pos = heading.pos;
                 let link_heading = heading.clone();
                 let menu_heading = heading.clone();
-                // A Tab stop (Ctrl+M) with a focus ring around the 8 x 1 mark;
-                // Shift+F10 opens its menu.
                 let tick = crate::a11y::button(div().id(("rail-tick", i)), heading.text.clone())
                     .w(px(TICK_WIDTH + 2.0))
                     .h(px(TICK_HEIGHT + TICK_GAP))
@@ -195,7 +165,6 @@ impl Editor {
                         cx.listener(move |editor, event: &KeyDownEvent, window, cx| {
                             let stroke = &event.keystroke;
                             if stroke.key == "f10" && stroke.modifiers.shift {
-                                // Beside the rail, where the outline would open.
                                 let at = editor.viewport.map_or(window.mouse_position(), |v| {
                                     gpui::point(
                                         v.bounds.right() - px(POPOVER_WIDTH),
@@ -243,7 +212,6 @@ impl Editor {
                 editor.rail.over_rail = *hovered;
                 if !was && editor.rail.is_open() {
                     editor.rail.openings += 1;
-                    // The outline opens on the active heading.
                     let headings = editor.rail.headings.clone();
                     if let Some(active) = editor.active_heading(&headings) {
                         editor
@@ -254,7 +222,6 @@ impl Editor {
                 }
                 cx.notify();
             }))
-            // The ticks fade out while the outline shows.
             .when(open, |d| d.opacity(0.0))
             .children(ticks);
         #[cfg(test)]
@@ -322,7 +289,6 @@ impl Editor {
     }
 }
 
-/// One outline row: the heading's text, the active one in the accent color.
 fn outline_row(i: usize, heading: &Heading, active: bool, cx: &mut Context<Editor>) -> AnyElement {
     let pos = heading.pos;
     let link_heading = heading.clone();

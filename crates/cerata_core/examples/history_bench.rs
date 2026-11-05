@@ -1,33 +1,3 @@
-//! History growth benchmark (US-088; docs/benchmarks.md).
-//!
-//! cargo run -p cerata_core --release --example history_bench -- year [seed]
-//! cargo run -p cerata_core --release --example history_bench -- record [versions]
-//!
-//! cargo run -p cerata_core --release --example history_bench -- merge [runs]
-//!
-//! `merge` times the three-way merge of a 1 MB note (US-092): the buffer
-//! and the disk each changed 50 paragraphs of their own, plus 5 both
-//! changed differently (conflicts).
-//!
-//! `record` times what a version adds to a save of a 100 KB note through
-//! the history itself (`History::record`, then the wait for its commit:
-//! hash, delta on the previous version, zstd, insert), off the UI thread.
-//!
-//! Simulates one year of sustained use: 300 notes of 1 to 20 KB, 20 notes
-//! edited a day in typing sessions, a version when typing pauses for 30 s
-//! and at the end of each session, identical successive contents kept once,
-//! and the retention tiers (`history::retention`) applied at the end of
-//! each simulated day. The versions left at the end are then stored with
-//! three codecs, each in a SQLite file of the history's shape (one row per
-//! version, one per distinct blob), vacuumed, and measured:
-//!
-//! - `zstd-3`: each blob compressed alone, zstd level 3;
-//! - `zstd-3+dict`: the same with a dictionary trained on the 300 notes as
-//!   first written (more than 100 samples, as zstd's guide asks);
-//! - `delta+zstd-3`: each blob compressed with the note's previous kept
-//!   version as zstd's dictionary (a delta), the first one alone and one
-//!   in every `MAX_CHAIN + 1` alone again, as the history stores them.
-
 use cerata_core::history::retention::{Dated, kept};
 use rusqlite::{Connection, params};
 use std::collections::HashMap;
@@ -42,12 +12,9 @@ const MAX_NOTE: usize = 20 * 1024;
 const PAUSE_FOR_VERSION: i64 = 30;
 const LEVEL: i32 = 3;
 const DICT_SIZE: usize = 64 * 1024;
-/// A delta chain longer than this starts again from a full blob, as the
-/// history does (`history::MAX_CHAIN`).
 const MAX_CHAIN: usize = cerata_core::history::MAX_CHAIN;
 const DAY: i64 = 86_400;
 const WARMUPS: usize = 3;
-/// 2026-01-01T00:00:00Z.
 const START: i64 = 1_767_225_600;
 
 fn main() -> ExitCode {
@@ -74,8 +41,6 @@ fn main() -> ExitCode {
     }
 }
 
-// Text -------------------------------------------------------------------
-
 struct Rng(u64);
 
 impl Rng {
@@ -99,8 +64,6 @@ impl Rng {
     }
 }
 
-/// Sentences of real Markdown prose: those of the repository's ADRs and
-/// research notes (French), so the text compresses as notes do.
 struct Words(Vec<String>);
 
 impl Words {
@@ -186,20 +149,17 @@ fn render(blocks: &[String]) -> String {
     text
 }
 
-/// One typing burst: a few edits of the note's blocks.
 fn burst(blocks: &mut Vec<String>, words: &Words, rng: &mut Rng, cap: usize) {
     for _ in 0..rng.range(1, 3) {
         let at = rng.range(1, blocks.len().saturating_sub(1).max(1));
         match rng.below(20) {
             0..=6 => {
-                // Extend a paragraph with a sentence.
                 if let Some(block) = blocks.get_mut(at) {
                     block.push(' ');
                     block.push_str(&words.sentence(rng));
                 }
             }
             7..=12 => {
-                // Rewrite a word.
                 if let Some(block) = blocks.get_mut(at) {
                     let spaces: Vec<usize> = block.match_indices(' ').map(|(i, _)| i).collect();
                     if spaces.len() > 2 {
@@ -217,13 +177,11 @@ fn burst(blocks: &mut Vec<String>, words: &Words, rng: &mut Rng, cap: usize) {
                 }
             }
             15 => {
-                // Delete a paragraph.
                 if blocks.len() > 3 {
                     blocks.remove(at);
                 }
             }
             _ => {
-                // Delete a sentence.
                 if let Some(block) = blocks.get_mut(at)
                     && let Some(dot) = block.find(". ")
                 {
@@ -237,8 +195,6 @@ fn burst(blocks: &mut Vec<String>, words: &Words, rng: &mut Rng, cap: usize) {
         blocks.remove(at);
     }
 }
-
-// Simulation -------------------------------------------------------------
 
 struct Version {
     ts: i64,
@@ -265,7 +221,6 @@ fn year(seed: u64) -> Result<(), String> {
         })
         .collect();
     let first_texts: Vec<String> = notes.iter().map(|note| render(&note.blocks)).collect();
-    // A working set: most days edit the same notes.
     let active: Vec<usize> = (0..40).map(|_| rng.below(NOTES)).collect();
 
     let mut created = 0usize;
@@ -295,7 +250,6 @@ fn year(seed: u64) -> Result<(), String> {
                 edited.push(n);
             }
         }
-        // (time, note) of each session, in time order.
         let mut sessions: Vec<(i64, usize)> = Vec::new();
         for &n in &edited {
             for _ in 0..rng.range(1, 3) {
@@ -313,7 +267,6 @@ fn year(seed: u64) -> Result<(), String> {
                 let last = b + 1 == bursts;
                 let long_pause = rng.chance(0.4);
                 if last || long_pause {
-                    // The version comes 30 s after the last keystroke.
                     if record(note, ts + PAUSE_FOR_VERSION, &mut contents) {
                         created += 1;
                         today += 1;
@@ -325,7 +278,6 @@ fn year(seed: u64) -> Result<(), String> {
             }
         }
         created_per_day.push(today);
-        // Retention at the end of the day.
         let now = day_start + DAY - 1;
         for note in &mut notes {
             let dated: Vec<Dated> = note
@@ -405,7 +357,6 @@ impl Codec {
     }
 }
 
-/// Size of a vacuumed SQLite file holding the kept versions with `codec`.
 fn store_size(
     path: &std::path::Path,
     codec: Codec,
@@ -489,7 +440,6 @@ fn store_size(
         .map_err(|e| e.to_string())
 }
 
-/// p50, p99 and max of the time a version of a 100 KB note takes.
 fn record(count: usize) -> Result<(), String> {
     use cerata_core::epoch::EpochCounter;
     use cerata_core::history::device::Device;
@@ -545,7 +495,6 @@ fn record(count: usize) -> Result<(), String> {
     Ok(())
 }
 
-/// The merge of a 1 MB note, `runs` times after the warm-ups.
 fn merge(runs: usize) -> Result<(), String> {
     use cerata_core::merge::merge;
     let words = Words::new()?;

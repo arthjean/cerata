@@ -1,11 +1,5 @@
-//! Deterministic Markdown fixture: H1 to H6, wrapped paragraphs with strong
-//! text and links, and block images whose heights are not multiples of the
-//! line height. The generator is committed instead of a 1 MB file.
-
 use std::path::Path;
 
-/// Natural sizes of the generated figures (width, height). After scaling to
-/// the 720 px column none of them is a multiple of the 30 px body row.
 pub const FIGURES: [(u32, u32); 4] = [(640, 251), (480, 173), (800, 333), (1000, 397)];
 
 const WORDS: [&str; 48] = [
@@ -113,7 +107,6 @@ fn paragraph(rng: &mut Lcg, out: &mut String, section: usize, sentences: usize) 
     out.push_str("\n\n");
 }
 
-/// Generates at least `min_bytes` of Markdown. Same input, same output.
 pub fn generate(min_bytes: usize) -> String {
     let mut rng = Lcg(0x5eed_cafe);
     let mut out = String::with_capacity(min_bytes + 4096);
@@ -168,7 +161,6 @@ pub fn figure_svg(index: usize) -> String {
     )
 }
 
-/// Writes `spike-1mb.md` and its figures into `dir`, returns the note path.
 pub fn write(dir: &Path) -> anyhow::Result<std::path::PathBuf> {
     let images = dir.join("images");
     std::fs::create_dir_all(&images)?;
@@ -183,8 +175,6 @@ pub fn write(dir: &Path) -> anyhow::Result<std::path::PathBuf> {
     Ok(path)
 }
 
-/// Natural size of an SVG (from its `width`/`height` attributes) or a PNG
-/// (from its IHDR chunk), read without decoding the image.
 pub fn image_natural_size(bytes: &[u8]) -> Option<(f32, f32)> {
     if bytes.len() >= 24 && bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         let w = u32::from_be_bytes(bytes[16..20].try_into().ok()?);

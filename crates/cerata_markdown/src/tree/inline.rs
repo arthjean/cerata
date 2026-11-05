@@ -1,13 +1,3 @@
-//! Inline parser: a port of `@lezer/markdown` 1.6.3's `InlineContext` and
-//! `DefaultInline` (dist/index.js:1372-1820), GFM's `Strikethrough` and
-//! `Autolink` (:2026-2262), and Writer's inline extensions
-//! (`prosemark-core/markdown/*.ts`, `hide/index.ts:109-126`,
-//! `fold/dashes.ts`, `fold/emoji.ts`), in Lezer's parser order.
-//!
-//! Positions are absolute byte offsets. `text` is the leaf content with
-//! container prefixes (`>` of continuation lines) blanked to spaces, as
-//! Lezer's `Line.scrub()` does, so offsets stay those of the document.
-
 use super::{Elt, NodeKind};
 use regex::Regex;
 use std::sync::LazyLock;
@@ -75,8 +65,6 @@ struct Cx<'a> {
     parts: Vec<Option<Part>>,
 }
 
-/// Parses the inline content `text`, which starts at document offset
-/// `offset`. Returns the elements in order.
 pub(crate) fn parse_inline(text: &str, offset: usize) -> Vec<Elt> {
     let mut cx = Cx {
         text,
@@ -88,8 +76,6 @@ pub(crate) fn parse_inline(text: &str, offset: usize) -> Vec<Elt> {
     let has_at = bytes.contains(&b'@');
     let mut pos = offset;
     'outer: while pos < end {
-        // Fast path: no parser can start on this byte (a word's inner
-        // letter, a lone space, a UTF-8 byte), so skip it.
         let i = pos - offset;
         let b = bytes[i];
         let quiet = if b >= 0x80 {
@@ -99,8 +85,6 @@ pub(crate) fn parse_inline(text: &str, offset: usize) -> Vec<Elt> {
         } else if TRIGGERS[b as usize] {
             false
         } else if may_start_autolink(b as char) {
-            // Autolinks start a word: `www.`, `http`, `mailto:`, `xmpp:`,
-            // or an e-mail address, impossible without an `@` ahead.
             (i > 0 && is_word(bytes[i - 1] as char))
                 || !(matches!(b, b'w' | b'h' | b'm' | b'x') || has_at)
         } else {
@@ -113,7 +97,6 @@ pub(crate) fn parse_inline(text: &str, offset: usize) -> Vec<Elt> {
         let Some(next) = cx.char(pos) else { break };
         for parser in parsers_for(next) {
             if let Some(result) = parser(&mut cx, next, pos) {
-                // A parser must advance; guard against a zero-width result.
                 pos = result.max(pos + 1);
                 continue 'outer;
             }
@@ -131,7 +114,6 @@ pub(crate) fn parse_inline(text: &str, offset: usize) -> Vec<Elt> {
 
 type InlineParser = fn(&mut Cx<'_>, char, usize) -> Option<usize>;
 
-/// ASCII bytes some parser of `parsers_for` starts on.
 const TRIGGERS: [bool; 128] = {
     let mut table = [false; 128];
     let chars = b"\\$&`<:-_*~ [!]";
@@ -143,12 +125,6 @@ const TRIGGERS: [bool; 128] = {
     table
 };
 
-/// Lezer's parser order after Writer's and GFM's `before`/`after`
-/// constraints: EscapeMark, Math, (Escape), Entity, InlineCode, HTMLTag,
-/// Emoji, Dash, Emphasis, Strikethrough, HardBreak, NestedLinkAsPlainText,
-/// Link, Image, SpaceDestinationLinkEnd, LinkEnd, Autolink. Every parser but
-/// the autolink one starts by checking one character, so only the parsers
-/// for `next` run, in that order; the autolink parser runs last.
 fn parsers_for(next: char) -> &'static [InlineParser] {
     match next {
         '\\' => &[escape_mark],
@@ -168,8 +144,6 @@ fn parsers_for(next: char) -> &'static [InlineParser] {
     }
 }
 
-/// Characters `autolinkRE` can start with: `www.`, `http`, `mailto:`,
-/// `xmpp:` or an e-mail local part `[w.+-]`.
 fn may_start_autolink(c: char) -> bool {
     c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '+' | '-')
 }
@@ -179,7 +153,6 @@ impl Cx<'_> {
         self.offset + self.text.len()
     }
 
-    /// The character at document position `pos`, or `None` past the end.
     fn char(&self, pos: usize) -> Option<char> {
         if pos < self.offset {
             return None;
@@ -194,7 +167,6 @@ impl Cx<'_> {
         self.text.as_bytes().get(pos - self.offset).copied()
     }
 
-    /// The character ending at `pos`, if `pos` is inside this section.
     fn char_before(&self, pos: usize) -> Option<char> {
         if pos <= self.offset {
             return None;
@@ -369,7 +341,6 @@ fn is_word(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_'
 }
 
-/// Lezer's `Punctuation`: `[\p{S}|\p{P}]`.
 fn is_punctuation(c: Option<char>) -> bool {
     c.is_some_and(|c| {
         c == '|'
@@ -380,12 +351,9 @@ fn is_punctuation(c: Option<char>) -> bool {
     })
 }
 
-/// `/\s|^$/` on a one-character slice: whitespace, or no character.
 fn is_space_or_edge(c: Option<char>) -> bool {
     c.is_none_or(char::is_whitespace)
 }
-
-// --- Writer: escape of any character (`hide/index.ts:109-126`) ----------
 
 fn escape_mark(cx: &mut Cx<'_>, next: char, pos: usize) -> Option<usize> {
     if next != '\\' {
@@ -399,8 +367,6 @@ fn escape_mark(cx: &mut Cx<'_>, next: char, pos: usize) -> Option<usize> {
         vec![Elt::new(NodeKind::EscapeMark, pos, pos + 1)],
     )))
 }
-
-// --- Writer: Pandoc math (`markdown/mathMarkdown.ts:57-101`) -------------
 
 fn is_escaped_dollar(cx: &Cx<'_>, pos: usize) -> bool {
     let mut backslashes = 0;
@@ -456,8 +422,6 @@ fn math(cx: &mut Cx<'_>, next: char, pos: usize) -> Option<usize> {
         ],
     )))
 }
-
-// --- Lezer defaults ------------------------------------------------------
 
 static ENTITY: LazyLock<Option<Regex>> =
     LazyLock::new(|| Regex::new(r"(?i)^(?:#[0-9]+|#x[a-f0-9]+|[A-Za-z0-9_]+);").ok());
@@ -552,17 +516,13 @@ fn html_tag(cx: &mut Cx<'_>, next: char, pos: usize) -> Option<usize> {
     Some(cx.append(Elt::new(NodeKind::HtmlTag, pos, pos + 1 + m.end())))
 }
 
-// --- Writer: emoji `:word:` (`fold/emoji.ts:9-37`) -----------------------
-
 fn emoji(cx: &mut Cx<'_>, next: char, pos: usize) -> Option<usize> {
     if next != ':' {
         return None;
     }
-    // `/^\w+:/` after the colon.
     let after = cx.slice(pos + 1, cx.end());
     let words = after.bytes().take_while(|b| is_word(*b as char)).count();
     let open = words > 0 && after.as_bytes().get(words) == Some(&b':');
-    // `/:\w+$/` before it, from the start of the section.
     let before = cx.slice(cx.offset, pos);
     let back = before
         .bytes()
@@ -576,8 +536,6 @@ fn emoji(cx: &mut Cx<'_>, next: char, pos: usize) -> Option<usize> {
     }
     Some(cx.add_delimiter(DelimType::Emoji, pos, pos + 1, open, close))
 }
-
-// --- Writer: dashes (`fold/dashes.ts:6-27`) ------------------------------
 
 fn dash(cx: &mut Cx<'_>, next: char, pos: usize) -> Option<usize> {
     if next != '-' || (pos > 1 && cx.byte(pos - 1) == Some(b'-')) {
@@ -637,7 +595,6 @@ fn strikethrough(cx: &mut Cx<'_>, next: char, pos: usize) -> Option<usize> {
 }
 
 fn hard_break(cx: &mut Cx<'_>, next: char, pos: usize) -> Option<usize> {
-    // `\` + newline never reaches here: Writer's escape takes every `\`.
     if next != ' ' {
         return None;
     }
@@ -650,8 +607,6 @@ fn hard_break(cx: &mut Cx<'_>, next: char, pos: usize) -> Option<usize> {
     }
     None
 }
-
-// --- Writer: nested links read as text (`nestedLinkAsPlainText.ts`) ------
 
 fn parse_bracketed_segment(cx: &Cx<'_>, start: usize) -> Option<usize> {
     if cx.byte(start) != Some(b'[') {
@@ -721,8 +676,6 @@ fn image(cx: &mut Cx<'_>, next: char, pos: usize) -> Option<usize> {
     (next == '!' && cx.byte(pos + 1) == Some(b'['))
         .then(|| cx.add_delimiter(DelimType::ImageStart, pos, pos + 2, true, false))
 }
-
-// --- Writer: destinations with spaces (`spaceDestinationLinks.ts`) -------
 
 fn is_inline_space(b: Option<u8>) -> bool {
     matches!(b, Some(b' ' | b'\t'))
@@ -907,8 +860,6 @@ fn space_destination_link_end(cx: &mut Cx<'_>, next: char, close_bracket: usize)
     )))
 }
 
-// --- Lezer: link end ------------------------------------------------------
-
 fn link_end(cx: &mut Cx<'_>, next: char, start: usize) -> Option<usize> {
     if next != ']' {
         return None;
@@ -1001,7 +952,6 @@ fn finish_link(
     Elt::with(kind, start, end_pos, content)
 }
 
-/// `None`: ran off the end; `Some(None)`: failed; `Some(Some(url))`.
 pub(crate) fn parse_url_in(text: &str, offset: usize, start: usize) -> Option<Option<Elt>> {
     let cx = Cx {
         text,
@@ -1130,11 +1080,6 @@ fn parse_link_label(cx: &Cx<'_>, start: usize, mut require_non_ws: bool) -> Opti
     None
 }
 
-// --- GFM autolink literals -----------------------------------------------
-//
-// Lezer's regexes (dist/index.js:2185-2262), hand-written: they run at every
-// word start, where a regex engine's setup dominates.
-
 fn is_url_word(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'_' || b == b'-'
 }
@@ -1143,8 +1088,6 @@ fn is_email_local(b: u8) -> bool {
     b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'+' | b'-')
 }
 
-/// `urlRE`, `/[\w-]+(\.[\w-]+)+(\/[^\s<]*)?/y`: end of the match at `from`
-/// and end of its domain part.
 fn match_url_body(bytes: &[u8], from: usize) -> Option<(usize, usize)> {
     let run = |at: usize| {
         bytes[at.min(bytes.len())..]
@@ -1173,7 +1116,6 @@ fn match_url_body(bytes: &[u8], from: usize) -> Option<(usize, usize)> {
     if bytes.get(end) == Some(&b'/') {
         end += 1;
         while end < bytes.len() && !bytes[end].is_ascii_whitespace() && bytes[end] != b'<' {
-            // `\s` is Unicode whitespace: stop at it as well.
             if bytes[end] >= 0x80 {
                 let rest = std::str::from_utf8(&bytes[end..])
                     .ok()
@@ -1188,7 +1130,6 @@ fn match_url_body(bytes: &[u8], from: usize) -> Option<(usize, usize)> {
     Some((end, domain_end))
 }
 
-/// `/&(?:#\d+|#x[a-f\d]+|\w+);$/`: start of a trailing entity in `segment`.
 fn trailing_entity(segment: &[u8]) -> Option<usize> {
     let amp = segment.iter().rposition(|b| *b == b'&')?;
     let body = segment.get(amp + 1..segment.len().checked_sub(1)?)?;
@@ -1205,11 +1146,9 @@ fn trailing_entity(segment: &[u8]) -> Option<usize> {
     valid.then_some(amp)
 }
 
-/// Lezer's `autolinkURLEnd`; `text` is the section, `from` an index into it.
 fn autolink_url_end(text: &str, from: usize) -> Option<usize> {
     let bytes = text.as_bytes();
     let (body_end, domain_end) = match_url_body(bytes, from)?;
-    // `lastTwoDomainWords` must not contain `_`.
     let domain = &bytes[from..domain_end];
     let mut dots = domain
         .iter()
@@ -1255,7 +1194,6 @@ fn autolink_url_end(text: &str, from: usize) -> Option<usize> {
     Some(end)
 }
 
-/// Lezer's `autolinkEmailEnd` (`emailRE`, `/[\w.+-]+@[\w-]+(\.[\w.-]+)+/y`).
 fn autolink_email_end(text: &str, from: usize) -> Option<usize> {
     let bytes = text.as_bytes();
     let local = bytes
@@ -1294,7 +1232,6 @@ fn autolink_email_end(text: &str, from: usize) -> Option<usize> {
     Some(end - usize::from(last == b'.'))
 }
 
-/// `/([^\[\]]|\[[^\]]*\])*/` on `bytes`: length of the bracket-balanced prefix.
 fn no_bracket_prefix(bytes: &[u8]) -> usize {
     let mut i = 0;
     while i < bytes.len() {
@@ -1348,7 +1285,6 @@ fn autolink(cx: &mut Cx<'_>, _next: char, abs: usize) -> Option<usize> {
             end
         }
     } else {
-        // `[\w.+-]{1,100}@`: an e-mail address.
         let local = rest
             .bytes()
             .take(101)
@@ -1364,8 +1300,6 @@ fn autolink(cx: &mut Cx<'_>, _next: char, abs: usize) -> Option<usize> {
     Some(end + cx.offset)
 }
 
-/// Lezer's `injectMarks`: puts container marks (quote marks of continuation
-/// lines) into the inline elements that contain them.
 pub(crate) fn inject_marks(elements: Vec<Elt>, marks: &[Elt]) -> Vec<Elt> {
     if marks.is_empty() {
         return elements;

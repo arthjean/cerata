@@ -1,12 +1,3 @@
-//! Sidebar rows and sections (`file-tree-node.tsx:31-173`,
-//! `sidebar-section.tsx:17-93`), on Paneflow's row measures: 8 px margin,
-//! 32 px rows padded 7 (plus 12 per depth), radius 9, a 20 px icon slot
-//! 8 from a 14 px label on a 20 px line (Paneflow's workspace folder
-//! glyphs on folder rows, crossfading as they open and close); 20 px
-//! section headers with a chevron, flush with the wordmark. In the tree,
-//! each project (a root folder) and Unfiled (the root's own files) has
-//! such a header on a row's height, so the list stays uniform.
-
 use cerata_core::fs::DirEntry;
 use gpui::{
     AnyElement, ClickEvent, Context, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
@@ -23,9 +14,7 @@ use super::{ClearSelection, ROW_HEIGHT, Section, Sidebar, SidebarEvent};
 use crate::editor::theme;
 use crate::icons::{Icon, icon};
 
-/// Margin from the sidebar's edges to the rows.
 const MARGIN: f32 = 8.0;
-/// Rows' inner padding, and the text edge of everything aligned on them.
 const PADDING: f32 = 7.0;
 const RADIUS: f32 = 9.0;
 const GAP: f32 = 8.0;
@@ -46,12 +35,9 @@ pub struct RowState {
     pub error: Option<String>,
     pub drop_target: bool,
     pub dragged: bool,
-    /// Tree rows can be dragged; Pinned and Recents rows cannot.
     pub draggable: bool,
 }
 
-/// One row: icon slot, label (or the rename field), and the folder's read
-/// error if any.
 pub fn row(
     id: impl Into<gpui::ElementId>,
     entry: &DirEntry,
@@ -182,8 +168,6 @@ pub fn row(
         }))
 }
 
-/// "Conflict copy" after the label of a note whose sync conflict copy sits
-/// beside it (US-093): words, not a color alone.
 fn conflict_mark() -> gpui::Div {
     div()
         .flex_none()
@@ -196,7 +180,6 @@ fn conflict_mark() -> gpui::Div {
         .child("Conflict copy")
 }
 
-/// The rename field in place of a label, with its error under it.
 fn rename_field(renaming: &super::ops::Renaming) -> AnyElement {
     div()
         .flex_1()
@@ -213,7 +196,6 @@ fn rename_field(renaming: &super::ops::Renaming) -> AnyElement {
         .into_any_element()
 }
 
-/// A folder's read error, after its label.
 fn read_error(error: String) -> gpui::Div {
     div()
         .flex_none()
@@ -226,7 +208,6 @@ fn read_error(error: String) -> gpui::Div {
         .child(format!("Error: {error}"))
 }
 
-/// Records where the row of `path` is drawn, for the keyboard's menu.
 fn bounds_probe(sidebar: &Sidebar, path: &std::path::Path) -> impl IntoElement {
     let bounds = sidebar.row_bounds.clone();
     let measured = path.to_path_buf();
@@ -240,8 +221,6 @@ fn bounds_probe(sidebar: &Sidebar, path: &std::path::Path) -> impl IntoElement {
     .size_full()
 }
 
-/// A row's keys: the menu key or Shift+F10 opens its menu under it, F2
-/// renames it, Delete deletes it (or the selection holding it).
 fn row_keys(
     entry: DirEntry,
     cx: &mut Context<Sidebar>,
@@ -292,13 +271,8 @@ fn header(
         .items_center()
         .gap(px(4.0))
         .h(px(20.0))
-        // Space groups the sections: the 6 px a row leaves above its label
-        // makes 10 below the title and 22 above it, so a header reads as
-        // belonging to its own rows, not to the section before it.
         .mt(px(16.0))
         .mb(px(4.0))
-        // The chevron's stroke starts 3 px into its box: flush with the
-        // rows' margin, it lines up with the wordmark's first letter.
         .pr(px(PADDING))
         .text_size(px(12.0))
         .font_weight(FontWeight::MEDIUM)
@@ -386,7 +360,6 @@ fn flat_rows(
         .collect()
 }
 
-/// The state of a filter row: never dragged, at depth 0.
 fn filter_row_state(sidebar: &Sidebar, entry: &DirEntry) -> RowState {
     RowState {
         depth: 0,
@@ -400,9 +373,6 @@ fn filter_row_state(sidebar: &Sidebar, entry: &DirEntry) -> RowState {
     }
 }
 
-/// The matches while they change: each row at its opacity and a share of
-/// its height (Paneflow's rail rows). The list scrolls to the top on every
-/// query, so only the rows that fit the sidebar are drawn, unvirtualized.
 fn moving_results(sidebar: &Sidebar, window: &Window, cx: &mut Context<Sidebar>) -> AnyElement {
     let fit = (f32::from(window.viewport_size().height) / ROW_HEIGHT).ceil() as usize + 1;
     let mut list = div()
@@ -436,7 +406,6 @@ fn moving_results(sidebar: &Sidebar, window: &Window, cx: &mut Context<Sidebar>)
     list.into_any_element()
 }
 
-/// The files matching the filter, or why there are none.
 fn filter_results(sidebar: &Sidebar, cx: &mut Context<Sidebar>) -> AnyElement {
     if sidebar.filter.results.is_empty() {
         return div()
@@ -487,12 +456,10 @@ fn empty(text: &'static str) -> AnyElement {
 
 impl Render for Sidebar {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // Refilled by the rows drawn this frame.
         self.row_bounds.borrow_mut().clear();
         if let Some(path) = self.pending_rename.clone()
             && let Some(row) = self.rows.iter().find(|row| row.entry.path == path)
         {
-            // A new folder or project is only named: there is no note to open.
             let created = !row.entry.is_dir;
             self.pending_rename = None;
             self.start_rename(&path, window, cx);
@@ -627,7 +594,6 @@ impl Render for Sidebar {
                     .filter(|drag| drag.active)
                     .map(|drag| drag.paths.clone())
                     .unwrap_or_default();
-                // The rows under the folder or header opening, at its fade.
                 let fade = this
                     .folder_fade(std::time::Instant::now())
                     .and_then(|(dir, amount)| {
@@ -645,7 +611,6 @@ impl Render for Sidebar {
                             .as_ref()
                             .and_then(|(rows, amount)| rows.contains(&ix).then_some(*amount));
                         let state = RowState {
-                            // Headers take depth 0: their rows start flush.
                             depth: tree_row.depth.saturating_sub(1),
                             expanded: tree_row.expanded,
                             selected: this.selection.contains(&tree_row.entry.path),
@@ -667,16 +632,10 @@ impl Render for Sidebar {
             }),
         )
         .track_scroll(&self.scroll);
-        // The 8 px over the first header's title make the 16 every
-        // section header keeps from what is above it.
         root.child(list.mt(px(8.0)).flex_1().min_h_0())
     }
 }
 
-/// A project or Unfiled header in the tree: a section title on a row's
-/// height, its title at the bottom, never a card. A project opens on a
-/// click, takes drops and has the folder menu; Unfiled takes drops into
-/// the root and leaves its menu to the empty area's.
 fn tree_header(
     ix: usize,
     tree_row: &Row,
@@ -775,8 +734,6 @@ fn tree_header(
 }
 
 impl Sidebar {
-    /// How far a section's rows are shown while it opens or closes; `None`
-    /// once settled.
     fn section_amount(&self, section: Section, now: Instant) -> Option<f32> {
         self.section_reveals
             .get(&section)
@@ -790,8 +747,6 @@ impl Sidebar {
             .any(|reveal| reveal.animating(now))
     }
 
-    /// The folder whose rows fade in and their opacity. Its clock starts
-    /// once its listing is read, so rows that arrive late still fade.
     fn folder_fade(&mut self, now: Instant) -> Option<(std::path::PathBuf, f32)> {
         let (dir, fade) = self.opening.as_mut()?;
         if fade.is_none() && !matches!(self.listings.get(dir.as_path()), Some(Listing::Loading)) {
@@ -810,8 +765,6 @@ impl Sidebar {
     }
 }
 
-/// Content that opens or closes: a share of its `height` and its opacity.
-/// Reduced motion keeps the height, so the content only fades.
 fn revealing(height: f32, amount: f32, reduce: bool) -> gpui::Div {
     let shown = if reduce { height } else { height * amount };
     div()
@@ -823,7 +776,6 @@ fn revealing(height: f32, amount: f32, reduce: bool) -> gpui::Div {
         .flex_col()
 }
 
-/// A flat section's rows, settled or moving.
 fn with_section(
     root: gpui::Stateful<gpui::Div>,
     rows: Vec<AnyElement>,

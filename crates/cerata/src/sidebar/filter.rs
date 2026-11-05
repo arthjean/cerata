@@ -1,16 +1,3 @@
-//! The sidebar filter (Paneflow's workspace filter): while a query is set,
-//! the sidebar lists every indexed file whose label or relative path
-//! contains it, case-insensitively, instead of its sections. Titles come
-//! from the library's index (its store, US-083), copied off the UI thread
-//! the first time a filter starts and dropped when it ends, so a new filter
-//! sees edited titles. No file is read for them.
-//!
-//! Each change of the matches animates as Paneflow's rail does
-//! (`SidebarRowMotion`): over 180 ms with a cubic ease-out, entering rows
-//! fade in while their height grows, leaving rows fade out and collapse in
-//! place, and a new query retargets from what is shown. Reduced motion
-//! applies the matches at once.
-
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -22,12 +9,10 @@ use super::Sidebar;
 use super::tree::{LabelMode, stem};
 use crate::editor::theme;
 
-/// Length of a change of the matches (Paneflow's rail rows).
 pub const MOTION: Duration = Duration::from_millis(180);
 
 #[derive(Default)]
 pub struct Filter {
-    /// Trimmed and lowercased.
     pub query: String,
     pub results: Vec<DirEntry>,
     pub motion: RowMotion,
@@ -35,11 +20,8 @@ pub struct Filter {
     titles_requested: bool,
 }
 
-/// A row shown while the matches change: its sort key, its entry, and how
-/// far it is shown (0 gone, 1 settled).
 pub type MotionRow = (String, DirEntry, f32);
 
-/// The rows of a change of the matches in flight.
 #[derive(Default)]
 pub struct RowMotion {
     pub rows: Vec<MotionRow>,
@@ -57,8 +39,6 @@ impl RowMotion {
         self.started.is_some()
     }
 
-    /// Moves every row to its amount at `now`; at the end, the rows that
-    /// left are dropped.
     pub fn sample(&mut self, now: Instant) {
         let Some(started) = self.started else { return };
         let progress = (now.duration_since(started).as_secs_f32() / MOTION.as_secs_f32()).min(1.);
@@ -78,8 +58,6 @@ impl RowMotion {
         }
     }
 
-    /// Heads for `matches` (sorted by key) from what is shown at `now`.
-    /// Leaving rows keep their place among them until they are gone.
     fn retarget(&mut self, matches: &[(String, DirEntry)], now: Instant, animate: bool) {
         self.sample(now);
         if !animate {
@@ -145,7 +123,6 @@ impl Sidebar {
         !self.filter.query.is_empty()
     }
 
-    /// Ends the filter of a previous workspace.
     pub fn reset_filter(&mut self) {
         self.filter = Filter::default();
     }
@@ -164,7 +141,6 @@ impl Sidebar {
             .lock()
             .files()
             .filter_map(|file| {
-                // The row's label (`tree::label`), without building the row.
                 let title = titles
                     .get(&file.path)
                     .filter(|title| by_title && !title.trim().is_empty());
@@ -194,7 +170,6 @@ impl Sidebar {
         self.filter.results = results.into_iter().map(|(_, entry)| entry).collect();
     }
 
-    /// Copies every indexed file's known title, then refilters.
     fn load_filter_titles(&mut self, cx: &mut Context<Self>) {
         let Some(runtime) = self.runtime.clone() else {
             return;
@@ -212,7 +187,6 @@ impl Sidebar {
                 })
                 .await;
             let _ = this.update(cx, |this, cx| {
-                // The filter ended (or the workspace changed) meanwhile.
                 if !this.filter.titles_requested {
                     return;
                 }
@@ -225,9 +199,6 @@ impl Sidebar {
     }
 }
 
-/// `text` with every occurrence of `query` (lowercased) in the filter's
-/// match color and semibold (`ui_primitives.rs` `highlight_matches` in
-/// Paneflow).
 pub fn highlight(text: String, query: &str) -> StyledText {
     let ranges = match_ranges(&text, query);
     let style = HighlightStyle {
@@ -238,13 +209,9 @@ pub fn highlight(text: String, query: &str) -> StyledText {
     StyledText::new(text).with_highlights(ranges.into_iter().map(move |range| (range, style)))
 }
 
-/// Byte ranges of `text` where the lowercased `query` occurs, without
-/// overlaps.
 fn match_ranges(text: &str, query: &str) -> Vec<std::ops::Range<usize>> {
     let mut ranges = Vec::new();
     if !query.is_empty() {
-        // Lowercasing can change byte lengths: map each lowered byte back
-        // to the source character it came from.
         let mut lowered = String::new();
         let mut sources = Vec::new();
         for (start, ch) in text.char_indices() {
@@ -306,7 +273,6 @@ mod tests {
             amounts(&motion),
             [("a".into(), 1.), ("b".into(), 1.), ("c".into(), 1.)]
         );
-        // Halfway in time, the ease is 7/8 of the way: b shows at 0.125.
         motion.sample(now + MOTION / 2);
         assert!((amounts(&motion)[1].1 - 0.125).abs() < 0.001);
         motion.sample(now + MOTION);
@@ -323,7 +289,6 @@ mod tests {
         motion.sample(midway);
         let shown = amounts(&motion)[0].1;
         assert!(shown > 0. && shown < 1.);
-        // Leaving starts from where it was, not from 1.
         motion.retarget(&[], midway, true);
         assert_eq!(amounts(&motion)[0].1, shown);
         motion.sample(midway + MOTION / 2);
@@ -343,7 +308,6 @@ mod tests {
     #[test]
     fn matches_ignore_case_and_map_back_to_the_source_bytes() {
         assert_eq!(match_ranges("ADR 0002 : Parser", "parser"), vec![11..17]);
-        // "É" is two bytes, lowered or not; "İ" lowers to three.
         assert_eq!(match_ranges("Édition", "éd"), vec![0..3]);
         assert_eq!(match_ranges("İa", "a"), vec![2..3]);
     }

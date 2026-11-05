@@ -1,28 +1,12 @@
-//! Hand-written line scanner for the three constructs the spike hides (ATX
-//! heading marks, `**strong**`, `[links](url)`) plus block images, and the
-//! pure decoration decision that hides or reveals their markup.
-//!
-//! The real parser is chosen by US-003; only the decision logic here mirrors
-//! Writer: `apps/desktop/src/lib/prosemark-core/hide/core.ts:35-124` (a node
-//! is revealed when any selection range touches it, `rangeTouchesRange` in
-//! `prosemark-core/utils.ts:126`, inclusive on both ends) and the specs in
-//! `hide/index.ts:22-80`.
-
 use std::ops::Range;
 
-/// Writer's heading scales, H1 first (`syntaxHighlighting.ts:34`).
 pub const HEADING_SCALES: [f32; 6] = [1.6, 1.4, 1.2, 1.1, 1.0, 0.9];
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LineKind {
     Paragraph,
-    Heading {
-        level: u8,
-    },
-    /// A line that is exactly one image, rendered as a block widget.
-    ImageBlock {
-        url: String,
-    },
+    Heading { level: u8 },
+    ImageBlock { url: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,15 +17,11 @@ pub enum NodeKind {
     Image,
 }
 
-/// A syntax node, in line-relative byte offsets.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Node {
     pub kind: NodeKind,
-    /// The extent the selection must touch to reveal the node.
     pub range: Range<usize>,
-    /// The markup hidden while the node is not touched.
     pub marks: Vec<Range<usize>>,
-    /// The styled content (strong text, link text).
     pub content: Range<usize>,
 }
 
@@ -96,7 +76,6 @@ fn heading_level(text: &str) -> Option<u8> {
     }
 }
 
-/// `![alt](url)` covering the whole line: (alt range, url range).
 fn block_image(text: &str) -> Option<(Range<usize>, Range<usize>)> {
     let rest = text.strip_prefix("![")?;
     let alt_end = 2 + rest.find(']')?;
@@ -174,29 +153,22 @@ fn link_at(text: &str, start: usize) -> Option<Node> {
     })
 }
 
-/// Writer's `rangeTouchesRange`: inclusive on both ends, so a caret right
-/// after a node still reveals it.
 pub fn touches(a: &Range<usize>, b: &Range<usize>) -> bool {
     a.start <= b.end && b.start <= a.end
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlockMode {
-    /// The source line is replaced by the widget.
     Replace,
-    /// The source is revealed and the widget is drawn below it.
     Below,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LineDecorations {
-    /// Hidden byte ranges, line-relative, sorted and disjoint.
     pub hidden: Vec<Range<usize>>,
     pub block: Option<BlockMode>,
 }
 
-/// The pure decoration decision for one line. `selections` are absolute
-/// buffer ranges; `line_start` converts the line's relative node ranges.
 pub fn decorate_line(
     syntax: &LineSyntax,
     line_start: usize,
@@ -223,8 +195,6 @@ pub fn decorate_line(
     LineDecorations { hidden, block }
 }
 
-/// Vertical metrics of a line, following Writer's spacing scale
-/// (`prosemark-theme.css:155-187` and `:259-271`) at a given body size.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LineMetrics {
     pub font_size: f32,
@@ -234,7 +204,6 @@ pub struct LineMetrics {
     pub bold: bool,
 }
 
-/// Writer's default `--writer-editor-line-height`.
 pub const BODY_LINE_HEIGHT: f32 = 1.875;
 const GLYPH: f32 = 1.125;
 const HEADING_GLYPH: f32 = 1.17;
@@ -321,23 +290,19 @@ mod tests {
     #[test]
     fn markup_is_revealed_as_soon_as_the_selection_touches_the_node() {
         let syntax = scan_line(LINE);
-        // Caret right before `**`, at its inclusive edge.
         let at_open = decorate_line(&syntax, 0, &[6..6]);
         assert_eq!(
             hidden_text(LINE, &at_open),
             "plain **bold** and link end",
             "strong revealed, link still hidden"
         );
-        // Caret right after the closing `)`.
         let after_link = decorate_line(&syntax, 0, &[48..48]);
         assert_eq!(
             hidden_text(LINE, &after_link),
             "plain bold and [link](https://example.com/a) end"
         );
-        // One byte before the node: not touching.
         let before = decorate_line(&syntax, 0, &[5..5]);
         assert_eq!(hidden_text(LINE, &before), "plain bold and link end");
-        // A range selection spanning both.
         let both = decorate_line(&syntax, 0, &[0..LINE.len()]);
         assert_eq!(hidden_text(LINE, &both), LINE);
     }

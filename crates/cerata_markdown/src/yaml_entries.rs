@@ -1,52 +1,30 @@
-//! Frontmatter properties (US-034): the YAML mapping as key and value
-//! rows, ported from `lib/yaml-entries.ts:1-81`.
-//!
-//! Writer re-serializes the whole mapping on each edit, which reformats
-//! lists, maps and comments. Here an edit rewrites only the entries whose
-//! row changed; every other entry keeps its exact source text, so a list or
-//! a map is written back as it was when another key changes.
-
 use std::ops::Range;
 
 use yaml_rust2::{Yaml, YamlLoader};
 
-/// One top-level entry of the mapping.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entry {
     pub key: String,
-    /// A scalar's text (`""` for null); a list's or map's source on one
-    /// line.
     pub value: String,
-    /// A list, map, alias or multi-line text: shown, never rewritten from
-    /// its displayed value.
     pub complex: bool,
-    /// From the start of its key line to the next entry (comments and
-    /// blank lines after it included).
     span: Range<usize>,
-    /// The end of the key as written (its `:` follows).
     key_end: usize,
-    /// The end of the key line and the lines indented under it.
     value_end: usize,
 }
 
-/// What a frontmatter holds, for the panel.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Properties {
     Entries {
         entries: Vec<Entry>,
-        /// Text before the first entry (comments), kept as written.
         prefix: Range<usize>,
     },
-    /// Not a mapping the panel can edit: shown raw with this message.
     Invalid(String),
 }
 
-/// A row of the panel: an entry as edited, or a new one (`origin: None`).
 #[derive(Clone, Copy, Debug)]
 pub struct Row<'a> {
     pub key: &'a str,
     pub value: &'a str,
-    /// Index of the entry the row was parsed from.
     pub origin: Option<usize>,
 }
 
@@ -56,7 +34,6 @@ fn load(source: &str) -> Result<Option<Yaml>, String> {
         .map_err(|e| e.to_string())
 }
 
-/// The text of a scalar, as the panel shows it.
 fn scalar_text(value: &Yaml) -> Option<String> {
     match value {
         Yaml::String(s) if !s.contains('\n') => Some(s.clone()),
@@ -75,21 +52,17 @@ fn key_text(key: &Yaml) -> Option<String> {
     }
 }
 
-/// Lines of `text`: `(start, end without break, next start)`.
 fn lines(text: &str) -> impl Iterator<Item = (usize, usize, usize)> + '_ {
     crate::frontmatter::lines(text, 0)
         .filter(move |(start, _, next)| start < next || *start < text.len())
 }
 
-/// A line that starts a top-level entry: unindented, not a comment, not a
-/// sequence item (a list may sit at column 0 under its key).
 fn starts_entry(line: &str) -> bool {
     line.bytes()
         .next()
         .is_some_and(|b| !matches!(b, b' ' | b'\t' | b'#' | b'-'))
 }
 
-/// The end of the key on an entry line: before the `:` that ends it.
 fn key_end(line: &str) -> Option<usize> {
     let bytes = line.as_bytes();
     let mut i = 0;
@@ -116,7 +89,6 @@ fn key_end(line: &str) -> Option<usize> {
     None
 }
 
-/// Reads the mapping of `yaml` (the text between the delimiters).
 pub fn parse(yaml: &str) -> Properties {
     let doc = match load(yaml) {
         Ok(doc) => doc,
@@ -149,7 +121,6 @@ pub fn parse(yaml: &str) -> Properties {
         let Some(k_end) = key_end(line) else {
             return not_editable();
         };
-        // The key as written must be the key parsed at this position.
         let written = load(&format!("{}: x", &line[..k_end]));
         let matches =
             matches!(written, Ok(Some(Yaml::Hash(ref h))) if h.keys().next() == Some(key));
@@ -159,7 +130,6 @@ pub fn parse(yaml: &str) -> Properties {
         let span_end = starts.get(i + 1).map_or(yaml.len(), |&(next, _)| next);
         let mut value_end = end;
         for (s, e, _) in crate::frontmatter::lines(yaml, start).skip(1) {
-            // Indented lines, and list items at column 0, are its value.
             if s >= span_end || !yaml[s..e].starts_with([' ', '\t', '-']) {
                 break;
             }
@@ -207,7 +177,6 @@ fn quoted(text: &str) -> String {
     out
 }
 
-/// A key, plain when YAML reads it back as written.
 fn format_key(key: &str) -> String {
     let plain = key == key.trim()
         && !key.is_empty()
@@ -216,9 +185,6 @@ fn format_key(key: &str) -> String {
     if plain { key.to_owned() } else { quoted(key) }
 }
 
-/// A value as Writer coerces it (`coerceScalar`): `true`, `false` and
-/// numbers stay plain and are read back as such; other text is quoted
-/// when YAML would read it differently.
 fn format_value(value: &str) -> String {
     if value.is_empty() {
         return "\"\"".to_owned();
@@ -239,8 +205,6 @@ fn strip_break(text: &str) -> &str {
         .unwrap_or(text)
 }
 
-/// The YAML for `rows`: unchanged entries as written, edited ones
-/// rewritten, rows without a key left out (`serializeYamlEntries`).
 pub fn write(yaml: &str, properties: &Properties, rows: &[Row<'_>]) -> Option<String> {
     let Properties::Entries { entries, prefix } = properties else {
         return None;
@@ -301,7 +265,6 @@ mod tests {
         }
     }
 
-    /// Writes `edited` (key, value) rows over `yaml`'s entries, by index.
     fn rewrite(yaml: &str, edited: &[(&str, &str, Option<usize>)]) -> String {
         let properties = parse(yaml);
         let rows: Vec<Row<'_>> = edited
@@ -310,8 +273,6 @@ mod tests {
             .collect();
         write(yaml, &properties, &rows).unwrap()
     }
-
-    // `yaml-entries.test.ts` parseYamlEntries
 
     #[test]
     fn parses_simple_key_value_pairs() {
@@ -363,8 +324,6 @@ mod tests {
         assert!(entries("   ").is_empty());
     }
 
-    /// Writer shows an empty panel for a YAML that is not a mapping, then
-    /// overwrites it on the first edit; here it is shown raw.
     #[test]
     fn a_non_mapping_or_invalid_yaml_is_not_editable() {
         assert!(matches!(parse("just a string"), Properties::Invalid(_)));
@@ -375,8 +334,6 @@ mod tests {
         assert!(!error.is_empty());
         assert!(write("title: [unclosed", &parse("title: [unclosed"), &[]).is_none());
     }
-
-    // `yaml-entries.test.ts` serializeYamlEntries
 
     #[test]
     fn serializes_simple_entries() {
@@ -429,8 +386,6 @@ mod tests {
         );
     }
 
-    // `yaml-entries.test.ts` round-trip
-
     #[test]
     fn simple_frontmatter_round_trips() {
         let original = "title: Test\nauthor: Jane\ndraft: false";
@@ -443,8 +398,6 @@ mod tests {
             .collect();
         assert_eq!(rewrite(original, &edited), original);
     }
-
-    // Cerata: entries other than the edited one keep their source.
 
     #[test]
     fn non_scalar_values_and_comments_are_written_back_as_they_were() {

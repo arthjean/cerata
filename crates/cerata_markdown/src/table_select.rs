@@ -1,8 +1,3 @@
-//! Rectangular selection of cells in a drawn table (US-054, ADR 0007
-//! decision 2): an anchor cell and a head cell, projected as one selection
-//! range per selected cell, so formatting, deletion and copy act on each
-//! cell. The state lives until the next commit that does not come from it.
-
 use std::ops::RangeInclusive;
 
 use crate::cells::{self, CellEdit};
@@ -12,8 +7,6 @@ use crate::selection::{Selection, SelectionRange};
 use crate::state::{EditorState, Transaction};
 use crate::table::{CellKind, Grid, RowKind};
 
-/// Cells from `anchor` to `head`, as `(row, column)` in `Grid::rows` (the
-/// delimiter row is never one), of the table starting at `table`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TableSelection {
     pub table: usize,
@@ -30,12 +23,10 @@ impl TableSelection {
         self.anchor.1.min(self.head.1)..=self.anchor.1.max(self.head.1)
     }
 
-    /// `(row, column)` is in the rectangle.
     pub fn contains(&self, row: usize, column: usize) -> bool {
         self.rows().contains(&row) && self.columns().contains(&column)
     }
 
-    /// The selected cells of `grid` that have source, row by row.
     pub fn cells<'a>(&self, grid: &'a Grid) -> Vec<(usize, usize, &'a crate::table::Cell)> {
         let mut out = Vec::new();
         for r in self.rows() {
@@ -55,8 +46,6 @@ impl TableSelection {
     }
 }
 
-/// The grid row `steps` drawn rows from `row`, over the delimiter row,
-/// clamped to the table.
 fn step_row(grid: &Grid, row: usize, steps: isize) -> usize {
     let drawn: Vec<usize> = grid.text_rows().map(|(r, _)| r).collect();
     let at = drawn.iter().position(|r| *r == row).unwrap_or(0) as isize;
@@ -69,16 +58,12 @@ impl EditorState {
         self.cell_selection.as_ref()
     }
 
-    /// The grid of the rectangular selection, if it still has one.
     pub fn table_selection_grid(&self) -> Option<(TableSelection, Grid)> {
         let ts = *self.cell_selection.as_ref()?;
         let grid = cells::grid_at(self, ts.table)?;
         (grid.range.start == ts.table).then_some((ts, grid))
     }
 
-    /// Selects the cells from `anchor` to `head` of `grid`: one range per
-    /// non-empty cell (the head cell's insertion point when all are
-    /// empty), the head cell's range as the main one.
     pub fn select_cells(
         &mut self,
         grid: &Grid,
@@ -119,10 +104,6 @@ impl EditorState {
         ok
     }
 
-    /// Shift+arrow: moves the rectangle's head cell by `rows` drawn rows and
-    /// `columns` columns; from a caret or a range in one cell, at its
-    /// content's edge in that direction (`at_edge`), starts a rectangle.
-    /// `false` when it does not apply.
     pub fn extend_cells(&mut self, rows: isize, columns: isize, at_edge: bool) -> bool {
         if let Some((ts, grid)) = self.table_selection_grid() {
             let head = (
@@ -162,8 +143,6 @@ impl EditorState {
         self.select_cells(&grid, (row, column), head)
     }
 
-    /// An arrow without Shift on a rectangle: the caret at the start of its
-    /// first cell (`forward` false: Up, Left) or the end of its last.
     pub fn collapse_cells(&mut self, forward: bool) -> bool {
         let Some((ts, grid)) = self.table_selection_grid() else {
             return false;
@@ -192,8 +171,6 @@ impl EditorState {
         .is_ok()
     }
 
-    /// Typing over a rectangle: the anchor cell's content is replaced and
-    /// the selection is that cell's caret. `None` without a rectangle.
     pub(crate) fn type_over_cells(&mut self, text: &str, event: UserEvent) -> Option<bool> {
         let (ts, grid) = self.table_selection_grid()?;
         let cell = grid.cell(ts.anchor.0, ts.anchor.1)?;
@@ -214,8 +191,6 @@ impl EditorState {
         )
     }
 
-    /// Backspace or Delete over a rectangle: every selected cell emptied,
-    /// rows and columns kept, in one step. `None` without a rectangle.
     pub(crate) fn clear_cells(&mut self) -> Option<bool> {
         let (ts, grid) = self.table_selection_grid()?;
         let changes: Vec<Change> = ts

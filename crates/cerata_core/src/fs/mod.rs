@@ -1,15 +1,3 @@
-//! Workspace file operations, confined to the workspace root.
-//!
-//! Ported from Writer `commands/fs.rs` and `sidebar/duplicate-file.ts`, with
-//! these fixes:
-//! - every path is canonicalized and must stay inside the canonical root
-//!   (Writer defect 9: no confinement at all);
-//! - writes are atomic with fsync, keep symlinks, permissions, line endings
-//!   and BOM (defect 8, see [`atomic`] and [`text`]);
-//! - listings never read titles synchronously (defect 12, see [`titles`]);
-//! - renames validate the new name (defect 15);
-//! - one Markdown predicate (defect 2).
-
 pub mod assets;
 pub mod atomic;
 pub mod text;
@@ -24,7 +12,6 @@ use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use text::TextFormat;
 
-/// Errors of workspace file operations. `Io` carries the OS error verbatim.
 #[derive(Debug, thiserror::Error)]
 pub enum FsError {
     #[error("not found: {}", .0.display())]
@@ -58,7 +45,6 @@ impl FsError {
     }
 }
 
-/// A sidebar row. `title` is filled later by [`titles::spawn_title_batches`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DirEntry {
     pub name: String,
@@ -66,12 +52,10 @@ pub struct DirEntry {
     pub is_dir: bool,
     pub is_markdown: bool,
     pub modified_at: u64,
-    /// Falls back to the modified time where the file system has no birth time.
     pub created_at: u64,
     pub title: Option<String>,
 }
 
-/// A file's editor text and the on-disk format to restore when saving.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileContent {
     pub path: PathBuf,
@@ -80,24 +64,20 @@ pub struct FileContent {
     pub modified_at: u64,
 }
 
-/// What [`WorkspaceFs::create_untitled`] creates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntryKind {
     File,
     Folder,
 }
 
-/// Content of a new Markdown file, as in Writer.
 pub const NEW_FILE_CONTENT: &str = "# ";
 
-/// File operations confined to one workspace root.
 #[derive(Debug, Clone)]
 pub struct WorkspaceFs {
     root: PathBuf,
 }
 
 impl WorkspaceFs {
-    /// `root` must exist; it is canonicalized once here.
     pub fn new(root: &Path) -> Result<Self, FsError> {
         let root = dunce::canonicalize(root).map_err(|e| FsError::io(root, e))?;
         Ok(Self { root })
@@ -107,15 +87,12 @@ impl WorkspaceFs {
         &self.root
     }
 
-    /// Canonical form of an existing `path`, refused when outside the root.
     pub fn confine_existing(&self, path: &Path) -> Result<PathBuf, FsError> {
         let canonical = dunce::canonicalize(path).map_err(|e| FsError::io(path, e))?;
         self.check_inside(&canonical, path)?;
         Ok(canonical)
     }
 
-    /// Canonical form of a path that may not exist yet: its parent must
-    /// exist inside the root and its file name must be valid.
     pub fn confine_new(&self, path: &Path) -> Result<PathBuf, FsError> {
         let name = path
             .file_name()
@@ -134,9 +111,6 @@ impl WorkspaceFs {
         Ok(parent.join(name))
     }
 
-    /// An existing entry itself, without following a final symlink: its
-    /// parent is canonicalized and confined, its own name is kept. Deleting
-    /// or renaming a link must act on the link, never on its target.
     fn confine_entry(&self, path: &Path) -> Result<PathBuf, FsError> {
         let Some(name) = path.file_name() else {
             return self.confine_existing(path);
@@ -158,13 +132,6 @@ impl WorkspaceFs {
         }
     }
 
-    /// Lists `dir` for the sidebar: visible folders first, then Markdown
-    /// files, each group sorted case-insensitively. Folders are shown when
-    /// they hold Markdown or are empty trees. `dirs_with_markdown` is the
-    /// index's set once indexing has completed, `None` before.
-    ///
-    /// Titles are left `None`; read them with
-    /// [`titles::spawn_title_batches`] so slow storage never blocks here.
     pub fn read_directory(
         &self,
         dir: &Path,
@@ -194,14 +161,12 @@ impl WorkspaceFs {
                 files.push(listed_entry(name, path, false, entry.metadata()));
             }
         }
-        // One lowercase key per entry, not one per comparison.
         dirs.sort_by_cached_key(|entry| entry.name.to_lowercase());
         files.sort_by_cached_key(|entry| entry.name.to_lowercase());
         dirs.extend(files);
         Ok(dirs)
     }
 
-    /// Reads a text file: UTF-8 (with or without BOM), `\n` line endings.
     pub fn read_file(&self, path: &Path) -> Result<FileContent, FsError> {
         let path = self.confine_existing(path)?;
         let bytes = fs::read(&path).map_err(|e| FsError::io(&path, e))?;
@@ -214,8 +179,6 @@ impl WorkspaceFs {
         })
     }
 
-    /// Atomically writes editor text back in its original `format`.
-    /// Returns the new modification time.
     pub fn write_file(
         &self,
         path: &Path,
@@ -225,7 +188,6 @@ impl WorkspaceFs {
         self.write_bytes(path, &text::encode(content, format))
     }
 
-    /// Atomically writes raw bytes (see [`atomic::atomic_write`]).
     pub fn write_bytes(&self, path: &Path, bytes: &[u8]) -> Result<u64, FsError> {
         let path = match self.confine_existing(path) {
             Ok(path) => path,
@@ -236,8 +198,6 @@ impl WorkspaceFs {
         Ok(modified_time(&path))
     }
 
-    /// Atomically writes `bytes` to a path that must not exist yet (an
-    /// imported image): an existing entry is refused, never replaced.
     pub fn write_new_bytes(&self, path: &Path, bytes: &[u8]) -> Result<u64, FsError> {
         let path = self.confine_new(path)?;
         match atomic::atomic_create(&path, bytes) {
@@ -249,8 +209,6 @@ impl WorkspaceFs {
         }
     }
 
-    /// Makes sure the folder `path` exists (an assets folder): created
-    /// when missing, kept when it is already a folder.
     pub fn ensure_directory(&self, path: &Path) -> Result<PathBuf, FsError> {
         match self.confine_existing(path) {
             Ok(dir) if dir.is_dir() => return Ok(dir),
@@ -266,7 +224,6 @@ impl WorkspaceFs {
         }
     }
 
-    /// Creates a new Markdown file containing `# `; never overwrites.
     pub fn create_file(&self, path: &Path) -> Result<FileContent, FsError> {
         let path = self.confine_new(path)?;
         let mut file = OpenOptions::new()
@@ -287,7 +244,6 @@ impl WorkspaceFs {
         })
     }
 
-    /// Creates a folder; never reuses an existing one.
     pub fn create_directory(&self, path: &Path) -> Result<DirEntry, FsError> {
         let path = self.confine_new(path)?;
         fs::create_dir(&path).map_err(|e| FsError::io(&path, e))?;
@@ -295,9 +251,6 @@ impl WorkspaceFs {
         Ok(dir_entry(name, path, true))
     }
 
-    /// Creates `Untitled.md`, `Untitled 2.md`, ... (or `Untitled Folder`,
-    /// `Untitled Folder 2`, ...) in `parent`, with no upper bound and
-    /// without ever overwriting.
     pub fn create_untitled(&self, parent: &Path, kind: EntryKind) -> Result<DirEntry, FsError> {
         let parent = self.confine_existing(parent)?;
         if !parent.is_dir() {
@@ -336,16 +289,9 @@ impl WorkspaceFs {
         }
     }
 
-    /// Renames or moves `old` to `new`. Refuses to overwrite, refuses names
-    /// with `/` (and `<>:"\|?*` on Windows). A case-only rename of the same
-    /// file is allowed on case-insensitive file systems.
     pub fn rename(&self, old: &Path, new: &Path) -> Result<PathBuf, FsError> {
         let old = self.confine_entry(old)?;
         let new = self.confine_new(new)?;
-        // Any entry at `new`, a dangling symlink included, blocks the rename,
-        // unless both paths name the same regular entry (case-only rename on
-        // a case-insensitive file system). Symlinks never take that exception:
-        // a link and its target share a canonical path.
         if let Ok(existing) = fs::symlink_metadata(&new) {
             let is_link = |meta: &fs::Metadata| meta.file_type().is_symlink();
             let same_entry = !is_link(&existing)
@@ -359,9 +305,6 @@ impl WorkspaceFs {
         Ok(new)
     }
 
-    /// Sidebar rows for `paths` (the Pinned section), in input order: only
-    /// existing Markdown files inside the root (Writer `read_file_entries`,
-    /// `fs.rs:442-462`).
     pub fn file_entries(&self, paths: &[PathBuf]) -> Vec<DirEntry> {
         paths
             .iter()
@@ -372,7 +315,6 @@ impl WorkspaceFs {
             .collect()
     }
 
-    /// Moves a file or folder to the OS trash.
     pub fn delete(&self, path: &Path) -> Result<(), FsError> {
         let path = self.confine_entry(path)?;
         if path == self.root {
@@ -384,9 +326,6 @@ impl WorkspaceFs {
         })
     }
 
-    /// Duplicates `source` as `<stem> copy.<ext>`, then `<stem> copy 2.<ext>`,
-    /// ... up to 999. `unsaved` replaces the disk content when the source is
-    /// open with unsaved changes, so the copy matches what the user sees.
     pub fn duplicate(&self, source: &Path, unsaved: Option<&str>) -> Result<PathBuf, FsError> {
         let source_file = self.read_file(source)?;
         let content = unsaved.unwrap_or(&source_file.content);
@@ -395,8 +334,6 @@ impl WorkspaceFs {
         Ok(candidate)
     }
 
-    /// Creates the empty file `<stem> copy.<ext>` (or the first free
-    /// `<stem> copy {n}.<ext>`) next to `source`, which must be canonical.
     fn reserve_copy(&self, source: &Path) -> Result<PathBuf, FsError> {
         let parent = source
             .parent()
@@ -432,7 +369,6 @@ impl WorkspaceFs {
         Err(FsError::AlreadyExists(source.to_path_buf()))
     }
 
-    /// Writes a reserved copy; on failure, leaves no empty placeholder.
     fn fill_copy(
         &self,
         candidate: &Path,
@@ -447,7 +383,6 @@ impl WorkspaceFs {
     }
 }
 
-/// Rejects names that cannot be a single file name on every supported OS.
 pub fn validate_file_name(name: &str) -> Result<(), FsError> {
     let invalid = |reason: &str| {
         Err(FsError::InvalidName {
@@ -488,9 +423,6 @@ pub fn validate_file_name(name: &str) -> Result<(), FsError> {
     Ok(())
 }
 
-/// Folder visibility in the sidebar (Writer `directory_is_sidebar_visible`):
-/// visible when it holds Markdown or when its tree holds no visible file at
-/// all (a new folder stays available for authoring).
 fn directory_is_visible(
     path: &Path,
     ignore: &WorkspaceIgnore,
@@ -556,9 +488,6 @@ fn tree_is_empty(path: &Path, ignore: &WorkspaceIgnore) -> Result<bool, FsError>
     Ok(true)
 }
 
-/// [`dir_entry`] from the metadata a directory read already holds: one
-/// call fewer per entry on Unix, none on Windows, where the listing carries
-/// the times. Symlinks never reach here (their file type is neither).
 fn listed_entry(
     name: String,
     path: PathBuf,
@@ -604,7 +533,6 @@ fn epoch_secs(time: io::Result<SystemTime>) -> Option<u64> {
         .map(|d| d.as_secs())
 }
 
-/// Modification time in seconds since the Unix epoch, 0 when unknown.
 pub fn modified_time(path: &Path) -> u64 {
     fs::metadata(path)
         .ok()
@@ -612,7 +540,6 @@ pub fn modified_time(path: &Path) -> u64 {
         .unwrap_or(0)
 }
 
-/// Creation time, falling back to the modification time.
 pub fn created_time(path: &Path) -> u64 {
     fs::metadata(path)
         .ok()
@@ -647,8 +574,6 @@ mod tests {
         WorkspaceIgnore::load_with_global(fs.root(), None)
     }
 
-    // Ported from Writer `commands/fs.rs` tests.
-
     #[test]
     fn read_directory_sorts_dirs_first_without_blocking_on_titles() {
         let dir = setup_test_dir();
@@ -657,7 +582,6 @@ mod tests {
         let names: Vec<_> = result.iter().map(|e| e.name.as_str()).collect();
         assert_eq!(names, ["notes", "hello.md", "world.md"]);
         assert!(result[0].is_dir);
-        // Titles now arrive through `titles::spawn_title_batches`.
         assert!(result.iter().all(|e| e.title.is_none()));
         assert_eq!(
             titles::extract_title(&result[1].path).as_deref(),
@@ -804,9 +728,6 @@ mod tests {
         assert!(entry.is_dir);
     }
 
-    // Writer create_sidebar_entry_rejects_a_replaced_workspace_root: the root
-    // is moved away and a link to another folder takes its place. The root is
-    // re-canonicalized on every operation, so the link resolves outside.
     #[test]
     fn create_untitled_rejects_a_replaced_workspace_root() {
         let parent = TempDir::new().unwrap();
@@ -847,7 +768,6 @@ mod tests {
         let ws = ws(&dir);
         let path = dir.path().join("hello.md");
         if let Err(error) = ws.delete(&path) {
-            // Headless CI sessions may have no trash; the file must survive.
             eprintln!("skipped: no trash available here: {error}");
             assert!(path.exists());
             return;
@@ -899,8 +819,6 @@ mod tests {
         let error = FsError::NotFound(PathBuf::from("a.md"));
         assert_eq!(error.to_string(), "not found: a.md");
     }
-
-    // Cerata additions (fixed defects).
 
     #[test]
     fn rename_case_only_is_allowed() {
@@ -992,8 +910,6 @@ mod tests {
         ));
     }
 
-    /// Creates a file symlink; `false` where the account cannot (Windows
-    /// without Developer Mode or elevation).
     fn file_symlink(target: &Path, link: &Path) -> bool {
         #[cfg(unix)]
         let created = std::os::unix::fs::symlink(target, link);
@@ -1028,7 +944,6 @@ mod tests {
 
         match ws.delete(&renamed) {
             Ok(()) => assert!(fs::symlink_metadata(&renamed).is_err()),
-            // Headless CI sessions may have no trash.
             Err(error) => eprintln!("delete skipped: no trash available here: {error}"),
         }
         assert_eq!(fs::read_to_string(&target).unwrap(), "kept");
@@ -1089,7 +1004,6 @@ mod tests {
         assert_eq!(fs::read_to_string(&second).unwrap(), "# Unsaved");
     }
 
-    // Ported from Writer `commands/fs.rs`, attached to US-026.
     #[test]
     fn test_read_file_entries_filters_missing_non_markdown_and_outside_root() {
         let dir = TempDir::new().unwrap();

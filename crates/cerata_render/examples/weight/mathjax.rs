@@ -1,4 +1,3 @@
-//! US-031 binary weight: MathJax 3.2.2 `tex-svg-full` + lite DOM in QuickJS.
 const FULL: &str = include_str!(concat!(
     env!("CERATA_SPIKE_JS"),
     "/mathjax3/package/es5/tex-svg-full.js"

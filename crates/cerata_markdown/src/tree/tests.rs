@@ -47,13 +47,9 @@ fn navigates_parent_children_siblings_and_markers() {
 fn resolves_positions_by_side() {
     let text = "a *b* c\n";
     let tree = MarkdownTree::parse(text);
-    // Inside the emphasis.
     assert_eq!(tree.resolve(3, 0).kind(), NodeKind::Emphasis);
-    // At the opening mark: side 1 enters the mark starting there.
     assert_eq!(tree.resolve(2, 1).kind(), NodeKind::EmphasisMark);
-    // Side -1 stays out of nodes starting at `pos`.
     assert_eq!(tree.resolve(2, -1).kind(), NodeKind::Paragraph);
-    // Past the end: the document.
     assert_eq!(tree.resolve(text.len(), 0).kind(), NodeKind::Document);
     let touched: Vec<_> = tree.iter_range(4..5).map(|n| n.name()).collect();
     assert_eq!(
@@ -64,8 +60,6 @@ fn resolves_positions_by_side() {
 
 #[test]
 fn the_tree_is_always_complete() {
-    // Every byte of every block lies inside the document; children nest in
-    // their parent and never overlap their siblings.
     for text in [
         "",
         "\n",
@@ -115,8 +109,6 @@ fn finds_wiki_links_outside_code() {
 
 #[test]
 fn custom_rules_build_their_nodes() {
-    // Writer's inline extensions on top of Lezer: escape of any char,
-    // inline and display math, emoji shortcodes, dashes, frontmatter.
     let text = "---\na: 1\n---\n\\q $x$ :smile: a -- b --- c\n\n$$\nE\n$$\n";
     let tree = MarkdownTree::parse(text);
     let names: Vec<_> = tree.iter().map(|n| n.name()).collect();
@@ -141,7 +133,6 @@ fn custom_rules_build_their_nodes() {
 
 #[test]
 fn a_wiki_link_over_several_nodes_wraps_them_in_order() {
-    // Writer's pattern crosses line breaks: `[[` and `]]` in two paragraphs.
     let tree = MarkdownTree::parse(
         "[[
 

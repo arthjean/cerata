@@ -1,51 +1,28 @@
-//! Destinations of a note that point into a folder (EP-015): found and
-//! rewritten by pure functions, so a rename, a move or a duplicate keeps a
-//! note's images on screen without parsing its text twice nor touching
-//! its code.
-//!
-//! A destination points into a folder when, once unescaped, percent-decoded
-//! and normalized (`\` and `/` separators, `.` and `..` resolved), its path
-//! starts with the folder's segments and goes on past them. Markdown links
-//! and images (inline or by reference) are read on their `Url` node, wiki
-//! links and embeds on their target, before `|` and `#`.
-
 use std::ops::Range;
 
 use crate::change::{Change, ChangeSet};
 use crate::text::Text;
 use crate::tree::{MarkdownTree, Node, NodeKind};
 
-/// How a destination is written; its rewrite keeps the form.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LinkForm {
-    /// `![a](foo-assets/x.png)`.
     Plain,
-    /// `![a](<foo-assets/x.png>)`.
     Angle,
-    /// A plain destination holding a `%XX` escape: `foo-assets/my%20x.png`.
     Percent,
-    /// `![[foo-assets/x.png|300]]` or `[[foo-assets/x.png]]`.
     Wiki,
 }
 
-/// A destination of a note that points into the folder asked for.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FolderLink {
-    /// The whole destination (angle brackets included) or wiki target.
     pub range: Range<usize>,
-    /// The bytes naming the folder, from the start of the path to the end of
-    /// its last segment: what a rewrite replaces.
     pub prefix: Range<usize>,
     pub form: LinkForm,
 }
 
-/// Every destination of `text` that points into `folder`, a path relative
-/// to the note (`foo-assets`, `../notes/foo-assets`), in document order.
 pub fn links_into(text: &str, folder: &str) -> Vec<FolderLink> {
     links_into_tree(&MarkdownTree::parse(text), text, folder)
 }
 
-/// [`links_into`] with the tree the caller already has.
 pub fn links_into_tree(tree: &MarkdownTree, text: &str, folder: &str) -> Vec<FolderLink> {
     let folder = normalized(folder.split(['/', '\\']).map(str::to_owned));
     if folder.iter().all(|s| s == "..") {
@@ -76,8 +53,6 @@ pub fn links_into_tree(tree: &MarkdownTree, text: &str, folder: &str) -> Vec<Fol
     links
 }
 
-/// The changes that replace the folder of each link by `new_folder`, a path
-/// relative to the note, keeping the rest of the destination and its title.
 pub fn rewrite(text: &str, links: &[FolderLink], new_folder: &str) -> Vec<Change> {
     let new_folder = new_folder.replace('\\', "/");
     let new_folder = new_folder.trim_end_matches('/');
@@ -106,15 +81,10 @@ pub fn rewrite(text: &str, links: &[FolderLink], new_folder: &str) -> Vec<Change
         .collect()
 }
 
-/// [`links_into`] then [`rewrite`]: the changes that move every destination
-/// of `text` from `folder` to `new_folder`.
 pub fn rewrite_folder(text: &str, folder: &str, new_folder: &str) -> Vec<Change> {
     rewrite(text, &links_into(text, folder), new_folder)
 }
 
-/// `text` with every destination into `folder` moved to `new_folder` (a
-/// closed note rewritten on disk, a duplicate before it is written);
-/// `None` when nothing changes.
 pub fn rewrite_text(text: &str, folder: &str, new_folder: &str) -> Option<String> {
     let changes = rewrite_folder(text, folder, new_folder);
     if changes.is_empty() {
@@ -125,9 +95,6 @@ pub fn rewrite_text(text: &str, folder: &str, new_folder: &str) -> Option<String
     Some(doc.as_str().to_owned())
 }
 
-/// Writer's `formatMarkdownDestination`: angle brackets around a
-/// destination with spaces or parentheses. `%` is escaped, since a local
-/// destination is percent-decoded when it is resolved.
 pub fn markdown_destination(path: &str) -> String {
     let path = path.replace('%', "%25");
     if path.contains([' ', '\t', '(', ')', '<', '>']) {
@@ -160,7 +127,6 @@ fn percent_encode(path: &str) -> String {
     out
 }
 
-/// Inside code, the frontmatter or raw HTML, where nothing is a link.
 fn in_code(node: Node<'_>) -> bool {
     node.ancestors().any(|a| {
         matches!(
@@ -176,7 +142,6 @@ fn in_code(node: Node<'_>) -> bool {
     })
 }
 
-/// `.` and empty segments dropped, `..` resolved; a leading `..` stays.
 fn normalized(segments: impl Iterator<Item = String>) -> Vec<String> {
     let mut stack: Vec<String> = Vec::new();
     for segment in segments {
@@ -195,13 +160,8 @@ fn push(stack: &mut Vec<String>, segment: String) {
     }
 }
 
-/// A path's segments, each with its bytes (relative to the path) and its
-/// logical text.
 type Segments = Vec<(Range<usize>, String)>;
 
-/// The end of the folder's prefix in `segments`: the end of the segment
-/// after which the normalized path equals `folder` and keeps it as a prefix
-/// to a longer path. `None` when the path does not point into it.
 fn prefix_end(segments: &Segments, folder: &[String]) -> Option<usize> {
     let mut stack: Vec<String> = Vec::new();
     let mut end = None;
@@ -216,9 +176,6 @@ fn prefix_end(segments: &Segments, folder: &[String]) -> Option<usize> {
     (stack.len() > folder.len()).then_some(end).flatten()
 }
 
-/// A Markdown destination: `\` before ASCII punctuation escapes it (`\/`
-/// stays a separator), any other `\` separates, as on Windows; each segment
-/// is percent-decoded.
 fn markdown_segments(path: &str) -> Segments {
     let bytes = path.as_bytes();
     let mut segments = Vec::new();
@@ -262,8 +219,6 @@ fn markdown_segments(path: &str) -> Segments {
     segments
 }
 
-/// `%XX` escapes decoded; the bytes as written when one is malformed or the
-/// result is not UTF-8 (`decodeURIComponent` keeping its input).
 fn percent_decode(bytes: &[u8]) -> String {
     let raw = String::from_utf8_lossy(bytes).into_owned();
     let mut out = Vec::with_capacity(bytes.len());
@@ -297,7 +252,6 @@ fn has_percent_escape(path: &str) -> bool {
     })
 }
 
-/// A local path: no root, no drive, no scheme.
 fn is_relative(first: &str, path: &str) -> bool {
     !path.starts_with(['/', '\\']) && !first.contains(':')
 }

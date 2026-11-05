@@ -24,7 +24,6 @@ fn run_id(s: &mut EditorState, id: &str) -> bool {
     s.run_command(id, &CLOCK)
 }
 
-/// The grid at `pos`, its rows' drawn contents.
 fn cells_of(s: &EditorState) -> Vec<Vec<String>> {
     let grid = table_grid(s);
     grid.text_rows()
@@ -42,14 +41,12 @@ fn table_grid(s: &EditorState) -> Grid {
     cells::grid_in(s.tree(), s.text(), at, None).expect("a table")
 }
 
-/// The caret's row and column in the drawn table.
 fn caret_cell(s: &EditorState) -> (usize, usize) {
     let head = s.selection().main().head;
     let (_, r, c) = cells::cell_at(s, head).expect("the caret in a cell");
     (r, c)
 }
 
-/// Every row has the header's number of cells (a valid GFM table).
 fn assert_valid(s: &EditorState, columns: usize) {
     let grid = table_grid(s);
     assert_eq!(grid.columns(), columns, "{}", s.doc());
@@ -83,21 +80,17 @@ fn table_commands_need_the_caret_in_a_drawn_table() {
     assert_eq!(s.doc(), DOC);
     let s = state_at(DOC, "Apple");
     for id in IDS {
-        // The first column cannot move left.
         assert_eq!(enabled(&s, id), *id != "table.columnMoveLeft", "{id}");
     }
     assert!(command("format.bold").unwrap().enabled(&s));
 }
 
-/// Each command is one undo step that puts the caret back in its cell,
-/// and leaves a table with as many cells in every row.
 #[test]
 fn every_command_is_one_undo_step_back_to_the_cell() {
     for id in IDS {
         if *id == "table.editSource" {
             continue;
         }
-        // Column 0 cannot move left and is already left-aligned.
         let at = if matches!(*id, "table.columnMoveLeft" | "table.alignLeft") {
             "2 |"
         } else {
@@ -168,7 +161,6 @@ fn rows_are_inserted_duplicated_moved_and_deleted() {
         "the row below takes the caret"
     );
     assert_eq!(caret_cell(&s), (3, 0));
-    // The last row: the caret goes up.
     let mut s = state_at(DOC, "`fig`");
     assert!(run_id(&mut s, "table.rowDelete"));
     assert_eq!(caret_cell(&s), (3, 0));
@@ -187,7 +179,6 @@ fn a_row_above_the_header_becomes_the_header() {
     );
     assert_eq!(caret_cell(&s), (0, 0));
     assert_valid(&s, 2);
-    // Below the header: the first body row.
     let mut s = state_at(DOC, "Qty");
     assert!(run_id(&mut s, "table.rowBelow"));
     assert!(
@@ -232,8 +223,6 @@ fn columns_take_the_reference_alignment() {
     assert_valid(&s, 1);
 }
 
-/// Commands other than "Format table" rewrite only the cells they create,
-/// move or delete: here, an inserted column leaves every other byte.
 #[test]
 fn structure_edits_are_minimal() {
     let mut s = state_at(DOC, "Qty");
@@ -257,7 +246,6 @@ fn sorting_compares_the_drawn_text_and_keeps_the_header() {
     let mut s = state_at(DOC, "Name");
     assert!(run_id(&mut s, "table.sortAscending"));
     let names: Vec<String> = cells_of(&s)[1..].iter().map(|r| r[0].clone()).collect();
-    // Marks ignored, case ignored: Apple, `fig`, **pear**.
     assert_eq!(names, vec!["Apple", "`fig`", "**pear**"]);
     assert_eq!(cells_of(&s)[0], vec!["Name", "Qty"]);
     assert_eq!(caret_cell(&s), (0, 0));
@@ -268,7 +256,6 @@ fn sorting_compares_the_drawn_text_and_keeps_the_header() {
     assert!(run_id(&mut s, "table.sortDescending"));
     let qty: Vec<String> = cells_of(&s)[1..].iter().map(|r| r[1].clone()).collect();
     assert_eq!(qty, vec!["33", "10", "2"]);
-    // The caret follows its row.
     let mut s = state_at(DOC, "pear");
     assert!(run_id(&mut s, "table.sortAscending"));
     let head = s.selection().main().head;
@@ -339,7 +326,6 @@ fn rows_added_keep_the_quote_or_list_prefix() {
         s.doc()
     );
     assert_valid(&s, 2);
-    // In the quote, a new header takes the header line's prefix.
     let mut s = state_at(quoted, "a");
     assert!(run_id(&mut s, "table.rowAbove"));
     assert!(
@@ -380,8 +366,6 @@ fn crlf_tables_keep_their_line_breaks() {
     assert_eq!(caret_cell(&s), (3, 0));
 }
 
-/// US-056: "Edit as Markdown" shows the source and edits it as text until
-/// the selection leaves the table.
 #[test]
 fn edit_as_markdown_holds_until_the_selection_leaves() {
     let drawn = |s: &EditorState| {
@@ -400,14 +384,12 @@ fn edit_as_markdown_holds_until_the_selection_leaves() {
     assert!(run_id(&mut s, "table.editSource"));
     assert!(!drawn(&s));
     assert!(cells::grid_at(&s, s.selection().main().head).is_none());
-    // A pipe takes the caret and typing is not escaped.
     let pipe = DOC.find("| Apple").unwrap();
     s.select(Selection::cursor(pipe)).unwrap();
     assert_eq!(s.selection().main().head, pipe);
     assert!(s.type_text(None, "|", UserEvent::Type));
     assert!(s.doc().contains("|| Apple"));
     assert!(!drawn(&s));
-    // Out of the table: drawn again, and again on the way back.
     s.select(Selection::cursor(0)).unwrap();
     assert!(drawn(&s));
     assert!(s.undo());
@@ -416,8 +398,6 @@ fn edit_as_markdown_holds_until_the_selection_leaves() {
     assert!(drawn(&s));
 }
 
-/// US-056: a range from one cell to another keeps its ends (a search
-/// result across a `|`), and its table shows its source.
 #[test]
 fn a_range_across_cells_keeps_its_ends() {
     let mut s = state_at(DOC, "Apple");
@@ -434,8 +414,6 @@ fn a_range_across_cells_keeps_its_ends() {
     )));
 }
 
-/// Review of EP-007: a table written without its edge pipes stays a table
-/// when a column is added at an edge or all but one are deleted.
 #[test]
 fn columns_at_pipe_less_edges_stay_cells() {
     let doc = "| a | b\n|---|---\n| 1 | 2";
@@ -457,8 +435,6 @@ fn columns_at_pipe_less_edges_stay_cells() {
     assert_eq!(s.doc(), doc);
 }
 
-/// Review of EP-007: decimals and negatives sort by value, numbers before
-/// text.
 #[test]
 fn sorting_reads_decimals_and_negatives() {
     let doc = "| v |\n|---|\n| 1.5 |\n| tea |\n| -5 |\n| 1.25 |\n| -10 |\n| item 10 |\n| item 9 |";

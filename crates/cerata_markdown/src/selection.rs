@@ -1,5 +1,3 @@
-//! Selections: one or more ranges, each with an anchor and a head.
-
 use crate::change::{Bias, ChangeSet};
 use crate::text::Text;
 use std::ops::Range;
@@ -35,15 +33,12 @@ impl SelectionRange {
         self.anchor == self.head
     }
 
-    /// Writer's contact rule (`rangeTouchesRange`, `utils.ts:126-132`):
-    /// inclusive at both ends, so a caret right after `**bold**` touches it.
     pub fn touches(&self, range: Range<usize>) -> bool {
         touches(self.from()..self.to(), range)
     }
 
     pub fn map(&self, changes: &ChangeSet) -> Self {
         if self.is_empty() {
-            // A caret moves after text typed at it, like CodeMirror's default.
             let pos = changes.map_pos(self.head, Bias::Right);
             return Self::cursor(pos);
         }
@@ -58,7 +53,6 @@ impl SelectionRange {
         )
     }
 
-    /// Clamped into `text` and onto character boundaries.
     pub fn clamp(&self, text: &Text) -> Self {
         Self::new(
             text.floor_char_boundary(self.anchor),
@@ -67,7 +61,6 @@ impl SelectionRange {
     }
 }
 
-/// Inclusive contact of two ranges: `a.from <= b.to && b.from <= a.to`.
 pub fn touches(a: Range<usize>, b: Range<usize>) -> bool {
     a.start <= b.end && b.start <= a.end
 }
@@ -90,8 +83,6 @@ impl Selection {
         Self::single(pos, pos)
     }
 
-    /// Ranges are sorted and overlapping ones merged; `main` follows its
-    /// range. An empty list becomes a caret at 0.
     pub fn new(ranges: Vec<SelectionRange>, main: usize) -> Self {
         if ranges.is_empty() {
             return Self::cursor(0);
@@ -104,8 +95,6 @@ impl Selection {
         for range in sorted {
             let is_main = Some(range) == main_range;
             if let Some(last) = merged.last_mut() {
-                // CodeMirror's rule: a caret at the end of the previous range
-                // joins it; two non-empty ranges only merge when they overlap.
                 let overlaps = if range.is_empty() {
                     range.from() <= last.to()
                 } else {
@@ -152,7 +141,6 @@ impl Selection {
             .unwrap_or(SelectionRange::cursor(0))
     }
 
-    /// True when any range touches `range` (inclusive contact).
     pub fn touches(&self, range: Range<usize>) -> bool {
         self.ranges.iter().any(|r| r.touches(range.clone()))
     }

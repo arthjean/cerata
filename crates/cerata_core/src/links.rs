@@ -1,23 +1,11 @@
-//! Where a Markdown link leads (US-033). Ported from `lib/paths.ts:18-183`
-//! (`resolveLinkTarget`), on `/`-separated path strings like Writer's; the
-//! caller turns an internal path into a `PathBuf`.
-//!
-//! Change from Writer: an absolute extensionless link (`/docs/guide`) is
-//! tried under the workspace root before the filesystem root.
-
-/// What following a link does.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LinkTarget {
-    /// `#anchor`: scroll the current note.
     SameDocAnchor(String),
-    /// A note of the workspace, opened in the app.
     Internal {
         path: String,
         anchor: Option<String>,
     },
-    /// `scheme:...`: handed to the OS when the scheme is allowed.
     ExternalUrl(String),
-    /// Any other local path: handed to the OS after a confirmation.
     ExternalPath(String),
 }
 
@@ -40,8 +28,6 @@ fn has_scheme(href: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '.' | '-'))
 }
 
-/// `decodeURIComponent`, keeping the input when it is not valid UTF-8 once
-/// decoded or holds a malformed escape.
 pub fn decode_link_path(path: &str) -> String {
     let bytes = path.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
@@ -66,7 +52,6 @@ pub fn decode_link_path(path: &str) -> String {
     String::from_utf8(out).unwrap_or_else(|_| path.to_owned())
 }
 
-/// `normalizePath`: `/` separators, `.` and `..` resolved.
 pub fn normalize_path(path: &str) -> String {
     let normalized = path.replace('\\', "/");
     let windows = is_windows_absolute(&normalized);
@@ -118,8 +103,6 @@ fn resolve_path(base_dir: &str, target: &str) -> String {
     normalize_path(&format!("{}/{target}", base_dir.trim_end_matches('/')))
 }
 
-/// Inside the root; compared case-insensitively on Windows, where the file
-/// system is.
 pub fn is_inside_root(path: &str, root: &str) -> bool {
     let (mut path, mut root) = (normalize_path(path), normalize_path(root));
     if cfg!(windows) {
@@ -130,13 +113,10 @@ pub fn is_inside_root(path: &str, root: &str) -> bool {
     path == root || path.starts_with(&format!("{root}/"))
 }
 
-/// The last component of `path`, `/` or `\` separated (`getFileName`).
 pub fn file_name(path: &str) -> &str {
     path.rsplit(['/', '\\']).next().unwrap_or(path)
 }
 
-/// The extension of `path`'s name, without its dot; none for a dotfile
-/// (`getFileExtension`).
 pub fn file_extension(path: &str) -> &str {
     let name = file_name(path);
     match name.rfind('.') {
@@ -145,8 +125,6 @@ pub fn file_extension(path: &str) -> &str {
     }
 }
 
-/// `path`'s name without its extension; a dotfile keeps its whole name
-/// (`getFileStem`).
 pub fn file_stem(path: &str) -> &str {
     let name = file_name(path);
     match name.rfind('.') {
@@ -155,8 +133,6 @@ pub fn file_stem(path: &str) -> &str {
     }
 }
 
-/// `full` relative to `root` with `/` separators, or `full` itself (with
-/// `/` separators) outside it (`getRelativePath`).
 pub fn relative_path(full: &str, root: &str) -> String {
     let full = full.replace('\\', "/");
     let root = root.replace('\\', "/");
@@ -176,9 +152,6 @@ fn anchor_of(href: &str) -> Option<String> {
     (!anchor.is_empty()).then(|| decode_link_path(anchor))
 }
 
-/// Resolves `href` written in the note at `current` (`resolveLinkTarget`).
-/// `exists` probes candidates for an extensionless link. `None` for an
-/// empty link or a bare `#`.
 pub fn resolve(
     href: &str,
     current: &str,
@@ -246,10 +219,6 @@ pub fn resolve(
     Some(LinkTarget::ExternalPath(resolved))
 }
 
-/// The note a wiki link names (`resolveWikiLink`, `lib/wiki-links.ts`):
-/// a path with a `/` is taken from the root (`.md`, then `.markdown`); a
-/// bare name must match the stem of exactly one note, `stems` listing the
-/// notes whose name contains it. `#fragment` alone means the current note.
 pub fn resolve_wiki(
     raw: &str,
     root: &str,
@@ -280,11 +249,6 @@ pub fn resolve_wiki(
     }
 }
 
-/// The file an image embed (`![[target]]`) shows (`resolveWikiImage`): a
-/// target with a `/` is tried from the root, then from the note's folder;
-/// a bare name from the note's folder, then the root, then by name
-/// anywhere in the workspace (`find`, Obsidian's shortest-path links).
-/// Without a workspace, only the note's folder. Never outside the root.
 pub fn resolve_wiki_image(
     target: &str,
     root: Option<&str>,
@@ -334,7 +298,6 @@ mod tests {
         })
     }
 
-    /// `paths.test.ts:114-298`.
     #[test]
     fn resolves_like_writer() {
         let r = |href: &str, current: &str, root: &str| resolve(href, current, Some(root), &none);
@@ -397,8 +360,6 @@ mod tests {
         );
     }
 
-    /// `paths.test.ts` "extensionless link resolution", with the absolute
-    /// path tried under the root first.
     #[test]
     fn extensionless_links_probe_markdown_candidates() {
         let existing = [
@@ -453,7 +414,6 @@ mod tests {
             resolve("./guide", "/vault/docs/start.md", Some("/vault"), &none),
             Some(LinkTarget::ExternalPath("/vault/docs/guide".into()))
         );
-        // Under the root first, the filesystem path second.
         let both = |p: &str| p == "/vault/vault/x.md" || p == "/vault/x.md";
         assert_eq!(
             resolve("/vault/x", "/vault/a.md", Some("/vault"), &both),
@@ -499,7 +459,6 @@ mod tests {
         assert_eq!(r("../../etc/passwd"), None);
     }
 
-    /// `paths.test.ts:14-72`.
     #[test]
     fn names_stems_extensions_and_relative_paths() {
         assert_eq!(file_extension("/path/to/file.md"), "md");
@@ -536,7 +495,6 @@ mod tests {
         assert_eq!(relative_path(r"C:\vault\a\b.md", r"C:\vault"), "a/b.md");
     }
 
-    /// `wiki-links.test.ts:108-316`, one case per Writer test.
     #[test]
     fn wiki_links_resolve_like_writer() {
         let notes = [
@@ -604,7 +562,6 @@ mod tests {
         );
     }
 
-    /// `wiki-links.test.ts:428-510`.
     #[test]
     fn image_embeds_resolve_like_writer() {
         let no_find = |_: &str, _: &str| -> Option<String> { panic!("no name search") };
@@ -666,7 +623,6 @@ mod tests {
             .as_deref(),
             Some("/anywhere/pic.png")
         );
-        // Never outside the workspace.
         let anything = |_: &str| true;
         assert_eq!(
             resolve_wiki_image(

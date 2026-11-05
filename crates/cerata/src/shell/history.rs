@@ -1,8 +1,3 @@
-//! The window's side of the history (EP-018): the history panel and its
-//! restores and purges (US-090, US-091), the three-way merge of a change
-//! made outside Cerata (US-092), and the review of a sync service's
-//! conflict copy (US-093).
-
 use std::path::{Path, PathBuf};
 
 use cerata_core::fs::FileContent;
@@ -18,14 +13,11 @@ use crate::history_panel::{HistoryEvent, HistoryPanel, View};
 use crate::merge_review::{MergeReview, ReviewEvent, Source};
 use crate::palette::HistoryCommand;
 
-/// Notes up to this size (base, buffer and disk together) merge on the UI
-/// thread, well under a frame; larger ones on the background executor.
 pub const SYNC_MERGE_LIMIT: usize = 256 * 1024;
 
 pub const MERGED: &str = "Merged changes made outside Cerata";
 pub const RESOLVED: &str = "Conflict resolved. The copy was moved to the trash.";
 
-/// `This permanently deletes {n} versions. This can't be undone.`
 pub fn purge_message(n: usize) -> String {
     let versions = if n == 1 {
         "1 version".to_owned()
@@ -36,10 +28,6 @@ pub fn purge_message(n: usize) -> String {
 }
 
 impl WindowView {
-    // ---- The panel (US-091) ----
-
-    /// "Show Note History" of `path` (the active note with `None`), or
-    /// "Deleted Notes".
     pub fn show_history(
         &mut self,
         path: Option<PathBuf>,
@@ -81,7 +69,6 @@ impl WindowView {
             .and_then(|path| self.docs.get(path))
             .map(|doc| doc.editor.read(cx).state.doc().to_owned())
             .unwrap_or_default();
-        // A note's pending save is written first, so the list is current.
         if let (Some(runtime), Some(path)) = (&runtime, &path) {
             runtime.flush_history(Some(path), Some(cerata_core::workspace::HISTORY_FLUSH));
         }
@@ -131,8 +118,6 @@ impl WindowView {
         }
     }
 
-    /// Replaces the text of the open note at `path` with `text`, as one
-    /// transaction (one Ctrl+Z).
     pub(super) fn replace_text(&mut self, path: &Path, text: &str, cx: &mut Context<Self>) -> bool {
         let Some(doc) = self
             .docs
@@ -164,8 +149,6 @@ impl WindowView {
         })
     }
 
-    /// "Restore": the version replaces the note's text in one undoable
-    /// transaction; the text before it was saved as a version first.
     pub fn restore_version(&mut self, path: &Path, bytes: &[u8], cx: &mut Context<Self>) -> bool {
         let Some(doc) = self
             .docs
@@ -201,7 +184,6 @@ impl WindowView {
         true
     }
 
-    /// Records `bytes` as a version of `path`.
     pub(super) fn record_bytes(&self, path: &Path, bytes: Vec<u8>, cause: Cause) -> bool {
         let Some(runtime) = self.core.runtime() else {
             return false;
@@ -226,7 +208,6 @@ impl WindowView {
         if let Some(current) = current {
             panel.update(cx, |panel, cx| panel.set_current(current, cx));
         }
-        // Read again once the versions just recorded are committed.
         let history = self.history();
         let task = cx.spawn(async move |_, cx| {
             if let Some(history) = history {
@@ -241,9 +222,6 @@ impl WindowView {
         self._tasks.push(task);
     }
 
-    /// "Restore" in "Deleted Notes": the note comes back at its path, or
-    /// at `{stem} (restored).md` when that path is taken, never over a
-    /// file, with its history.
     fn restore_deleted(&mut self, note: DeletedNote, bytes: Vec<u8>, cx: &mut Context<Self>) {
         let Some(runtime) = self.core.runtime() else {
             return;
@@ -295,7 +273,6 @@ impl WindowView {
         self._tasks.push(task);
     }
 
-    /// Asks before a purge, naming how many versions go for good.
     fn confirm_purge(&mut self, purge: Purge, window: &mut Window, cx: &mut Context<Self>) {
         let Some(history) = self.history() else {
             return;
@@ -321,7 +298,6 @@ impl WindowView {
                     gpui::PromptLevel::Warning,
                     &purge_message(count),
                     None,
-                    // Cancel first, the default: a purge cannot be undone.
                     &["Cancel", "Delete"],
                     cx,
                 )
@@ -360,11 +336,6 @@ impl WindowView {
         self._tasks.push(task);
     }
 
-    // ---- Changes made outside Cerata (US-092) ----
-
-    /// The disk changed under unsaved edits: both texts become versions,
-    /// the disk's first, then the three are merged. A clean merge goes into
-    /// the buffer (one undo step); overlaps wait for "Review Changes".
     pub(super) fn merge_disk_change(
         &mut self,
         path: &Path,
@@ -380,7 +351,6 @@ impl WindowView {
         let revision = doc.editor.read(cx).state.revision();
         self.record_version(path, &file.content, file.format, Cause::External);
         self.record_version(path, &ours, format, Cause::Save);
-        // Held until decided; the buffer is written at quit if never.
         if let Some(doc) = self.docs.get_mut(path) {
             doc.conflict = Some(Conflict::Modified {
                 disk: file.content.clone(),
@@ -447,7 +417,6 @@ impl WindowView {
         cx.notify();
     }
 
-    /// "Review Changes" on the banner of the active note.
     pub fn review_changes(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(path) = self.tabs.active_path().map(Path::to_path_buf) else {
             return;
@@ -510,8 +479,6 @@ impl WindowView {
         }
     }
 
-    /// The reviewed result goes into the buffer (one undo step) and is
-    /// written; both sides stay in the history.
     pub fn apply_disk_merge(&mut self, path: &Path, text: &str, cx: &mut Context<Self>) {
         let Some(doc) = self.docs.get_mut(path) else {
             return;
@@ -528,9 +495,6 @@ impl WindowView {
         self.resume_saves(path, cx);
     }
 
-    // ---- Conflict copies (US-093) ----
-
-    /// The conflict copy of `original` in its folder, if any.
     pub fn conflict_copy_of(original: &Path) -> Option<PathBuf> {
         let name = original.file_name()?.to_str()?.to_owned();
         let mut copies: Vec<PathBuf> = std::fs::read_dir(original.parent()?)
@@ -548,8 +512,6 @@ impl WindowView {
         copies.into_iter().next()
     }
 
-    /// "Review Conflict": base = the original's last version before the
-    /// copy, mine = the original (its buffer when open), theirs = the copy.
     pub fn review_conflict(
         &mut self,
         original: &Path,
@@ -625,8 +587,6 @@ impl WindowView {
             .get(original)
             .filter(|doc| doc.loading_since.is_none() && doc.conflict.is_none())
             .map(|doc| doc.format);
-        // The original as it was is a version before the merge replaces it
-        // (US-089): "Keep Theirs" may drop it from the note.
         if let Some(format) = open {
             let before = self
                 .docs
@@ -687,8 +647,6 @@ impl WindowView {
         self._tasks.push(task);
     }
 
-    /// "Keep Both": the copy becomes an ordinary note, `{stem} (2).md`,
-    /// never over a file; its mark goes with its conflict name.
     fn keep_both_notes(&mut self, copy: &Path, cx: &mut Context<Self>) {
         let Some(runtime) = self.core.runtime() else {
             return;
@@ -715,7 +673,6 @@ impl WindowView {
         }
     }
 
-    /// A history command of the palette.
     pub fn run_history_command(
         &mut self,
         command: HistoryCommand,
@@ -748,7 +705,6 @@ impl WindowView {
     }
 }
 
-/// `path` if free, else `{stem} ({label}).ext`, then `({label} 2)` and up.
 pub fn free_path(path: &Path, label: &str) -> PathBuf {
     if !path.exists() {
         return path.to_path_buf();
@@ -774,7 +730,6 @@ pub fn free_path(path: &Path, label: &str) -> PathBuf {
         .unwrap_or_else(|| path.to_path_buf())
 }
 
-/// `{stem} (2).ext`, `(3)` and up: the first that is free.
 pub fn free_numbered(path: &Path) -> PathBuf {
     let stem = path
         .file_stem()

@@ -1,22 +1,3 @@
-//! Reconciliation (US-084) and renames made outside Cerata (US-085).
-//!
-//! The watcher misses changes: Windows drops events when its buffer
-//! overflows (notify 8.2.1 never reads `bytes_written`, `windows.rs:333`),
-//! Linux may watch only the folders of open files, and nothing watches
-//! while Cerata is closed. One routine catches up: it walks the library
-//! with the index's ignore rules, compares each note's `(size, mtime_ns)`
-//! with what the index knows, reads and hashes only the new or changed
-//! files, and reports what changed with the watcher's own events. It runs
-//! at the end of the first frame, when the window gets the focus back (at
-//! most every 30 s), after any watcher error, and every 5 minutes unless a
-//! pass ran in the last minute.
-//!
-//! A note that disappeared and one that appeared in the same pass with the
-//! same BLAKE3 hash are one note renamed; failing that, a pair whose line
-//! content is at least 50 % alike (git's rename score) is one too. The
-//! store row keeps its id and takes the new path. Nothing on disk is moved
-//! or written by a detection.
-
 use crate::epoch::EpochToken;
 use crate::fs::titles::title_from_bytes;
 use crate::history::{Cause, History, Request, conflict_version, unversioned_heads};
@@ -36,31 +17,18 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-/// The focus brings a pass at most this often.
 pub const FOCUS_INTERVAL: Duration = Duration::from_secs(30);
-/// Period of the timer trigger.
 pub const TIMER_INTERVAL: Duration = Duration::from_secs(5 * 60);
-/// The timer skips its pass when one ran this recently.
 pub const TIMER_SKIP: Duration = Duration::from_secs(60);
-/// A file modified this close to the walk is checked again next pass, as
-/// the sidebar does (`sidebar/mod.rs`, settled titles).
 pub const SETTLE: Duration = Duration::from_secs(2);
-/// A library opened from its store waits this long for the first frame
-/// before its first pass starts anyway.
 pub const FIRST_RENDER_FALLBACK: Duration = Duration::from_secs(2);
-/// Least similarity of two notes for a rename (git's default, 50 %).
 pub const SIMILARITY_THRESHOLD: f64 = 0.5;
-/// Most similarity comparisons per pass (100 notes gone × 100 appeared).
 pub const MAX_COMPARISONS: usize = 100 * 100;
-/// Files read per step of the first pass of a library without a store.
 const CONTENT_CHUNK: usize = 256;
 
-/// Windows: the file's content is not on this device (cloud placeholder).
 pub const FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS: u32 = 0x0040_0000;
-/// Windows: the file's data is offline storage.
 pub const FILE_ATTRIBUTE_OFFLINE: u32 = 0x0000_1000;
 
-/// What started a pass.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReconcileTrigger {
     FirstRender,
@@ -69,15 +37,11 @@ pub enum ReconcileTrigger {
     Timer,
 }
 
-/// How a pass reads the disk, injectable so tests count every open.
 pub trait FileAccess: Send + Sync {
-    /// `true` for a file that must never be opened: its content is not on
-    /// this device, and reading it would download it.
     fn is_offline(&self, path: &Path, metadata: &Metadata) -> bool;
     fn read(&self, path: &Path) -> std::io::Result<Vec<u8>>;
 }
 
-/// The real file system.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct OsFiles;
 
@@ -91,9 +55,6 @@ impl FileAccess for OsFiles {
     }
 }
 
-/// `true` when Windows marks the file `RECALL_ON_DATA_ACCESS` or
-/// `OFFLINE`. The attributes come from the directory listing, so nothing
-/// is opened to know it. Always `false` elsewhere.
 pub fn is_offline_metadata(metadata: &Metadata) -> bool {
     #[cfg(windows)]
     {
@@ -108,7 +69,6 @@ pub fn is_offline_metadata(metadata: &Metadata) -> bool {
     }
 }
 
-/// What one read of a note tells.
 #[derive(Debug, Clone)]
 pub struct NoteContent {
     pub hash: ContentHash,
@@ -124,7 +84,6 @@ pub fn note_content(bytes: &[u8]) -> NoteContent {
     }
 }
 
-/// The store's record of an index entry.
 pub fn note_record(file: &IndexedFile, offline: bool) -> NoteRecord {
     NoteRecord {
         path: file.relative_path.clone(),
@@ -136,7 +95,6 @@ pub fn note_record(file: &IndexedFile, offline: bool) -> NoteRecord {
     }
 }
 
-/// `root` joined with a `/`-separated relative path, with the OS separator.
 pub fn path_from_relative(root: &Path, relative: &str) -> PathBuf {
     relative
         .split('/')
@@ -144,9 +102,6 @@ pub fn path_from_relative(root: &Path, relative: &str) -> PathBuf {
         .fold(root.to_path_buf(), |path, part| path.join(part))
 }
 
-// Renames ---------------------------------------------------------------
-
-/// A note that disappeared, with the hash last known.
 #[derive(Debug, Clone)]
 pub struct Gone {
     pub path: PathBuf,
@@ -154,7 +109,6 @@ pub struct Gone {
     pub hash: Option<ContentHash>,
 }
 
-/// A note that appeared, read.
 #[derive(Debug, Clone)]
 pub struct Appeared {
     pub path: PathBuf,
@@ -163,20 +117,12 @@ pub struct Appeared {
     pub sketch: Sketch,
 }
 
-/// Pairs `(gone, appeared)` of indices recognized as one renamed note.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct RenameMatches {
     pub pairs: Vec<(usize, usize)>,
-    /// Similarity comparisons made, at most [`MAX_COMPARISONS`].
     pub comparisons: usize,
 }
 
-/// Matches disappeared notes with appeared ones: same hash first, the
-/// appeared ones in lexicographic order of their paths (so of two copies
-/// of a renamed note the first inherits its identity); then, among those
-/// left, the most similar pairs of the same extension scoring at least
-/// [`SIMILARITY_THRESHOLD`], comparing gone notes whose sketch is in
-/// `sketches`, at most [`MAX_COMPARISONS`] times.
 pub fn match_renames(
     gone: &[Gone],
     appeared: &[Appeared],
@@ -254,21 +200,14 @@ fn extension(path: &Path) -> Option<String> {
         .map(|ext| ext.to_string_lossy().to_lowercase())
 }
 
-// One pass --------------------------------------------------------------
-
-/// Everything a pass reads and updates.
 #[derive(Clone)]
 pub struct ReconcileContext {
-    /// Canonical library root.
     pub root: PathBuf,
     pub token: EpochToken,
     pub index: Arc<Mutex<LiveIndex>>,
     pub ignore: Arc<RwLock<Arc<WorkspaceIgnore>>>,
-    /// Set once an index (from the store or a walk) is published.
     pub index_ready: Arc<AtomicBool>,
     pub store: Option<Store>,
-    /// The library's history: what changed outside Cerata becomes a
-    /// version (US-089).
     pub history: Option<History>,
     pub self_writes: Arc<SelfWriteLog>,
     pub files: Arc<dyn FileAccess>,
@@ -289,25 +228,19 @@ impl ReconcileContext {
     }
 }
 
-/// What a pass did.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PassReport {
-    /// The first pass of a library without an index: the walk published
-    /// the index, then every note was read.
     pub initial: bool,
     pub notes: usize,
-    /// Files opened.
     pub opened: usize,
     pub created: usize,
     pub modified: usize,
     pub removed: usize,
     pub renamed: usize,
-    /// Versions recorded for changes made outside Cerata.
     pub versions: usize,
     pub duration: Duration,
 }
 
-/// Why a pass stopped without applying anything.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum PassError {
     #[error("reconciliation canceled: the library changed")]
@@ -316,13 +249,9 @@ pub enum PassError {
     RootUnavailable,
 }
 
-/// State kept from one pass to the next.
 #[derive(Debug, Default)]
 pub struct PassState {
-    /// Files modified too close to the last walk to be trusted.
     recheck: HashSet<PathBuf>,
-    /// The notes written without their version were looked for (once per
-    /// opening of the library).
     heads_checked: bool,
 }
 
@@ -331,8 +260,6 @@ struct Seen {
     metadata: Option<Metadata>,
 }
 
-/// Runs one pass. `on_published` is called once the index is current
-/// (after the walk on a first pass, else after the changes are applied).
 pub fn run_pass(
     ctx: &ReconcileContext,
     state: &mut PassState,
@@ -396,7 +323,6 @@ pub fn run_pass(
         ..PassReport::default()
     };
     let mut seen_paths: HashSet<PathBuf> = HashSet::with_capacity(notes.len());
-    // (entry, previous, offline): read when `offline` is false.
     let mut to_read: Vec<(IndexedFile, Option<IndexedFile>)> = Vec::new();
     let mut unread: Vec<(IndexedFile, Option<IndexedFile>)> = Vec::new();
     for seen in notes {
@@ -441,12 +367,9 @@ pub fn run_pass(
         })
         .collect();
 
-    // Read what changed or appeared. A changed entry carries its content
-    // when it was read, `None` for an offline file.
     let mut changed: Vec<(IndexedFile, IndexedFile, Option<NoteContent>)> = Vec::new();
     let mut appeared: Vec<Appeared> = Vec::new();
     let mut appeared_files: Vec<(IndexedFile, Option<NoteContent>, bool)> = Vec::new();
-    // The bytes read, for the versions of what changed outside Cerata.
     let mut bytes_read: HashMap<PathBuf, Vec<u8>> = HashMap::new();
     for (mut entry, previous) in to_read {
         if ctx.token.is_stale() {
@@ -490,14 +413,12 @@ pub fn run_pass(
             Some(previous)
                 if previous.size != entry.size || previous.modified_ns != entry.modified_ns =>
             {
-                // Never read: hash and title stay the last known ones.
                 changed.push((entry, previous, None));
             }
             Some(_) => {}
         }
     }
 
-    // Renames: the store keeps the sketches of the notes gone.
     let matches = if gone.is_empty() || appeared.is_empty() {
         RenameMatches::default()
     } else {
@@ -524,7 +445,6 @@ pub fn run_pass(
         return Err(PassError::Canceled);
     }
 
-    // Apply to the index, then the store, then tell.
     let mut events: Vec<WatchEvent> = Vec::new();
     let mut versions: Vec<Request> = Vec::new();
     let mut dirs: BTreeSet<PathBuf> = BTreeSet::new();
@@ -565,7 +485,6 @@ pub fn run_pass(
             }
             index.upsert(entry);
         }
-        // Appeared files, in `appeared` order for the read ones.
         let mut read_index = 0;
         for (entry, content, offline) in appeared_files {
             let pair = if content.is_some() {
@@ -614,8 +533,6 @@ pub fn run_pass(
                             .remove(&entry.path)
                             .filter(|bytes| !bytes.is_empty())
                     {
-                        // A sync service's conflict copy is a branch of its
-                        // original (US-093).
                         let conflict = ctx.store.as_ref().and_then(|store| {
                             conflict_version(store, &ctx.root, &entry.path, bytes.clone())
                         });
@@ -679,9 +596,6 @@ pub fn run_pass(
     Ok(report)
 }
 
-/// Notes whose last write has no version (a crash came between the two,
-/// US-089): what the disk holds becomes an outside version, unless it is
-/// already among `queued`.
 fn unrecorded_writes(ctx: &ReconcileContext, queued: &[Request]) -> Vec<Request> {
     let Some(store) = &ctx.store else {
         return Vec::new();
@@ -709,9 +623,6 @@ fn unrecorded_writes(ctx: &ReconcileContext, queued: &[Request]) -> Vec<Request>
     found
 }
 
-/// The first pass of a library the index knows nothing of: the walk is
-/// published at once, as before the store, then every note is read in
-/// chunks to fill titles, hashes and the store.
 fn first_pass(
     ctx: &ReconcileContext,
     notes: Vec<Seen>,
@@ -735,7 +646,6 @@ fn first_pass(
             seen.metadata.as_ref(),
         ));
     }
-    // A full walk: the name table is complete (US-087).
     live.set_other_files(others);
     let count = live.len();
     let rows: Vec<NoteChange> = live
@@ -784,7 +694,6 @@ fn first_pass(
                 let Some(file) = index.get_mut(&seen.path) else {
                     continue;
                 };
-                // The watcher got there first with newer content.
                 if file.size != size || file.modified_ns != mtime || file.hash.is_some() {
                     continue;
                 }
@@ -802,7 +711,6 @@ fn first_pass(
     Ok(report)
 }
 
-/// Applies `changes` to the store, if there is one, and waits for them.
 fn commit(ctx: &ReconcileContext, changes: Vec<NoteChange>) -> Result<(), PassError> {
     let Some(store) = &ctx.store else {
         return Ok(());
@@ -829,8 +737,6 @@ fn nanos_of(duration: Duration) -> u64 {
     u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX)
 }
 
-// The triggers ----------------------------------------------------------
-
 #[derive(Default)]
 struct LoopState {
     requested: Option<ReconcileTrigger>,
@@ -852,7 +758,6 @@ struct Shared {
     wake: Condvar,
 }
 
-/// The triggers of one library's passes. Clones share the same loop.
 #[derive(Clone, Default)]
 pub struct Reconciler {
     shared: Arc<Shared>,
@@ -863,9 +768,6 @@ impl Reconciler {
         Self::default()
     }
 
-    /// Asks for a pass. A focus within [`FOCUS_INTERVAL`] of the last one
-    /// is ignored, and so is a first frame once the first pass ran; returns
-    /// `false` then.
     pub fn request(&self, trigger: ReconcileTrigger) -> bool {
         let mut state = self.shared.state.lock();
         if trigger == ReconcileTrigger::FirstRender && state.first_pass_done() {
@@ -886,21 +788,15 @@ impl Reconciler {
         true
     }
 
-    /// Ends the loop at its next wake.
     pub fn stop(&self) {
         self.shared.state.lock().stopped = true;
         self.shared.wake.notify_all();
     }
 
-    /// Passes run so far.
     pub fn passes(&self) -> usize {
         self.shared.state.lock().passes
     }
 
-    /// Runs the passes on the calling thread until stopped or the token
-    /// goes stale. With `wait_first_render`, the first pass waits for
-    /// [`ReconcileTrigger::FirstRender`] (or [`FIRST_RENDER_FALLBACK`]);
-    /// `on_first_pass` runs once the first pass published its index.
     pub fn run(
         &self,
         ctx: &ReconcileContext,
@@ -911,8 +807,6 @@ impl Reconciler {
         if wait_first_render {
             let deadline = Instant::now() + FIRST_RENDER_FALLBACK;
             let mut state = self.shared.state.lock();
-            // Only the first frame (or the fallback) starts it: a focus
-            // asked meanwhile is what this pass does anyway.
             while state.requested != Some(ReconcileTrigger::FirstRender)
                 && !state.stopped
                 && ctx.token.is_current()
@@ -935,7 +829,6 @@ impl Reconciler {
             }
         };
         self.pass(ctx, &mut pass_state, &mut published, None);
-        // A first pass that failed still lets the watcher start.
         published();
 
         loop {
@@ -992,15 +885,11 @@ impl Reconciler {
         shared.last_pass = Some(Instant::now());
         shared.passes += 1;
         if trigger.is_none() {
-            // What was asked while the first pass ran, it did. Cleared under
-            // the lock that counts the pass: a request made once the pass is
-            // seen as done is kept for the next one.
             shared.requested = None;
         }
         self.shared.wake.notify_all();
     }
 
-    /// Waits until at least `count` passes ran, up to `timeout`.
     pub fn wait_for_passes(&self, count: usize, timeout: Duration) -> bool {
         let deadline = Instant::now() + timeout;
         let mut state = self.shared.state.lock();

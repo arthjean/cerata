@@ -1,18 +1,7 @@
-//! Atomic config writes.
-//!
-//! New in Cerata: Writer `config.rs` wrote configs with `std::fs::write`,
-//! which leaves a truncated file when a write fails halfway. The atomic
-//! replacement itself is shared with every other write
-//! ([`crate::fs::atomic::atomic_write`]); configs additionally get their
-//! parent directory created on first write.
-
 use std::fs;
 use std::io;
 use std::path::Path;
 
-/// Replaces `path` with `contents` so a reader sees the old file or the new
-/// one, never a partial write. Creates missing parent directories. On
-/// failure no temp file remains and `path` is left untouched.
 pub(crate) fn write_atomic(path: &Path, contents: &[u8]) -> io::Result<()> {
     if let Some(dir) = path.parent().filter(|dir| !dir.as_os_str().is_empty()) {
         fs::create_dir_all(dir)?;
@@ -42,13 +31,9 @@ mod tests {
         assert!(leftover_temp_files(&dir.path().join("nested")).is_empty());
     }
 
-    /// Defect fix: a failed write leaves neither a partial target nor a temp
-    /// file behind.
     #[test]
     fn atomic_write_failure_leaves_no_partial_file() {
         let dir = tempfile::tempdir().unwrap();
-        // A non-empty directory at the target path makes the rename fail on
-        // every platform (after the Windows retries).
         let path = dir.path().join("config");
         fs::create_dir(&path).unwrap();
         fs::write(path.join("keep"), "untouched").unwrap();

@@ -1,23 +1,9 @@
-//! tree-sitter-md side of the spike.
-//!
-//! `TsDoc` is the two-level orchestration Cerata would own: one incremental
-//! block tree, plus one inline tree per `inline` / `pipe_table_cell` node,
-//! stored in coordinates relative to that node. After an edit only the block
-//! tree is reparsed incrementally and only the inline nodes that intersect the
-//! edit or the block tree's changed ranges are reparsed; every other inline
-//! tree is reused untouched (only its start offset shifts).
-//!
-//! `TsNaive` is the crate's own `MarkdownParser`, which edits every inline
-//! tree and calls the inline parser once per inline node on every reparse.
-
 use tree_sitter::{InputEdit, Node, Parser, Point, Range, Tree};
 use tree_sitter_md::{MarkdownParser, MarkdownTree};
 
 pub struct Inline {
-    /// Absolute byte offset of the host node in the current text.
     pub start: usize,
     pub end: usize,
-    /// Inline tree in coordinates relative to `start`.
     pub tree: Tree,
 }
 
@@ -28,11 +14,9 @@ pub struct TsDoc {
     pub block: Tree,
     pub inlines: Vec<Inline>,
     virtual_newline: bool,
-    /// Block-tree share of the last `reparse` (edit + incremental parse).
     pub last_block_time: std::time::Duration,
 }
 
-/// One node of the combined tree, in absolute coordinates.
 #[derive(Debug, Clone)]
 pub struct TsNode {
     pub kind: String,
@@ -56,8 +40,6 @@ fn relative_point(point: Point, base: Point) -> Point {
     }
 }
 
-/// Same included ranges as `MarkdownParser`: the host node minus its named
-/// children (block continuations such as list indentation or `> `).
 fn inline_ranges(node: Node<'_>) -> Vec<Range> {
     let mut range = node.range();
     let mut ranges = Vec::new();
@@ -85,10 +67,6 @@ fn inline_ranges(node: Node<'_>) -> Vec<Range> {
     ranges
 }
 
-/// Parser input callback. With `virtual_newline` the parser sees one extra
-/// `\n` past the end of the buffer: tree-sitter-md's block scanner does not
-/// treat EOF as a line end (setext underlines and the closing frontmatter
-/// fence on the last line are missed, `text\n- ` yields an ERROR node).
 fn read(bytes: &[u8], i: usize, virtual_newline: bool) -> &[u8] {
     if i < bytes.len() {
         &bytes[i..]
@@ -125,8 +103,6 @@ fn parse_inline(
         .ok_or_else(|| "inline parse failed".to_string())
 }
 
-/// Inline host nodes whose range intersects `[from, to]` (inclusive, so an
-/// insertion at the very end of an inline node still hits it).
 fn collect_hosts<'t>(node: Node<'t>, from: usize, to: usize, out: &mut Vec<Node<'t>>) {
     if node.end_byte() < from || node.start_byte() > to {
         return;
@@ -136,8 +112,6 @@ fn collect_hosts<'t>(node: Node<'t>, from: usize, to: usize, out: &mut Vec<Node<
         return;
     }
     let mut cursor = node.walk();
-    // `goto_first_child_for_byte` returns None when the byte falls in a gap
-    // between children (a blank line), hence the linear fallback.
     if cursor
         .goto_first_child_for_byte(from.saturating_sub(1))
         .is_none()
@@ -157,8 +131,6 @@ fn collect_hosts<'t>(node: Node<'t>, from: usize, to: usize, out: &mut Vec<Node<
     }
 }
 
-/// Row/column of a byte offset. Linear scan: a rope gives this in O(log n),
-/// so callers keep it outside the timed region.
 pub fn point_at(text: &str, byte: usize) -> Point {
     let before = &text.as_bytes()[..byte];
     let row = before.iter().filter(|&&b| b == b'\n').count();
@@ -169,7 +141,6 @@ pub fn point_at(text: &str, byte: usize) -> Point {
     Point::new(row, byte - line_start)
 }
 
-/// Applies a text replacement and returns the matching `InputEdit`.
 pub fn edit_text(text: &mut String, start: usize, old_end: usize, new: &str) -> InputEdit {
     let start_position = point_at(text, start);
     let old_end_position = point_at(text, old_end);
@@ -220,8 +191,6 @@ impl TsDoc {
         })
     }
 
-    /// Reparses after `self.text` was changed as described by `edit`.
-    /// Returns the number of inline trees that were reparsed.
     pub fn reparse(&mut self, edit: &InputEdit) -> Result<usize, String> {
         let started = std::time::Instant::now();
         let mut old = self.block.clone();
@@ -234,7 +203,6 @@ impl TsDoc {
             .ok_or("block reparse failed")?;
         self.last_block_time = started.elapsed();
 
-        // Drop inline trees the edit touched, shift the ones after it.
         let delta = edit.new_end_byte as isize - edit.old_end_byte as isize;
         let lo = self.inlines.partition_point(|e| e.end < edit.start_byte);
         let hi = self
@@ -246,8 +214,6 @@ impl TsDoc {
             entry.end = (entry.end as isize + delta) as usize;
         }
 
-        // Dirty region in new coordinates: the edit plus whatever the block
-        // structure changed.
         let mut from = edit.start_byte;
         let mut to = edit.new_end_byte;
         for range in old.changed_ranges(&block) {
@@ -276,8 +242,6 @@ impl TsDoc {
         Ok(reparsed)
     }
 
-    /// Structural fingerprint (every node with its absolute range, plus the
-    /// inline tree index) used to check incremental == fresh parse.
     pub fn fingerprint(&self) -> String {
         let mut out = String::new();
         for entry in &self.inlines {
@@ -289,8 +253,6 @@ impl TsDoc {
         out
     }
 
-    /// Every node of the combined tree (block nodes, then inline nodes
-    /// grafted under their host), in document order.
     pub fn nodes(&self) -> Vec<TsNode> {
         let mut out = Vec::new();
         self.walk(self.block.root_node(), 0, false, 0, "", &mut out);
@@ -309,8 +271,6 @@ impl TsDoc {
         let kind = node.kind();
         out.push(TsNode {
             kind: kind.to_string(),
-            // Clamped: with the virtual newline the root ends one byte past
-            // the buffer.
             start: (base + node.start_byte()).min(self.text.len()),
             end: (base + node.end_byte()).min(self.text.len()),
             named: node.is_named(),
@@ -351,7 +311,6 @@ impl TsDoc {
     }
 }
 
-/// The crate's `MarkdownParser` wrapper, used as the naive baseline.
 pub struct TsNaive {
     pub text: String,
     parser: MarkdownParser,

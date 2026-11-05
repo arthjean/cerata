@@ -93,7 +93,6 @@ fn fast() -> Timing {
     }
 }
 
-/// Waits until `path` has `count` versions.
 fn wait_for(lib: &Lib, path: &str, count: usize) -> Vec<VersionInfo> {
     let deadline = Instant::now() + WAIT;
     loop {
@@ -114,7 +113,6 @@ fn saves_within_the_typing_pause_make_one_version_with_the_last_text() {
         history.saved("a.md", text.as_bytes().to_vec());
         std::thread::sleep(Duration::from_millis(100));
     }
-    // Still within the pause of the last save.
     assert_eq!(lib.versions("a.md"), []);
     let versions = wait_for(&lib, "a.md", 1);
     assert_eq!(versions.len(), 1);
@@ -139,10 +137,8 @@ fn closing_writes_the_pending_save_at_once() {
     assert!(history.flush_and_wait(Some("a.md"), WAIT));
     assert_eq!(lib.texts("a.md"), ["typed"]);
     assert_eq!(lib.versions("b.md"), []);
-    // Quitting: every pending save, waited for.
     assert!(history.flush_and_wait(None, WAIT));
     assert_eq!(lib.texts("b.md"), ["other"]);
-    // Dropping the last handle writes what is left.
     history.saved("b.md", b"last".to_vec());
     drop(history);
     assert_eq!(wait_for(&lib, "b.md", 2).len(), 2);
@@ -158,7 +154,6 @@ fn identical_successive_contents_make_one_version() {
     history.saved("a.md", b"same".to_vec());
     assert!(history.flush_and_wait(None, WAIT));
     assert_eq!(lib.versions("a.md").len(), 1);
-    // A return to an older content is a new version.
     history.record(Request::new("a.md", b"other".to_vec(), Cause::Save));
     history.record(Request::new("a.md", b"same".to_vec(), Cause::Save));
     assert!(history.flush_and_wait(None, WAIT));
@@ -170,8 +165,6 @@ fn an_outside_change_is_a_version_whose_parent_is_the_known_head() {
     let lib = lib();
     let history = lib.history(fast());
     history.saved("a.md", b"mine".to_vec());
-    // The outside change arrives while the save waits for its pause: the
-    // save goes first.
     history.record(Request::new("a.md", b"theirs".to_vec(), Cause::External));
     assert!(history.flush_and_wait(None, WAIT));
     let versions = lib.versions("a.md");
@@ -246,7 +239,6 @@ fn a_full_disk_keeps_the_note_and_says_so_once() {
     let history = lib.history(fast());
     history.record(Request::new("a.md", b"fits".to_vec(), Cause::Save));
     assert!(history.flush_and_wait(None, WAIT));
-    // No page left: the next inserts fail with SQLITE_FULL.
     lib.store
         .write(&lib.token, |t| {
             let pages: i64 = t.pragma_query_value(None, "page_count", |r| r.get(0))?;
@@ -294,7 +286,6 @@ fn a_crash_between_a_write_and_its_version_is_found() {
     history.record(Request::new("a.md", b"one".to_vec(), Cause::Save));
     assert!(history.flush_and_wait(None, WAIT));
     assert_eq!(unversioned_heads(&lib.store).unwrap(), Vec::<String>::new());
-    // The index learned of a write whose version never came.
     lib.note("a.md", b"two");
     assert_eq!(unversioned_heads(&lib.store).unwrap(), ["a.md"]);
 }
@@ -329,10 +320,6 @@ fn deleted_notes_with_versions_are_listed() {
     assert_eq!(deleted[0].head, content_hash(b"bye"));
 }
 
-/// A save still pending when its note is deleted or moved outside Cerata
-/// joins that note's history: it never makes a live row for a path the
-/// store no longer knows, which would show a phantom note at the next
-/// opening and split the note's history in two.
 #[test]
 fn a_pending_save_of_a_note_gone_since_joins_its_history() {
     let lib = lib();
@@ -363,7 +350,6 @@ fn a_pending_save_of_a_note_gone_since_joins_its_history() {
     assert_eq!(deleted[0].versions, 2);
     assert_eq!(deleted[0].head, content_hash(b"two"));
 
-    // Moved outside Cerata: the index renamed the row, its hash kept.
     lib.note("old.md", b"three");
     history.saved("old.md", b"three".to_vec());
     lib.store
@@ -404,8 +390,6 @@ fn pinning_is_kept() {
     assert!(lib.versions("a.md")[0].pinned);
 }
 
-// Retention and purges (US-090) ------------------------------------------
-
 const NOW: i64 = 1_800_000_000;
 const HOUR: i64 = 3600;
 const DAY: i64 = 24 * HOUR;
@@ -433,7 +417,6 @@ fn pass(lib: &Lib, now: i64) -> gc::Removed {
 fn a_pass_applies_the_tiers_keeps_pins_and_reads_back_what_stays() {
     let lib = lib();
     let history = lib.history(fast());
-    // An old day: three versions; two days old: two in one hour; recent: two.
     let old_day = (NOW - 90 * DAY).div_euclid(DAY) * DAY;
     let hour = (NOW - 2 * DAY).div_euclid(HOUR) * HOUR;
     let requests = [
@@ -449,7 +432,6 @@ fn a_pass_applies_the_tiers_keeps_pins_and_reads_back_what_stays() {
         history.record(request);
     }
     assert!(history.flush_and_wait(None, WAIT));
-    // Pin the morning of the old day.
     let pinned = lib
         .versions("a.md")
         .into_iter()
@@ -477,7 +459,6 @@ fn a_pass_applies_the_tiers_keeps_pins_and_reads_back_what_stays() {
         .read(|c| c.query_row("SELECT COUNT(*) FROM blob", [], |r| r.get(0)))
         .unwrap();
     assert_eq!(left, 5, "only the blobs of the kept versions remain");
-    // A pass was recorded: the next one is not due for a day.
     assert!(!lib.store.read(|c| gc::pass_due(c, NOW + HOUR)).unwrap());
     assert!(lib.store.read(|c| gc::pass_due(c, NOW + DAY)).unwrap());
 }
@@ -490,7 +471,6 @@ fn a_blob_a_note_still_shows_is_kept() {
     history.record(at("a.md", "newer", NOW - 89 * DAY));
     assert!(history.flush_and_wait(None, WAIT));
     lib.note("a.md", b"kept as the head");
-    // Purge the note's history: its head's blob stays, the other goes.
     let id = lib.versions("a.md")[0].note;
     let removed = history.purge(gc::Purge::Note(id)).recv().unwrap().unwrap();
     assert_eq!(
@@ -508,7 +488,6 @@ fn a_blob_a_note_still_shows_is_kept() {
     );
 }
 
-/// Every 32-byte chunk of `stored` past its zstd header.
 fn chunks(stored: &[u8]) -> Vec<&[u8]> {
     stored
         .get(8..)
@@ -554,8 +533,6 @@ fn assert_absent(lib: &Lib, witness: &[u8], stored: &[u8]) {
     }
 }
 
-/// A note whose older version alone holds a witness string; returns the
-/// witness, the purged blob's stored bytes and the note's id.
 fn witness_note(lib: &Lib, history: &History) -> (Vec<u8>, Vec<u8>, i64) {
     let witness = b"WITNESS-6c1f0e2b-only-in-the-purged-version-9a7d".to_vec();
     let mut secret = String::from("# Diary\n\n");
@@ -564,7 +541,6 @@ fn witness_note(lib: &Lib, history: &History) -> (Vec<u8>, Vec<u8>, i64) {
     }
     secret.push_str(std::str::from_utf8(&witness).unwrap());
     secret.push('\n');
-    // Stored alone (no delta), so its bytes are the secret's own.
     history.record(at("a.md", &secret, NOW - 3 * DAY));
     history.record(at("a.md", "# Diary\n\nNothing to see.\n", NOW - DAY));
     assert!(history.flush_and_wait(None, WAIT));
@@ -608,10 +584,8 @@ fn a_purge_leaves_no_byte_of_the_purged_content_in_the_store_files() {
             blobs: 1
         }
     );
-    // The delta built on the purged version was re-encoded alone.
     assert_eq!(lib.texts("a.md"), ["# Diary\n\nNothing to see.\n"]);
     assert_absent(&lib, &witness, &stored);
-    // The note itself is never touched.
     assert_eq!(
         std::fs::read_to_string(&note).unwrap(),
         "# Diary\n\nNothing to see.\n"
@@ -629,7 +603,6 @@ fn a_purge_interrupted_before_its_vacuum_vacuums_at_the_next_opening() {
     let lib = lib();
     let history = lib.history(fast());
     let (witness, stored, id) = witness_note(&lib, &history);
-    // The deletion commits; the app closes before the vacuum.
     lib.store
         .write(&lib.token, move |t| {
             gc::purge_versions(t, gc::Purge::Note(id)).map(|_| ())
@@ -645,7 +618,6 @@ fn a_purge_interrupted_before_its_vacuum_vacuums_at_the_next_opening() {
         Some(1)
     );
     drop(history);
-    // Reopened: the recorder vacuums before anything else.
     let history = lib.history(fast());
     assert!(history.flush_and_wait(None, WAIT));
     let deadline = Instant::now() + WAIT;
@@ -679,9 +651,6 @@ fn closing_the_library_runs_a_retention_pass() {
     assert_eq!(lib.texts("a.md"), ["late"]);
 }
 
-/// US-092: every merge scenario, recorded as the window records it (the
-/// disk as `external`, the buffer as a save, the result as `merge`, or the
-/// buffer written at quit), keeps every byte of the three sides.
 #[test]
 fn no_merge_scenario_loses_a_side_in_the_history() {
     let scenarios: [(&str, &str, &str, &str); 6] = [
@@ -713,7 +682,6 @@ fn no_merge_scenario_loses_a_side_in_the_history() {
         ));
         let merged = crate::merge::merge(base, ours, theirs);
         let result = if name == "quit in conflict" {
-            // Nothing decided: the buffer is written as is.
             ours.to_owned()
         } else {
             merged.text().unwrap_or_else(|| {

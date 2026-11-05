@@ -1,10 +1,3 @@
-//! Cerata core: everything Cerata does with files, without a window.
-//!
-//! Workspace files, ignore rules, the file index and search, the watcher,
-//! settings, libraries, sessions and recents, and each library's local
-//! store (index and, later, history). This crate must never depend on GPUI
-//! (checked in CI by `scripts/check-core-deps.sh`).
-
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
 pub mod cli;

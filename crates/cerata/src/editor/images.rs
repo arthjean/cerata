@@ -1,12 +1,3 @@
-//! Block widget host: image sources, their measured sizes, the elements
-//! drawn for them, and pasted images as import sources (`cerata_core::images`).
-//!
-//! Writer's references: `fold/image.ts:12-121` (height cache per
-//! destination), `image-src-resolver.ts:5-24` and `paths.ts:217-225`
-//! (resolution), `editor-clipboard.ts:9-33` and `commands/images.rs:13-119`
-//! (paste), the CSP of `tauri.conf.json:32-38` (`img-src 'self' data: asset:
-//! https:`: never `http:`).
-
 use std::collections::HashMap;
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
@@ -26,17 +17,13 @@ use cerata_core::workspace::NameIndex;
 use super::layout::ImageBox;
 use super::theme;
 
-/// A remote image larger than this is not loaded.
 const MAX_REMOTE_BYTES: u64 = 25 * 1024 * 1024;
 
-/// Where an image destination points.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Source {
     Local(PathBuf),
     Remote(String),
     Data(Vec<u8>),
-    /// An image embed (`![[pic.png]]`), found in the background, then read
-    /// like a local image inside `confine`.
     Embed {
         target: String,
         workspace: Option<PathBuf>,
@@ -45,14 +32,10 @@ pub enum Source {
     },
 }
 
-/// The key an image embed's entry is kept under: never a destination
-/// (`[[` cannot start one).
 pub fn embed_key(target: &str) -> String {
     format!("\u{1}wiki:{target}")
 }
 
-/// The source an image destination loads from, relative to the note's
-/// folder; `None` for schemes that are never loaded (`http:` and others).
 pub fn resolve(note_dir: Option<&Path>, url: &str) -> Option<Source> {
     let lower = url.to_ascii_lowercase();
     if lower.starts_with("https://") {
@@ -62,14 +45,11 @@ pub fn resolve(note_dir: Option<&Path>, url: &str) -> Option<Source> {
         return decode_data_uri(url).map(Source::Data);
     }
     if lower.starts_with("file://") {
-        // Only `file:///path`: a host names a network share.
         let path = percent_decode(url[7..].strip_prefix('/')?);
         let drive = path.as_bytes().get(1) == Some(&b':');
         let path = if drive { path } else { format!("/{path}") };
         return local(PathBuf::from(path));
     }
-    // Any other scheme (`http:`, `ftp:`...) is never loaded; a Windows drive
-    // letter (`C:\`) is a path, not a scheme.
     if let Some(colon) = url.find(':') {
         let scheme = &url[..colon];
         let drive = colon == 1 && url[colon + 1..].starts_with(['\\', '/']);
@@ -83,8 +63,6 @@ pub fn resolve(note_dir: Option<&Path>, url: &str) -> Option<Source> {
         }
     }
     let path = PathBuf::from(percent_decode(url));
-    // Checked before the join: on Unix `\\host\share` is a relative name,
-    // and the same note opened on Windows would reach the share.
     if names_network_path(&path) {
         return None;
     }
@@ -96,17 +74,11 @@ pub fn resolve(note_dir: Option<&Path>, url: &str) -> Option<Source> {
     ))
 }
 
-/// A local source, unless the note itself names a network path
-/// (`\\host\share`, `//host/share`): touching one makes Windows connect to
-/// the host and offer the user's credentials. A note folder on a share
-/// stays usable, since only the destination as written is checked.
 fn local(path: PathBuf) -> Option<Source> {
     (!names_network_path(&path)).then_some(Source::Local(path))
 }
 
 fn names_network_path(path: &Path) -> bool {
-    // Windows reads `/` and `\` alike: two leading separators of any mix
-    // (`/\host\share`) name a share.
     let s = path.as_os_str().to_string_lossy();
     let mut chars = s.chars();
     matches!(
@@ -115,7 +87,6 @@ fn names_network_path(path: &Path) -> bool {
     )
 }
 
-/// `decodeURIComponent`, keeping the input on invalid sequences.
 pub fn percent_decode(s: &str) -> String {
     let bytes = s.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
@@ -135,7 +106,6 @@ pub fn percent_decode(s: &str) -> String {
     String::from_utf8(out).unwrap_or_else(|_| s.to_owned())
 }
 
-/// The bytes of a `data:` URI (base64 or percent-encoded).
 fn decode_data_uri(url: &str) -> Option<Vec<u8>> {
     let (meta, payload) = url.get(5..)?.split_once(',')?;
     if meta.ends_with(";base64") {
@@ -171,8 +141,6 @@ fn base64_decode(s: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
-/// The image format of `bytes`, SVG included: the import pipeline's
-/// detection (`cerata_core::images::sniff`), as GPUI names it.
 pub fn sniff_format(bytes: &[u8]) -> Option<ImageFormat> {
     cerata_core::images::sniff(bytes).map(gpui_format)
 }
@@ -190,20 +158,15 @@ fn gpui_format(kind: ImageKind) -> ImageFormat {
     }
 }
 
-/// What a load produces.
 #[derive(Clone, Debug)]
 pub enum Loaded {
     Path(PathBuf),
-    /// Decoded from memory: a remote or inline image, or a local SVG
-    /// checked before drawing (`file`).
     Bytes {
         image: Arc<Image>,
         file: Option<PathBuf>,
     },
 }
 
-/// What an image's actions reach (US-069): its local file, or the bytes
-/// of a remote or inline image.
 #[derive(Clone, Debug)]
 pub enum Reach {
     File(PathBuf),
@@ -213,34 +176,23 @@ pub enum Reach {
 
 #[derive(Clone, Debug)]
 enum Entry {
-    /// No such local file, or a scheme that is never loaded.
     Unavailable,
     Pending,
-    Ready {
-        natural: (f32, f32),
-        data: Loaded,
-    },
-    /// Unreadable: drawn as a placeholder at its estimated height.
+    Ready { natural: (f32, f32), data: Loaded },
     Failed,
 }
 
-/// A load for the caller to run off the main thread.
 pub struct LoadJob {
     pub url: String,
     pub source: Source,
-    /// The library's file names, which find an embed without a walk.
     pub names: Option<NameIndex>,
 }
 
-/// A job's url, with the image's natural size and what to draw, if it loaded.
 pub type LoadResult = (String, Option<((f32, f32), Loaded)>);
 
-/// A local image's size and what to draw.
 fn local_loaded(path: PathBuf) -> Option<((f32, f32), Loaded)> {
     read_prefix(&path, 64 * 1024).and_then(|header| {
         if is_svg(&header) {
-            // GPUI would read the file itself: an SVG is checked like an
-            // inline or remote one and handed over as bytes.
             let (size, loaded) = read_prefix(&path, MAX_SVG_BYTES).and_then(bytes_loaded)?;
             let Loaded::Bytes { image, .. } = loaded else {
                 return None;
@@ -253,10 +205,6 @@ fn local_loaded(path: PathBuf) -> Option<((f32, f32), Loaded)> {
     })
 }
 
-/// The file an image embed shows, found as Writer finds it
-/// (`cerata_core::links::resolve_wiki_image`) and kept inside `confine`.
-/// A lookup by name uses the library's name table once it lists every
-/// file (US-087); before that, `walk` searches the folder.
 fn embed_path(
     target: &str,
     workspace: Option<&Path>,
@@ -289,7 +237,6 @@ fn embed_path(
 }
 
 impl LoadJob {
-    /// Reads the image's header (and, when remote or inline, its bytes).
     pub fn run(self) -> LoadResult {
         let result = match self.source {
             Source::Local(path) => local_loaded(path),
@@ -325,7 +272,6 @@ fn bytes_loaded(bytes: Vec<u8>) -> Option<((f32, f32), Loaded)> {
     Some((size, Loaded::Bytes { image, file: None }))
 }
 
-/// The first `limit` bytes of a file.
 fn read_prefix(path: &Path, limit: u64) -> Option<Vec<u8>> {
     let mut bytes = Vec::new();
     std::fs::File::open(path)
@@ -336,7 +282,6 @@ fn read_prefix(path: &Path, limit: u64) -> Option<Vec<u8>> {
     Some(bytes)
 }
 
-/// HTTPS only, redirects included; bounded in size and time.
 fn fetch(url: &str) -> Option<Vec<u8>> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .https_only(true)
@@ -352,21 +297,13 @@ fn fetch(url: &str) -> Option<Vec<u8>> {
         .ok()
 }
 
-/// Image sources seen by one editor, their sizes, and the heights already
-/// reserved for them per column width.
 #[derive(Default)]
 pub struct ImageHost {
     note_dir: Option<PathBuf>,
-    /// The canonical folder local images must be inside (FR-13): the
-    /// workspace root, else the note's folder.
     root: Option<PathBuf>,
-    /// The workspace root, where image embeds are also looked for.
     workspace: Option<PathBuf>,
-    /// The workspace's file names, for embeds.
     names: Option<NameIndex>,
     entries: HashMap<String, Entry>,
-    /// Height per (destination, display width): what the line reserves
-    /// before the image is measured again (Writer's `imageHeightCache`).
     heights: HashMap<(String, u32), f32>,
 }
 
@@ -381,20 +318,16 @@ impl ImageHost {
         }
     }
 
-    /// Confines local images to the workspace at `root` rather than the
-    /// note's folder.
     pub fn set_root(&mut self, root: &Path) {
         self.root = std::fs::canonicalize(root).ok();
         self.workspace = Some(root.to_path_buf());
         self.entries.clear();
     }
 
-    /// Embeds are found through the library's name table (US-087).
     pub fn set_names(&mut self, names: NameIndex) {
         self.names = Some(names);
     }
 
-    /// An existing file inside the root, symlinks resolved.
     fn loadable(&self, path: &Path) -> bool {
         let (Some(root), Ok(real)) = (&self.root, std::fs::canonicalize(path)) else {
             return false;
@@ -402,15 +335,6 @@ impl ImageHost {
         real.starts_with(root) && real.is_file()
     }
 
-    /// The box of the image at `url` in a column `width` wide, and a load
-    /// to start when the image was never seen. Before it is measured (and
-    /// when it cannot be read) an image keeps its estimated height: the last
-    /// height cached for this source and width, else one text row.
-    ///
-    /// Without `requested`, an image shows at its natural width, bounded by
-    /// the column; with it (`![a|300](x.png)`, US-064), at that width, which
-    /// may enlarge it up to the column. A `<img width>` passes its bounded
-    /// width as `width` and nothing as `requested`.
     pub fn image_box(
         &mut self,
         url: &str,
@@ -425,9 +349,6 @@ impl ImageHost {
         self.sized(url, source, requested, width, row_height)
     }
 
-    /// [`ImageHost::image_box`] for an image embed (`![[target]]`), found
-    /// in the background; until then it keeps its estimated height, and a
-    /// target found nowhere shows its source.
     pub fn embed_box(
         &mut self,
         target: &str,
@@ -446,8 +367,6 @@ impl ImageHost {
         self.sized(&embed_key(target), source, requested, width, row_height)
     }
 
-    /// The natural size of the image at `url` (an embed by its key), once
-    /// measured.
     pub fn natural(&self, url: &str) -> Option<(f32, f32)> {
         match self.entries.get(url) {
             Some(Entry::Ready { natural, .. }) => Some(*natural),
@@ -455,8 +374,6 @@ impl ImageHost {
         }
     }
 
-    /// What the actions of the image at `url` reach once it was measured
-    /// (US-069): `None` while it is pending or unavailable.
     pub fn reach(&self, url: &str) -> Option<Reach> {
         let Some(Entry::Ready { data, .. }) = self.entries.get(url) else {
             return None;
@@ -478,7 +395,6 @@ impl ImageHost {
         })
     }
 
-    /// The image at `url` was measured: it can be resized (US-067).
     pub fn is_ready(&self, url: &str) -> bool {
         self.natural(url).is_some()
     }
@@ -508,8 +424,6 @@ impl ImageHost {
         }
         let column = width.max(1.0).floor();
         let requested = requested.map(|w| w.min(column).floor().max(1.0));
-        // A requested width is the displayed one, known before the image
-        // is measured: it keys the cached height, which is then exact.
         let key = (url.to_owned(), requested.unwrap_or(column) as u32);
         let image_box = match self.entries.get(url) {
             Some(Entry::Unavailable) | None => ImageBox::Unavailable,
@@ -530,13 +444,11 @@ impl ImageHost {
         (image_box, job)
     }
 
-    /// A load finished; `true` when the image's size is now known.
     pub fn finish(&mut self, url: String, result: Option<((f32, f32), Loaded)>) -> bool {
         let ready = result.is_some();
         let embed = url.starts_with(&embed_key(""));
         let entry = match result {
             Some((natural, data)) => Entry::Ready { natural, data },
-            // An embed found nowhere shows its source (`ImageEmbedWidget`).
             None if embed => Entry::Unavailable,
             None => Entry::Failed,
         };
@@ -544,7 +456,6 @@ impl ImageHost {
         ready
     }
 
-    /// The element drawn for the image at `url`, `width` by `height`.
     pub fn element(&self, url: &str, width: f32, height: f32, id: String) -> AnyElement {
         let name = accessible_name(url);
         let frame = div().id(SharedString::from(id.clone()));
@@ -576,8 +487,6 @@ impl ImageHost {
     }
 }
 
-/// A pasted image as an import source, named
-/// `YYYYMMDD-HHMMSS-xxxx` in local time (Writer used UTC).
 pub fn pasted_source(image: &Image, now: chrono::DateTime<chrono::Local>) -> ImportSource {
     let declared = match image.format {
         ImageFormat::Jpeg => ImageKind::Jpeg,
@@ -597,8 +506,6 @@ pub fn pasted_source(image: &Image, now: chrono::DateTime<chrono::Local>) -> Imp
     }
 }
 
-/// An image's accessible name: its file name, as a browser names an
-/// `<img>` with no alt.
 pub(super) fn accessible_name(url: &str) -> String {
     let path = url.strip_prefix(embed_key("").as_str()).unwrap_or(url);
     path.rsplit(['/', '\\']).next().unwrap_or(path).to_owned()
@@ -617,7 +524,6 @@ mod tests {
         assert_eq!(accessible_name("plain.gif"), "plain.gif");
     }
 
-    /// `\\?\` and `\??\` name device paths: never touched.
     #[test]
     fn device_paths_are_network_paths() {
         assert!(names_network_path(Path::new(r"\\?\UNC\host\share\x.png")));
@@ -654,7 +560,6 @@ mod tests {
             resolve(Some(dir), "file:///srv/a.png"),
             Some(Source::Local(PathBuf::from("/srv/a.png")))
         );
-        // A network share is never touched, however it is spelled.
         for url in [
             "\\\\host\\share\\a.png",
             "//host/share/a.png",
@@ -773,9 +678,6 @@ mod tests {
         assert!(job.run().1.is_none());
     }
 
-    /// A library with images in nested folders, its live index complete.
-    /// Returns the folder as opened, its canonical form (where found files
-    /// are reported) and the name table.
     fn embed_library() -> (tempfile::TempDir, PathBuf, PathBuf, NameIndex) {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().to_path_buf();
@@ -801,7 +703,6 @@ mod tests {
         (dir, root, real, names)
     }
 
-    /// US-087: 140 embeds resolve from the name table, without one walk.
     #[test]
     fn embeds_resolve_by_name_without_walking_the_library() {
         let (_dir, root, real, names) = embed_library();
@@ -826,7 +727,6 @@ mod tests {
             assert_eq!(found.as_deref(), Some(expected.as_path()), "pic{i}.png");
         }
         assert_eq!(walks.get(), 0, "an embed walked the library");
-        // Duplicates: the fewest components win, as Obsidian decides.
         let same = embed_path(
             "same.png",
             Some(&root),
@@ -850,7 +750,6 @@ mod tests {
         assert_eq!(walks.get(), 0);
     }
 
-    /// US-087: before the index lists every file, the walk still finds it.
     #[test]
     fn an_embed_walks_the_library_until_the_index_is_ready() {
         let (_dir, root, real, _) = embed_library();
@@ -872,8 +771,6 @@ mod tests {
         assert_eq!(walks.get(), 1);
     }
 
-    /// US-087: an image renamed outside Cerata resolves by its new name
-    /// only, once the watcher or a reconciliation saw it.
     #[test]
     fn a_renamed_image_resolves_by_its_new_name_only() {
         let (_dir, root, real, names) = embed_library();
@@ -922,7 +819,6 @@ mod tests {
         );
         let (url, result) = job.expect("a load starts").run();
         assert!(!host.finish(url, result), "unreadable");
-        // Asking again keeps the estimate: no jump.
         let (again, job) = host.image_box("bad.png", None, 700.0, 30.0);
         assert_eq!(again, estimate);
         assert!(job.is_none());

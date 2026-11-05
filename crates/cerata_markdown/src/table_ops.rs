@@ -1,14 +1,3 @@
-//! Structure commands of a drawn table (US-053, ADR 0007 decisions 6 and
-//! 9): insert, duplicate, move and delete rows and columns, align, sort,
-//! format and delete the table.
-//!
-//! Each command edits a [`Draft`] of the table's lines (rows of cell slots
-//! between their pipes), then writes it back as one `UserEvent::Command`
-//! transaction of minimal changes: a line that keeps its place is edited
-//! by its smallest replacement, so only the cells a command creates, moves
-//! or deletes are rewritten. "Format table" alone recomputes the padding.
-//! A short row is completed first, in the same transaction.
-
 use std::cmp::Ordering;
 use std::ops::Range;
 
@@ -22,7 +11,6 @@ use crate::selection::Selection;
 use crate::state::{EditorState, Transaction};
 use crate::table::{self, Align, CellKind, Grid, RowKind};
 
-/// Every table command id, in the order the menu lists them.
 pub const IDS: &[&str] = &[
     "table.rowAbove",
     "table.rowBelow",
@@ -47,12 +35,8 @@ pub const IDS: &[&str] = &[
     "table.delete",
 ];
 
-/// One line of the table: what sits before its first cell slot (a pipe,
-/// spaces), the slots between pipes, and what follows the last slot. The
-/// container prefix belongs to the line's position, not to the row.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Row {
-    /// The old line this row keeps its place on, if any.
     source: Option<usize>,
     pub(crate) kind: RowKind,
     head: String,
@@ -60,28 +44,21 @@ pub(crate) struct Row {
     tail: String,
 }
 
-/// The lines of a table, edited before they are written back.
 pub(crate) struct Draft<'a> {
     pub(crate) grid: &'a Grid,
     eol: &'static str,
-    /// The table's lines in the document, prefixes included.
     old: Vec<Range<usize>>,
     prefixes: Vec<&'a str>,
     pub(crate) rows: Vec<Row>,
-    /// The header's width, as the draft has it.
     columns: usize,
 }
 
-/// Where the caret goes in the written table.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum At {
-    /// The content's start.
     Start,
-    /// This many bytes into the content, clamped to it.
     Offset(usize),
 }
 
-/// The table's line break.
 pub(crate) fn eol_of(doc: &str, grid: &Grid) -> &'static str {
     if doc[grid.zone()].contains("\r\n") {
         "\r\n"
@@ -90,8 +67,6 @@ pub(crate) fn eol_of(doc: &str, grid: &Grid) -> &'static str {
     }
 }
 
-/// A row whose last cell runs to the line's end gets its closing pipe, so a
-/// cell added after it is one.
 fn close(row: &mut Row) {
     if !row.tail.contains('|') {
         if let Some(last) = row.slots.last_mut() {
@@ -101,15 +76,12 @@ fn close(row: &mut Row) {
     }
 }
 
-/// A row whose first cell starts the line gets its opening pipe, so a cell
-/// added before it is one.
 fn open(row: &mut Row) {
     if !row.head.contains('|') {
         row.head.push('|');
     }
 }
 
-/// An empty cell slot as wide as `width` characters, at least two.
 fn blank(width: usize) -> String {
     " ".repeat(width.max(2))
 }
@@ -168,8 +140,6 @@ impl<'a> Draft<'a> {
         self.columns
     }
 
-    /// An empty column at the right edge; the delimiter row's cell has no
-    /// alignment.
     pub(crate) fn push_column(&mut self) {
         for row in &mut self.rows {
             close(row);
@@ -183,7 +153,6 @@ impl<'a> Draft<'a> {
         self.columns += 1;
     }
 
-    /// Short rows get empty cells up to the header's width.
     pub(crate) fn complete(&mut self) {
         let columns = self.columns();
         for row in &mut self.rows {
@@ -197,7 +166,6 @@ impl<'a> Draft<'a> {
         }
     }
 
-    /// A new body row, each cell as wide as `reference`'s in its column.
     pub(crate) fn blank_row(&self, reference: usize) -> Row {
         let slots = (0..self.columns())
             .map(|c| {
@@ -218,16 +186,12 @@ impl<'a> Draft<'a> {
         }
     }
 
-    /// Rows keep their positions: the lines are compared place by place
-    /// (after a move or a sort).
     fn in_place(&mut self) {
         for (i, row) in self.rows.iter_mut().enumerate() {
             row.source = Some(i);
         }
     }
 
-    /// The prefix of line `i`: the old line's at that place, else the last
-    /// line's (a row added at the end).
     fn prefix(&self, i: usize) -> &'a str {
         self.prefixes
             .get(i)
@@ -247,8 +211,6 @@ impl<'a> Draft<'a> {
         )
     }
 
-    /// The changes turning the old lines into the draft's: deleted lines,
-    /// inserted ones, and the smallest edit of each line that stays.
     fn changes(&self, doc: &str) -> Vec<Change> {
         let lines: Vec<String> = (0..self.rows.len()).map(|i| self.line(i)).collect();
         let n = self.old.len();
@@ -300,7 +262,6 @@ impl<'a> Draft<'a> {
             }
         }
         if !pending.is_empty() {
-            // Rows added after the last line: a break, then each row.
             let tail = pending.trim_end_matches(self.eol);
             if let Some(last) = self.old.last() {
                 changes.push(Change::insert(last.end, format!("{}{tail}", self.eol)));
@@ -309,8 +270,6 @@ impl<'a> Draft<'a> {
         changes
     }
 
-    /// The document range of the written content of `column` in row `row`
-    /// (an index in the draft), its line starting at `line_start`.
     fn content(&self, row: usize, column: usize, line_start: usize) -> Option<Range<usize>> {
         let line = self.line(row);
         let prefix = self.prefix(row).len();
@@ -320,8 +279,6 @@ impl<'a> Draft<'a> {
         Some(line_start + cell.content.start..line_start + cell.content.end)
     }
 
-    /// Writes the draft back with the caret in `column` of row `row`: one
-    /// undo step. `false` when nothing changes.
     pub(crate) fn commit(self, state: &mut EditorState, row: usize, column: usize, at: At) -> bool {
         let doc = state.doc();
         let changes = self.changes(doc);
@@ -358,8 +315,6 @@ impl<'a> Draft<'a> {
     }
 }
 
-/// The table, row, column and content offset of the main caret, when it
-/// is in a drawn cell.
 fn context(state: &EditorState) -> Option<(Grid, usize, usize, usize)> {
     let head = state.selection().main().head;
     let (grid, row, column) = cells::cell_at(state, head)?;
@@ -370,9 +325,6 @@ fn context(state: &EditorState) -> Option<(Grid, usize, usize, usize)> {
     Some((grid, row, column, offset))
 }
 
-/// The command `id` applies where the caret is: in a drawn table, and not
-/// where it has nothing to act on (the header for row deletion and moves,
-/// the first or last row or column for a move, a lone column).
 pub fn enabled(state: &EditorState, id: &str) -> bool {
     let Some((grid, row, column, _)) = context(state) else {
         return false;
@@ -390,8 +342,6 @@ pub fn enabled(state: &EditorState, id: &str) -> bool {
     }
 }
 
-/// Runs the table command `id` at the caret; `false` when it is not
-/// enabled there or changes nothing.
 pub fn run(state: &mut EditorState, id: &str) -> bool {
     if !enabled(state, id) {
         return false;
@@ -409,8 +359,6 @@ pub fn run(state: &mut EditorState, id: &str) -> bool {
     d.complete();
     let (row, column, at) = match id {
         "table.rowAbove" if row == 0 => {
-            // A new header: the delimiter row moves above the old one,
-            // which becomes the first body row.
             let delimiter = d.rows[1].clone();
             d.rows.remove(1);
             let mut header = d.blank_row(0);
@@ -473,16 +421,12 @@ pub fn run(state: &mut EditorState, id: &str) -> bool {
             };
             for r in &mut d.rows {
                 let reference = r.slots.get(column).cloned().unwrap_or_default();
-                // The delimiter cell is copied: the new column takes the
-                // reference column's alignment.
                 let slot = if id == "table.columnDuplicate" || r.kind == RowKind::Delimiter {
                     reference
                 } else {
                     blank(reference.chars().count())
                 };
                 let at = at.min(r.slots.len());
-                // A cell added at an edge without a pipe needs one, or the
-                // blank slot would not be a cell.
                 if at == r.slots.len() {
                     close(r);
                 }
@@ -503,7 +447,6 @@ pub fn run(state: &mut EditorState, id: &str) -> bool {
                 if column < r.slots.len() {
                     r.slots.remove(column);
                 }
-                // A lone cell without pipes is no longer a table row.
                 if r.slots.len() == 1 && !r.head.contains('|') && !r.tail.contains('|') {
                     open(r);
                     close(r);
@@ -547,7 +490,6 @@ pub fn run(state: &mut EditorState, id: &str) -> bool {
             let numbers: Vec<Option<f64>> = keys.iter().map(|k| number(k)).collect();
             let mut order: Vec<usize> = (0..body.len()).collect();
             order.sort_by(|a, b| {
-                // Numbers first, by value; then text, digit runs as numbers.
                 let ord = match (numbers[*a], numbers[*b]) {
                     (Some(x), Some(y)) => x.total_cmp(&y),
                     (Some(_), None) => Ordering::Less,
@@ -560,7 +502,6 @@ pub fn run(state: &mut EditorState, id: &str) -> bool {
             d.rows.append(&mut sorted);
             body.clear();
             d.in_place();
-            // The caret follows its row.
             let at = if row >= 2 {
                 d.rows
                     .iter()
@@ -581,7 +522,6 @@ pub fn run(state: &mut EditorState, id: &str) -> bool {
     d.commit(state, row, column, at)
 }
 
-/// A delimiter cell with `align`, keeping its padding and dash count.
 fn realign(slot: &str, align: Option<Align>) -> String {
     let lead = slot.len() - slot.trim_start().len();
     let trail = slot.len() - slot.trim_end().len();
@@ -597,11 +537,9 @@ fn realign(slot: &str, align: Option<Align>) -> String {
     format!("{}{marker}{}", &slot[..lead], &slot[slot.len() - trail..])
 }
 
-/// A cell's text as drawn, without its marks, in lower case.
 fn sort_key(slot: &str) -> String {
     let content = slot.trim();
     let mut text = String::new();
-    // `<br>` reads as a space, like the line break it draws.
     let mut rest = content;
     while let Some(i) = rest.find('<') {
         let tag_end = rest[i..].find('>').map(|e| i + e + 1);
@@ -621,8 +559,6 @@ fn sort_key(slot: &str) -> String {
     crate::preview::plain_text(&crate::preview::render(&text)).to_lowercase()
 }
 
-/// A sort key that is a whole number, decimal or negative included
-/// (`-1.5`); not `nan` or `inf`, which `f64` would also read.
 fn number(key: &str) -> Option<f64> {
     let key = key.trim();
     let numeric = key.bytes().any(|b| b.is_ascii_digit())
@@ -632,7 +568,6 @@ fn number(key: &str) -> Option<f64> {
     numeric.then(|| key.parse::<f64>().ok()).flatten()
 }
 
-/// Text order with digit runs compared as numbers: `2` before `10`.
 fn natural_cmp(a: &str, b: &str) -> Ordering {
     let (mut a, mut b) = (a, b);
     loop {
@@ -663,9 +598,6 @@ fn natural_cmp(a: &str, b: &str) -> Ordering {
     }
 }
 
-/// "Format table": every cell padded to its column's display width
-/// (`unicode-width`: a CJK character counts 2), aligned as its column, and
-/// the delimiter row's dashes to that width.
 fn format(d: &mut Draft<'_>) {
     let columns = d.columns();
     let width = |s: &str| UnicodeWidthStr::width(s);
@@ -699,7 +631,6 @@ fn format(d: &mut Draft<'_>) {
     }
 }
 
-/// Deletes the table and one line break next to it.
 fn delete_table(state: &mut EditorState, grid: &Grid) -> bool {
     let doc = state.doc();
     let zone = grid.zone();

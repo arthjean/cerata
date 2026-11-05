@@ -1,12 +1,3 @@
-//! Following links from the editor (US-033): a click on a folded link, a
-//! folded wiki link, a bare URL or a link drawn in a widget. Ported from
-//! `link-navigation.ts:15-95` and `wiki-link-extension.ts:330-373`.
-//!
-//! `#anchor` scrolls this note; a note of the workspace opens in the app
-//! (the shell handles [`EditorEvent::OpenNote`]); `http`, `https` and
-//! `mailto` go to the OS; any other local file goes to the OS after a
-//! confirmation naming it; other schemes are refused.
-
 use std::path::{MAIN_SEPARATOR_STR, Path, PathBuf};
 
 use cerata_core::links::{self, LinkTarget as Resolved};
@@ -16,17 +7,12 @@ use gpui::{Context, EventEmitter, Pixels, Point, PromptLevel, Window, point, px}
 use super::blocks::LinkTarget;
 use super::{Autoscroll, Editor};
 
-/// What the editor asks of the window around it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EditorEvent {
-    /// Open a note of the workspace, then scroll to the heading whose slug
-    /// is `anchor`.
     OpenNote {
         path: PathBuf,
         anchor: Option<String>,
     },
-    /// Notes and folders dropped on the editor (with images or not), for
-    /// the shell to open as a drop on the window would (US-061).
     OpenDropped(Vec<PathBuf>),
 }
 
@@ -45,8 +31,6 @@ fn file_name(path: &str) -> &str {
 }
 
 impl Editor {
-    /// The link drawn under a window point: the text of a folded link, a
-    /// folded wiki link or a bare URL. Revealed syntax is not a link.
     pub(super) fn link_hit(
         &mut self,
         position: Point<Pixels>,
@@ -56,7 +40,6 @@ impl Editor {
         let viewport = self.viewport?;
         let (ix, y) = self.line_at_point(position)?;
         let laid = self.layout_line(ix, window, cx);
-        // In a drawn table: the cell line under the pointer.
         let line = match &laid.block {
             Some(block) => match &block.kind {
                 super::layout::BlockKind::Table(table) => {
@@ -118,7 +101,6 @@ impl Editor {
             .map(|url| LinkTarget::Url(self.state.text().slice(url.range()).to_owned()))
     }
 
-    /// Follows a link clicked in the text or in a widget.
     pub fn follow_link(&mut self, target: LinkTarget, window: &mut Window, cx: &mut Context<Self>) {
         match target {
             LinkTarget::Url(href) => self.follow_href(&href, window, cx),
@@ -134,7 +116,6 @@ impl Editor {
         self.path.as_deref().map(to_slash).unwrap_or_default()
     }
 
-    /// A Markdown destination (`followLink`).
     pub(super) fn follow_href(&mut self, href: &str, window: &mut Window, cx: &mut Context<Self>) {
         let root = self.root();
         let current = self.current();
@@ -175,9 +156,6 @@ impl Editor {
         }
     }
 
-    /// An existing local file opens in its default app after a
-    /// confirmation naming it (FR-14), a stronger one for anything the OS
-    /// may run.
     pub(super) fn confirm_open(
         &mut self,
         local: PathBuf,
@@ -206,8 +184,6 @@ impl Editor {
         .detach();
     }
 
-    /// A wiki link: the note it names opens; none, and a notice says so
-    /// (no file is created).
     fn follow_wiki(&mut self, raw: &str, cx: &mut Context<Self>) {
         let parsed = cerata_markdown::wiki::parse(raw);
         let anchor = parsed
@@ -252,8 +228,6 @@ impl Editor {
         }
     }
 
-    /// Scrolls the heading whose slug is `anchor` to the top of the safe
-    /// zone; a note still loading does it once loaded.
     pub fn go_to_anchor(&mut self, anchor: &str, cx: &mut Context<Self>) {
         if self.state.is_loading() {
             self.pending_anchor = Some(anchor.to_owned());

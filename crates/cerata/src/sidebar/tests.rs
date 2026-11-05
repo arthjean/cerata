@@ -1,5 +1,3 @@
-//! The sidebar inside a real workspace window.
-
 use std::path::{Path, PathBuf};
 
 use cerata_core::open_target::{self, OpenTarget};
@@ -66,7 +64,6 @@ fn open(cx: &mut TestAppContext, env: &Env) -> (WindowHandle<WindowView>, Entity
     (handle, sidebar)
 }
 
-/// Waits for the index (a real thread) and lets the sidebar reload.
 fn wait_for_index(cx: &mut TestAppContext, sidebar: &Entity<Sidebar>) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     loop {
@@ -126,7 +123,6 @@ fn root_folders_lead_as_projects_and_root_files_close_under_unfiled(cx: &mut Tes
         "projects start collapsed, Unfiled open"
     );
 
-    // A click on a project opens it and selects nothing.
     let notes = row_at(cx, &sidebar, "notes");
     sidebar.update(cx, |s, cx| s.click_header(&notes, cx));
     cx.run_until_parked();
@@ -140,7 +136,6 @@ fn root_folders_lead_as_projects_and_root_files_close_under_unfiled(cx: &mut Tes
     );
     assert!(sidebar.read_with(cx, |s, _| s.selection.anchor.is_none()));
 
-    // Unfiled closes and opens on a click.
     let unfiled = row_at(cx, &sidebar, tree::UNFILED);
     assert_eq!(unfiled.entry.path, env.root());
     sidebar.update(cx, |s, cx| s.click_header(&unfiled, cx));
@@ -148,7 +143,6 @@ fn root_folders_lead_as_projects_and_root_files_close_under_unfiled(cx: &mut Tes
     sidebar.update(cx, |s, cx| s.click_header(&unfiled, cx));
     assert!(shown(cx, &sidebar, &env.root().join("a.md")));
 
-    // A click on a file opens it in the window.
     let file = row_at(cx, &sidebar, "inner.md").entry;
     sidebar.update(cx, |s, cx| s.click_row(&file, cx));
     cx.run_until_parked();
@@ -176,7 +170,6 @@ fn a_file_dropped_on_unfiled_leaves_its_project_for_the_root(cx: &mut TestAppCon
         s.drag_moved(start + gpui::point(px(0.0), px(8.0)), Some(unfiled), cx);
         s.drag_highlight()
     });
-    // Unfiled and its file, not the project above.
     assert_eq!(highlight, Some(2..4));
     sidebar.update(cx, |s, cx| {
         s.end_drag(cx);
@@ -185,7 +178,6 @@ fn a_file_dropped_on_unfiled_leaves_its_project_for_the_root(cx: &mut TestAppCon
     let back = env.root().join("x.md");
     assert!(back.exists() && !x.exists());
 
-    // Dropped on a project's header, it moves into the project.
     let project = row_at(cx, &sidebar, "work").entry;
     sidebar.update(cx, |s, cx| {
         s.begin_drag(&back, start);
@@ -316,7 +308,6 @@ fn a_new_file_being_named_stays_out_of_recents(cx: &mut TestAppContext) {
     let created = sidebar
         .read_with(cx, |s, _| s.renaming.as_ref().map(|r| r.path.clone()))
         .expect("the new file is renamed in place");
-    // The index (a real thread) learns of the new file.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     while !sidebar.read_with(cx, |s, _| {
         s.runtime()
@@ -330,7 +321,6 @@ fn a_new_file_being_named_stays_out_of_recents(cx: &mut TestAppContext) {
     let in_recents = sidebar.read_with(cx, |s, _| s.recents.iter().any(|e| e.path == created));
     assert!(!in_recents, "the file being named shows only in the tree");
 
-    // Escape keeps the file: it is a recent file like any other.
     with_window(cx, handle, &sidebar, |s, window, cx| {
         s.cancel_rename(window, cx)
     });
@@ -360,7 +350,6 @@ fn recents_leave_out_the_active_file_and_keep_their_page_full(cx: &mut TestAppCo
     assert_eq!(shown.len(), 4);
     assert_eq!(shown[..3], before[1..]);
 
-    // Leaving it brings it back.
     sidebar.update(cx, |s, cx| s.set_active_path(None, cx));
     cx.run_until_parked();
     assert_eq!(sidebar.read_with(cx, |s, _| paths(s)), before);
@@ -382,7 +371,6 @@ fn pinned_files_show_in_pages_of_six(cx: &mut TestAppContext) {
         )
     });
     assert_eq!((count, more), (6, true));
-    // Most recently pinned first.
     let first = sidebar.read_with(cx, |s, _| s.pinned_entries[0].path.clone());
     assert_eq!(first, files[7]);
     sidebar.update(cx, |s, cx| s.show_more(Section::Pinned, cx));
@@ -476,8 +464,6 @@ fn the_toggle_key_hides_the_sidebar_and_the_width_is_saved_on_release(cx: &mut T
     assert_eq!(stored, Some(420.0));
 }
 
-// ---- US-027: create, rename, move, reveal ----
-
 fn with_window<R>(
     cx: &mut TestAppContext,
     handle: WindowHandle<WindowView>,
@@ -508,8 +494,6 @@ fn entry(
     })
 }
 
-/// A typed `..` or separator is refused in place: a rename never moves
-/// the entry to another folder.
 #[gpui::test]
 fn renaming_refuses_a_name_that_leaves_the_folder(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -571,13 +555,11 @@ fn renaming_edits_the_stem_in_place_and_refuses_a_taken_name(cx: &mut TestAppCon
     );
     assert!(a.exists());
 
-    // Escape cancels.
     with_window(cx, handle, &sidebar, |s, window, cx| {
         s.cancel_rename(window, cx)
     });
     assert!(sidebar.read_with(cx, |s, _| s.renaming.is_none()));
 
-    // A folder shows its full name; Enter renames.
     let dir = env.root().join("dir");
     with_window(cx, handle, &sidebar, |s, window, cx| {
         s.start_rename(&dir, window, cx)
@@ -608,7 +590,6 @@ fn a_new_file_is_renamed_in_place_unless_the_workspace_changed(cx: &mut TestAppC
     with_window(cx, handle, &sidebar, |s, window, cx| {
         s.cancel_rename(window, cx)
     });
-    // The workspace changes before the creation finishes: no rename follows.
     with_window(cx, handle, &sidebar, |s, window, cx| {
         s.create_entry(None, EntryKind::File, window, cx);
         s.workspace_changed(cx);
@@ -649,7 +630,6 @@ fn enter_on_a_new_file_names_its_heading_and_opens_it(cx: &mut TestAppContext) {
         })
         .unwrap();
     assert_eq!(active, Some(named));
-    // Ready to write below the heading.
     assert_eq!(caret, Some("# Test Name\n\n".len()));
 }
 
@@ -686,7 +666,6 @@ fn a_drag_starts_after_4_px_and_never_drops_a_folder_into_itself(cx: &mut TestAp
     let f_entry = entry(cx, &sidebar, &f).entry;
     let start = gpui::point(px(10.0), px(10.0));
 
-    // 3 px is still a click.
     sidebar.update(cx, |s, cx| {
         s.begin_drag(&f, start);
         s.drag_moved(
@@ -696,7 +675,6 @@ fn a_drag_starts_after_4_px_and_never_drops_a_folder_into_itself(cx: &mut TestAp
         );
     });
     assert!(sidebar.read_with(cx, |s, _| !s.drag.as_ref().unwrap().active));
-    // Into its own descendant: refused, nothing moves.
     sidebar.update(cx, |s, cx| {
         s.drag_moved(
             start + gpui::point(px(5.0), px(0.0)),
@@ -710,7 +688,6 @@ fn a_drag_starts_after_4_px_and_never_drops_a_folder_into_itself(cx: &mut TestAp
     assert!(f.join("sub/x.md").exists());
     assert!(!sub.join("f").exists());
 
-    // A file dropped on a folder moves into it, and its tab follows.
     handle
         .update(cx, |view, window, cx| view.open_file(&a, window, cx))
         .unwrap();
@@ -759,9 +736,6 @@ fn reveal_expands_the_parents_and_a_newer_call_wins(cx: &mut TestAppContext) {
     );
 }
 
-// ---- EP-004: Writer store invariants ----
-
-/// Opens a window on `root`, a folder below the temp dir.
 fn open_at(cx: &mut TestAppContext, root: &Path) -> (WindowHandle<WindowView>, Entity<Sidebar>) {
     let target = OpenTarget::Workspace(root.to_path_buf());
     let handle = cx
@@ -798,8 +772,6 @@ fn rename(
     });
 }
 
-/// Ports Writer `stores.test.ts:111`: a folder read that finishes after a
-/// workspace switch never reaches the tree.
 #[gpui::test]
 fn a_folder_read_from_the_previous_workspace_is_dropped(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -826,8 +798,6 @@ fn a_folder_read_from_the_previous_workspace_is_dropped(cx: &mut TestAppContext)
     );
 }
 
-/// Ports Writer `stores.test.ts:130`: a read started before the same root
-/// was closed and reopened (A, B, then A again) is thrown away.
 #[gpui::test]
 fn a_read_from_an_earlier_open_of_the_same_root_is_dropped(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -853,9 +823,6 @@ fn a_read_from_an_earlier_open_of_the_same_root_is_dropped(cx: &mut TestAppConte
     assert!(!expanded);
 }
 
-/// Ports Writer `stores.test.ts:773` and `:783`: renaming an expanded
-/// folder rewrites it and its expanded subfolders, and their children are
-/// listed under the new paths.
 #[gpui::test]
 fn renaming_an_expanded_folder_keeps_it_and_its_subfolders_open(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -880,8 +847,6 @@ fn renaming_an_expanded_folder_keeps_it_and_its_subfolders_open(cx: &mut TestApp
         !listed_under(cx, &sidebar, &dir),
         "no listing under the old path"
     );
-    // The index learns the new paths from the watcher, whose events
-    // re-read the folders shown.
     let shown = [
         ("renamed".into(), 0),
         ("sub".into(), 1),
@@ -903,8 +868,6 @@ fn renaming_an_expanded_folder_keeps_it_and_its_subfolders_open(cx: &mut TestApp
     assert_eq!(deep.depth, 2);
 }
 
-/// Ports Writer `stores.test.ts:795`: renaming a folder that is not
-/// expanded leaves the expanded set alone.
 #[gpui::test]
 fn renaming_a_collapsed_folder_leaves_the_expanded_set_alone(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -934,8 +897,6 @@ fn a_huge_folder_shows_before_its_titles_then_fills_them_in(cx: &mut TestAppCont
     let root = env.root();
     let runtime = sidebar.read_with(cx, |s, _| s.runtime().unwrap().clone());
 
-    // Once the library's first pass read the notes, every title comes from
-    // the index (US-083): nothing is left to read.
     assert!(
         runtime
             .reconciler
@@ -945,9 +906,6 @@ fn a_huge_folder_shows_before_its_titles_then_fills_them_in(cx: &mut TestAppCont
     assert!(untitled.is_empty());
     assert!(entries.iter().all(|entry| entry.title.is_some()));
 
-    // Before the index knows the contents (a library without a store, the
-    // first pass still reading), past a chunk of unknown titles the read
-    // leaves them for later...
     {
         let mut index = runtime.index.lock();
         let paths: Vec<_> = index.files().map(|file| file.path.clone()).collect();
@@ -962,7 +920,6 @@ fn a_huge_folder_shows_before_its_titles_then_fills_them_in(cx: &mut TestAppCont
     assert_eq!(untitled.len(), count);
     assert!(entries.iter().all(|entry| entry.title.is_none()));
 
-    // ...and the window fills them in once the folder is shown.
     let titled = sidebar.read_with(cx, |s, _| {
         s.rows
             .iter()
@@ -971,7 +928,6 @@ fn a_huge_folder_shows_before_its_titles_then_fills_them_in(cx: &mut TestAppCont
     });
     assert_eq!(titled, count);
 
-    // A re-read keeps the titles of unchanged files without reading them.
     let first = root.join("n0000.md");
     std::fs::write(&first, "# Changed").unwrap();
     let file = std::fs::File::options().write(true).open(&first).unwrap();
@@ -982,8 +938,6 @@ fn a_huge_folder_shows_before_its_titles_then_fills_them_in(cx: &mut TestAppCont
     let kept = entries.iter().find(|entry| entry.path == first).unwrap();
     assert_eq!(kept.title.as_deref(), Some("Title 0"));
 }
-
-// ---- Sidebar filter ----
 
 fn filter_names(cx: &mut TestAppContext, sidebar: &Entity<Sidebar>) -> Vec<String> {
     sidebar.read_with(cx, |s, _| {
@@ -1004,11 +958,9 @@ fn the_filter_matches_titles_and_paths_of_every_indexed_file(cx: &mut TestAppCon
     let (_handle, sidebar) = open(cx, &env);
     wait_for_index(cx, &sidebar);
 
-    // A collapsed folder's file is found by its title, in any case.
     sidebar.update(cx, |s, cx| s.set_filter("  MOTEUR ", cx));
     cx.run_until_parked();
     assert_eq!(filter_names(cx, &sidebar), ["inner.md"]);
-    // A folder name matches through the relative path.
     sidebar.update(cx, |s, cx| s.set_filter("notes", cx));
     assert_eq!(filter_names(cx, &sidebar), ["inner.md"]);
     sidebar.update(cx, |s, cx| s.set_filter("zzz", cx));
@@ -1045,9 +997,6 @@ fn typing_in_the_search_field_filters_and_escape_clears(cx: &mut TestAppContext)
     assert_eq!(text, "");
 }
 
-// ---- US-072: the assets folder follows its note ----
-
-/// `foo.md` linking `foo-assets/x.png`, in `dir` ("" for the root).
 fn note_with_assets(env: &Env, dir: &str) -> PathBuf {
     let prefix = if dir.is_empty() {
         String::new()
@@ -1126,9 +1075,6 @@ fn renaming_an_open_edited_note_rewrites_its_buffer_and_takes_its_assets(cx: &mu
         "the buffer is rewritten, its unsaved text kept"
     );
 
-    // The rename's own watcher events neither reload nor conflict. The
-    // watcher drops an event whose content Cerata just wrote; it is fed the
-    // others, as it would be.
     let echo = sidebar.read_with(cx, |s, _| {
         s.runtime().unwrap().self_writes.is_self_write(&bar)
     });
@@ -1151,7 +1097,6 @@ fn renaming_an_open_edited_note_rewrites_its_buffer_and_takes_its_assets(cx: &mu
         "![x](bar-assets/x.png)\nunsaved"
     );
 
-    // The autosave writes the rewrite.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     while !std::fs::read_to_string(&bar).is_ok_and(|t| t.contains("bar-assets")) {
         assert!(std::time::Instant::now() < deadline, "never saved");
@@ -1160,7 +1105,6 @@ fn renaming_an_open_edited_note_rewrites_its_buffer_and_takes_its_assets(cx: &mu
         cx.run_until_parked();
     }
 
-    // One undo step takes the rewrite back, and only it.
     editor.update(cx, |editor, cx| {
         editor.update_state(cx, |state| state.undo());
     });
@@ -1269,7 +1213,6 @@ fn a_note_dragged_over_a_taken_folder_points_its_links_back(cx: &mut TestAppCont
     let env = setup(cx);
     let foo = note_with_assets(&env, "a");
     env.file("b/foo-assets/other.png", "o");
-    // A folder shows in the sidebar once it holds a note.
     env.file("b/keep.md", "k");
     let (handle, sidebar) = open(cx, &env);
     let b = env.root().join("b");
@@ -1285,8 +1228,6 @@ fn a_note_dragged_over_a_taken_folder_points_its_links_back(cx: &mut TestAppCont
     );
 }
 
-/// Renames `from` to `to`, retrying while Windows still holds a handle
-/// from the closed workspace (its watcher drops on another thread).
 fn rename_folder(from: &Path, to: &Path) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     while let Err(error) = std::fs::rename(from, to) {
@@ -1298,9 +1239,6 @@ fn rename_folder(from: &Path, to: &Path) {
     }
 }
 
-/// US-077: pins and tabs are keyed by library id with relative paths, so a
-/// library moved outside Cerata gets both back when reopened at its new
-/// place, and the window says it moved.
 #[gpui::test]
 fn a_moved_library_keeps_its_pins_and_tabs(cx: &mut TestAppContext) {
     let env = setup(cx);

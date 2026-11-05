@@ -1,10 +1,5 @@
-//! Cerata desktop entry point.
-
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
-/// A keystroke with the OS's command modifier: Cmd on macOS, Ctrl
-/// elsewhere, as a static string for `KeyBinding::new`. `editor` keeps its
-/// own copy for the examples that compile it on its own.
 macro_rules! secondary {
     ($keys:literal) => {
         if cfg!(target_os = "macos") {
@@ -56,8 +51,6 @@ fn main() -> ExitCode {
         return ExitCode::from(cli::run(&cli_argv, &cwd, &cli::SystemLauncher));
     }
 
-    // Debug builds turn on wgpu's Vulkan debug messenger, which relays loader
-    // chatter (an ICD that cannot start, like Mesa's Dozen outside WSL) as warnings.
     env_logger::Builder::from_env(
         env_logger::Env::default().default_filter_or("info,wgpu_hal::vulkan::instance=error"),
     )
@@ -98,7 +91,6 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// Later launches reach the main thread in arrival order.
 fn serve_launches(cx: &mut App, listener: interprocess::local_socket::Listener) {
     let (sender, mut launches) = futures::channel::mpsc::unbounded();
     if let Err(error) = single_instance::serve(listener, move |request| {
@@ -115,8 +107,6 @@ fn serve_launches(cx: &mut App, listener: interprocess::local_socket::Listener) 
     .detach();
 }
 
-/// The first window opens on the first target that resolves (or restores
-/// the last workspace); the other targets follow in order.
 fn start(cx: &mut App, request: LaunchRequest) {
     let paths = request.paths();
     let first = paths

@@ -1,7 +1,3 @@
-//! On-disk text format: line endings and UTF-8 BOM are detected on read and
-//! restored on write, so saving never rewrites a file's conventions. The
-//! editor always sees `\n` line endings and no BOM.
-
 use std::borrow::Cow;
 
 const UTF8_BOM: &[u8] = b"\xEF\xBB\xBF";
@@ -13,16 +9,12 @@ pub enum LineEnding {
     CrLf,
 }
 
-/// How a file was stored, to write it back the same way.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct TextFormat {
     pub line_ending: LineEnding,
     pub bom: bool,
 }
 
-/// Decodes file bytes into editor text (UTF-8, `\n` only, no BOM) and the
-/// format to restore on save. The first line ending found decides the
-/// format of a file that mixes both.
 pub fn decode(bytes: &[u8]) -> Result<(String, TextFormat), std::str::Utf8Error> {
     let (bom, body) = match bytes.strip_prefix(UTF8_BOM) {
         Some(rest) => (true, rest),
@@ -41,7 +33,6 @@ pub fn decode(bytes: &[u8]) -> Result<(String, TextFormat), std::str::Utf8Error>
     Ok((text, TextFormat { line_ending, bom }))
 }
 
-/// Encodes editor text back into bytes in `format`.
 pub fn encode(text: &str, format: TextFormat) -> Vec<u8> {
     let body: Cow<'_, str> = match format.line_ending {
         LineEnding::Lf => Cow::Borrowed(text),
@@ -55,12 +46,9 @@ pub fn encode(text: &str, format: TextFormat) -> Vec<u8> {
     bytes
 }
 
-/// The `files.*` settings applied to text right before it is written.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SaveOptions {
-    /// `files.trim-trailing-whitespace`, off by default.
     pub trim_trailing_whitespace: bool,
-    /// `files.insert-final-newline`, on by default.
     pub insert_final_newline: bool,
 }
 
@@ -74,8 +62,6 @@ impl Default for SaveOptions {
 }
 
 impl SaveOptions {
-    /// Reads `files.trim-trailing-whitespace` and `files.insert-final-newline`
-    /// from the merged settings, falling back to the defaults.
     pub fn from_settings(settings: &crate::settings::Settings) -> Self {
         let flag = |key: &str, default: bool| {
             settings
@@ -94,7 +80,6 @@ impl SaveOptions {
     }
 }
 
-/// Applies [`SaveOptions`] to editor text (Writer `save.ts:105`).
 pub fn prepare_for_save(text: &str, options: SaveOptions) -> String {
     let mut result = if options.trim_trailing_whitespace {
         text.split('\n')

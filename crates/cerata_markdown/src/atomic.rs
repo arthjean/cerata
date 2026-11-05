@@ -1,17 +1,3 @@
-//! Atomic blocks: a closed ` ```mermaid ` fence stays drawn as its canvas
-//! whatever the selection (`mermaid-decorations.ts:186-197`), so its source
-//! is never under the caret. The caret stops before the block (its start)
-//! or after it (its end), never strictly inside, like CodeMirror's
-//! `atomicRanges` (`docs/adr/0006-atomic-blocks.md`).
-//!
-//! - A selection whose head lands inside moves to the boundary in the
-//!   direction it came from; an anchor inside moves to the boundary that
-//!   keeps the block selected.
-//! - Up and Down step from one boundary to the other ([`step_over`]).
-//! - A deletion that would cut into a block selects it instead; the next
-//!   one deletes it whole ([`EditorState::guard_atomic_deletes`]).
-//! - Text typed at a boundary goes on a line of its own ([`typed_at`]).
-
 use std::ops::Range;
 
 use crate::motion::Vertical;
@@ -20,8 +6,6 @@ use crate::state::EditorState;
 use crate::text::Text;
 use crate::tree::{MarkdownTree, Node, NodeKind};
 
-/// `mermaid-decorations.ts:150-197`: the body of a ` ```mermaid ` fence
-/// that is closed and not empty. A fence still being typed stays source.
 pub fn mermaid_body(text: &Text, node: Node<'_>) -> Option<String> {
     if node.kind() != NodeKind::FencedCode {
         return None;
@@ -47,7 +31,6 @@ pub fn mermaid_body(text: &Text, node: Node<'_>) -> Option<String> {
     (!body.is_empty()).then(|| body.to_owned())
 }
 
-/// The atomic block holding `pos`, its boundaries included.
 pub fn block_at(tree: &MarkdownTree, text: &Text, pos: usize) -> Option<Range<usize>> {
     let node = tree.resolve(pos, 1);
     std::iter::once(node)
@@ -56,7 +39,6 @@ pub fn block_at(tree: &MarkdownTree, text: &Text, pos: usize) -> Option<Range<us
         .filter(|n| mermaid_body(text, *n).is_some())
         .map(|n| n.range())
         .or_else(|| {
-            // At a block's end, `resolve` with side 1 looks past it.
             let node = tree.resolve(pos, -1);
             std::iter::once(node)
                 .chain(node.ancestors())
@@ -66,13 +48,10 @@ pub fn block_at(tree: &MarkdownTree, text: &Text, pos: usize) -> Option<Range<us
         })
 }
 
-/// The atomic block `pos` is strictly inside.
 pub fn block_inside(tree: &MarkdownTree, text: &Text, pos: usize) -> Option<Range<usize>> {
     block_at(tree, text, pos).filter(|b| b.start < pos && pos < b.end)
 }
 
-/// `selection` with no head or anchor strictly inside a block; `previous`
-/// gives each head's direction.
 pub fn skip(
     tree: &MarkdownTree,
     text: &Text,
@@ -111,9 +90,6 @@ pub fn skip(
     Selection::new(ranges, selection.main_index())
 }
 
-/// Up or Down from a block's boundary: from its start down to its end, from
-/// its end up to its start, from its end down to the next line's start.
-/// `None` leaves the move to the regular vertical motion.
 pub fn step_over(state: &EditorState, direction: Vertical) -> Option<usize> {
     if !state.atomic_blocks() {
         return None;
@@ -132,9 +108,6 @@ pub fn step_over(state: &EditorState, direction: Vertical) -> Option<usize> {
     }
 }
 
-/// The insert for `typed` at `pos` when `pos` is a block's boundary: on a
-/// line of its own above the block (at its start) or below it (at its
-/// end), with the caret's offset in the insert. `None` types as usual.
 pub fn typed_at(state: &EditorState, pos: usize, typed: &str) -> Option<(String, usize)> {
     if !state.atomic_blocks() || typed.is_empty() || typed.contains(['\n', '\r']) {
         return None;
@@ -156,9 +129,6 @@ pub fn typed_at(state: &EditorState, pos: usize, typed: &str) -> Option<(String,
 }
 
 impl EditorState {
-    /// Deletions of `ranges` (one per selection range) that would cut into
-    /// an atomic block select the blocks instead and return `true`; a
-    /// deletion covering a whole block, or none, returns `false`.
     pub fn guard_atomic_deletes(&mut self, ranges: &[Range<usize>]) -> bool {
         if !self.atomic_blocks() {
             return false;
@@ -168,7 +138,6 @@ impl EditorState {
             let block = block_inside(tree, text, r.start)
                 .or_else(|| block_inside(tree, text, r.end))
                 .or_else(|| {
-                    // A range inside a block, its ends on its boundaries.
                     block_at(tree, text, r.start).filter(|b| r.start < b.end && r.end > b.start)
                 })?;
             (!(r.start <= block.start && block.end <= r.end)).then_some(block)
@@ -237,16 +206,13 @@ mod tests {
     #[test]
     fn a_caret_never_lands_inside_a_block() {
         let f = fence();
-        // Moving forward into it: past its end; backward: before its start.
         let mut s = state(f.start);
         s.select(Selection::cursor(f.start + 1)).unwrap();
         assert_eq!(s.selection().main().head, f.end);
         s.select(Selection::cursor(f.end - 1)).unwrap();
         assert_eq!(s.selection().main().head, f.start);
-        // A range from above keeps the whole block.
         s.select(Selection::single(0, f.start + 5)).unwrap();
         assert_eq!(s.selection().main(), SelectionRange::new(0, f.end));
-        // An anchor inside moves to the side that keeps the block selected.
         s.select(Selection::single(f.start + 5, DOC.len())).unwrap();
         assert_eq!(
             s.selection().main(),
@@ -276,12 +242,10 @@ mod tests {
         let mut s = state(f.end);
         assert!(s.guard_atomic_deletes(&one(f.end - 1..f.end)));
         assert_eq!(s.selection().main(), SelectionRange::new(f.start, f.end));
-        // The whole block selected: deleting it is allowed.
         assert!(!s.guard_atomic_deletes(std::slice::from_ref(&f)));
         let mut s = state(f.start);
         assert!(s.guard_atomic_deletes(&one(f.start..f.start + 1)));
         assert_eq!(s.selection().main(), SelectionRange::new(f.start, f.end));
-        // Deleting the break after the block cuts nothing.
         let mut s = state(f.end + 1);
         assert!(!s.guard_atomic_deletes(&one(f.end..f.end + 1)));
     }
@@ -298,8 +262,6 @@ mod tests {
 
     #[test]
     fn an_edit_keeps_the_caret_out_of_a_block() {
-        // Closing the fence with the caret on its last line puts the caret
-        // after the new block.
         let open = "```mermaid\nflowchart LR\n  A --> B\n``";
         let mut s = EditorState::new(open);
         s.select(Selection::cursor(open.len())).unwrap();

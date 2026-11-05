@@ -1,12 +1,3 @@
-//! Pointer input: hit-testing through the display map and the height map,
-//! drag selection with frozen decorations, double and triple click, list
-//! prefix zones, task checkboxes, widget selection, the wheel and the code
-//! block scrollbars (US-018, US-019).
-//!
-//! Writer's references: `fold/core.ts:176-203` (a click on a widget selects
-//! its decoration), `list/index.ts:695-751` and `:1031-1050` (prefix zones,
-//! checkbox click), `drag-selection-gate.ts:39-198` (frozen reveal).
-
 use cerata_markdown::Selection;
 use cerata_markdown::list::parse_bullet_task_line;
 use gpui::{
@@ -18,7 +9,6 @@ use super::code_scroll::{self, CodeScroll};
 use super::layout::{BlockKind, LaidLine, Marker};
 use super::{Editor, TOP_INSET};
 
-/// Selection granularity of a press: single, double, triple click.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Unit {
     Char,
@@ -29,25 +19,20 @@ pub(super) enum Unit {
 #[derive(Clone, Debug)]
 pub enum Drag {
     Select {
-        /// The range the press selected; the drag extends from it.
         origin: std::ops::Range<usize>,
         unit: Unit,
         moved: bool,
-        /// A press on a task checkbox, toggled on release if not dragged.
         checkbox: Option<usize>,
     },
-    /// Dragging a code block's scrollbar thumb.
     Thumb {
         first_line: usize,
         start_x: Pixels,
         start_offset: f32,
         per_pixel: f32,
     },
-    /// Resizing a block image by a handle (US-067).
     Resize(super::resize::Resize),
 }
 
-/// A hit on a code block's drawn scrollbar.
 #[derive(Clone, Copy, Debug)]
 pub struct ThumbHit {
     pub first_line: usize,
@@ -61,8 +46,6 @@ pub fn register(root: Stateful<Div>, cx: &mut Context<Editor>) -> Stateful<Div> 
         .on_scroll(cx.listener(Editor::on_scroll_wheel))
 }
 
-/// Where a click in a list prefix goes: the nearest of the line start, the
-/// marker and the body (`listPrefixClickPosition`).
 fn prefix_zone(line: &LaidLine, text: &str, x: f32) -> Option<usize> {
     let prefix = line.prefix.as_ref()?;
     if x >= line.text_left {
@@ -89,12 +72,9 @@ fn prefix_zone(line: &LaidLine, text: &str, x: f32) -> Option<usize> {
     })
 }
 
-/// A table's grid with a rectangle's anchor and head cells, as
-/// `(row, column)` (US-054).
 type CellRect = (cerata_markdown::table::Grid, (usize, usize), (usize, usize));
 
 impl Editor {
-    /// The document line and the scroll-space y under a window point.
     pub(super) fn line_at_point(&self, position: Point<Pixels>) -> Option<(usize, f64)> {
         let viewport = self.viewport?;
         let y = self.scroll_top()
@@ -102,8 +82,6 @@ impl Editor {
         Some((self.heights.find(y).0, y))
     }
 
-    /// Buffer offset under a window point, through the height map and the
-    /// line's display map (hidden syntax is skipped forward).
     pub fn offset_for_point(
         &mut self,
         position: Point<Pixels>,
@@ -126,8 +104,6 @@ impl Editor {
         let local_y = (y - self.heights.prefix(ix)) as f32;
         let x = (position.x - viewport.column_left).as_f32();
         if let Some(block) = &line.block {
-            // A drawn table: the nearest cell line, whatever the border or
-            // padding under the pointer (US-051).
             if let BlockKind::Table(table) = &block.kind {
                 let local = local_y - block.top;
                 let Some((c, s)) = table.segment_at(x, local, true) else {
@@ -166,8 +142,6 @@ impl Editor {
         Self::offset_in_row(&line, row, x)
     }
 
-    /// The fold decoration (block or inline widget) under `offset`'s line
-    /// at `position`, if the pointer is on a replaced widget.
     fn widget_at(
         &mut self,
         position: Point<Pixels>,
@@ -177,7 +151,6 @@ impl Editor {
         let (ix, y) = self.line_at_point(position)?;
         let line = self.layout_line(ix, window, cx);
         let block = line.block.as_ref()?;
-        // A table's cells take the caret, never a whole-table selection.
         if matches!(block.kind, BlockKind::Table(_)) {
             return None;
         }
@@ -198,20 +171,16 @@ impl Editor {
                 } if r.start <= range.start && r.end >= range.end => Some(r),
                 cerata_markdown::Decoration::Widget {
                     pos, block: true, ..
-                } if pos == range.end => {
-                    // A widget below its revealed source: its image node.
-                    self.state
-                        .tree()
-                        .iter_range(range.clone())
-                        .find(|n| n.kind() == cerata_markdown::NodeKind::Image && n.to() == pos)
-                        .map(|n| n.range())
-                }
+                } if pos == range.end => self
+                    .state
+                    .tree()
+                    .iter_range(range.clone())
+                    .find(|n| n.kind() == cerata_markdown::NodeKind::Image && n.to() == pos)
+                    .map(|n| n.range()),
                 _ => None,
             })
     }
 
-    /// The block image drawn (not as source) under the pointer: its node
-    /// (ADR 0008).
     fn drawn_image_at(
         &mut self,
         position: Point<Pixels>,
@@ -223,9 +192,6 @@ impl Editor {
             .filter(|image| image.block && image.range == range)
     }
 
-    /// Selects `image` as an object, anchored at its end. The view stays:
-    /// the image is under the pointer, and keeping its whole height in the
-    /// safe margins would scroll the note under it.
     fn select_image(
         &mut self,
         image: &cerata_markdown::image_size::ImageNode,
@@ -237,8 +203,6 @@ impl Editor {
 
     fn unit_range(&self, pos: usize, unit: Unit) -> std::ops::Range<usize> {
         let text = self.state.text();
-        // In a drawn table: a word stays in its cell, a line is the table
-        // (whose source the selection then reveals).
         let cell = cerata_markdown::cells::cell_at(&self.state, pos);
         match unit {
             Unit::Char => pos..pos,
@@ -302,7 +266,6 @@ impl Editor {
                 start_offset: self.code_scroll.offset_of_line(hit.first_line),
                 per_pixel: hit.per_pixel,
             });
-            // The next frame installs the window-wide drag listeners.
             cx.notify();
             return;
         }
@@ -311,7 +274,6 @@ impl Editor {
             2 => Unit::Word,
             _ => Unit::Line,
         };
-        // A click on a link's text follows it, the caret stays.
         if unit == Unit::Char
             && !event.modifiers.shift
             && let Some(target) = self.link_hit(event.position, window, cx)
@@ -319,9 +281,6 @@ impl Editor {
             self.follow_link(target, window, cx);
             return;
         }
-        // A click on a block image selects it as an object, whatever was
-        // selected (ADR 0008); a double click shows its source, the caret
-        // at the end of its alt text.
         if !event.modifiers.shift
             && let Some(image) = self.drawn_image_at(event.position, window, cx)
         {
@@ -338,8 +297,6 @@ impl Editor {
                 Unit::Line => {}
             }
         }
-        // A click on a widget with no selection selects its whole
-        // decoration, anchored at its end.
         if unit == Unit::Char
             && !event.modifiers.shift
             && self.state.selection().main().is_empty()
@@ -350,9 +307,6 @@ impl Editor {
         }
         let pos = self.offset_for_point(event.position, window, cx);
         let checkbox = self.checkbox_at(event.position, window, cx);
-        // Shift+click in another cell of the caret's table: the rectangle
-        // from the caret's cell (or the current rectangle's anchor), which
-        // a drag goes on extending (US-054).
         if unit == Unit::Char && event.modifiers.shift {
             let anchor = match self.state.table_selection_grid() {
                 Some((ts, grid)) => grid.cell(ts.anchor.0, ts.anchor.1).map(|c| c.content.start),
@@ -372,7 +326,6 @@ impl Editor {
                 return;
             }
         }
-        // Freeze what is revealed in the shape the user is looking at.
         self.state.begin_drag();
         let origin = self.unit_range(pos, unit);
         let main = self.state.selection().main();
@@ -396,7 +349,6 @@ impl Editor {
         self.select(selection, cx);
     }
 
-    /// The task marker under the pointer: inside the drawn checkbox.
     fn checkbox_at(
         &mut self,
         position: Point<Pixels>,
@@ -417,8 +369,6 @@ impl Editor {
         (in_row && in_box).then_some(prefix.range.start)
     }
 
-    /// Window-wide while a drag is on (`EditorElement::paint`), so a drag
-    /// keeps going and ends outside the editor and the window.
     pub(super) fn on_mouse_move(
         &mut self,
         event: &MouseMoveEvent,
@@ -429,8 +379,6 @@ impl Editor {
             return;
         };
         if event.pressed_button != Some(MouseButton::Left) {
-            // The release happened outside the window and never reached us:
-            // the drag ends where it last was.
             if self.release_resize(cx) {
                 return;
             }
@@ -469,9 +417,6 @@ impl Editor {
                     moved: true,
                     checkbox,
                 });
-                // From one cell to another of the same table: the
-                // rectangle between them (US-054); out of the table, a
-                // text selection across its edge.
                 let rect = match unit {
                     Unit::Char => self.cell_rect(origin.start, pos),
                     _ => None,
@@ -488,7 +433,6 @@ impl Editor {
                 {
                     self.select(selection, cx);
                 }
-                // Keep the drag position in view.
                 if let Some(viewport) = self.viewport {
                     let bounds = viewport.bounds;
                     let delta = if event.position.y < bounds.top() {
@@ -527,8 +471,6 @@ impl Editor {
         self.end_drag(cx);
     }
 
-    /// The drag ends: the selection stays at its last position and the
-    /// reveal follows it again.
     fn end_drag(&mut self, cx: &mut Context<Self>) {
         if self.drag.take().is_some() || self.state.is_dragging() {
             self.state.end_drag();
@@ -536,8 +478,6 @@ impl Editor {
         }
     }
 
-    /// Two positions in different drawn cells of one table: the table and
-    /// their cells, as a rectangle's anchor and head (US-054).
     fn cell_rect(&self, anchor: usize, head: usize) -> Option<CellRect> {
         let (grid, ar, ac) = cerata_markdown::cells::cell_at(&self.state, anchor)?;
         let (other, hr, hc) = cerata_markdown::cells::cell_at(&self.state, head)?;
@@ -568,8 +508,6 @@ impl Editor {
         }
     }
 
-    /// First line of the code block, or of the drawn table, under the
-    /// pointer.
     fn code_block_line_at(
         &mut self,
         position: Point<Pixels>,
@@ -587,25 +525,18 @@ impl Editor {
         Some(self.state.text().line_at(code.block_start).number)
     }
 
-    /// Keeps the position `head` (the main caret, a search result) visible
-    /// inside its code block or wide table, by the smallest change of the
-    /// block's offset.
     pub(super) fn reveal_in_block(&mut self, head: usize, window: &Window, cx: &mut Context<Self>) {
         let (line, row) = self.row_at(head, window, cx);
-        // In a cell of a wide table: the table scrolls (US-056).
         if let super::table::TextLine::Cell { table, .. } = &line {
             let Some(wrapped) = &line.wrapped else {
                 return;
             };
             let display = line.display.to_display(head - line.start);
-            // From the start of the head's own row: at a wrap boundary,
-            // `position_for_index` answers the end of the row before.
             let unwrapped = &wrapped.unwrapped_layout;
             let row_start = line.row_starts.get(row).copied().unwrap_or(0);
             let in_row = unwrapped.x_for_index(display) - unwrapped.x_for_index(row_start);
             let first = self.state.text().line_at(table.grid.zone().start).number;
             let offset = table.scroll;
-            // The caret's x in the unscrolled table, a padding of room.
             let x = line.text_left + in_row.as_f32() + offset;
             let pad = cerata_markdown::table::CELL_HORIZONTAL_PADDING_EM * self.config.text_size();
             let visible = self.column_width();
@@ -647,7 +578,6 @@ impl Editor {
         cx: &mut Context<Self>,
     ) {
         window.focus(&self.focus_handle, cx);
-        // On a block image: selected as an object first (ADR 0008).
         if let Some(image) = self.drawn_image_at(event.position, window, cx) {
             self.select_image(&image, cx);
             self.open_context_menu(event.position, image.range.start, cx);

@@ -1,6 +1,3 @@
-//! Ported from Writer `tests/editor-formatting.test.ts:59-486` and
-//! `tests/editor-commands.test.ts`.
-
 use super::*;
 
 const CLOCK: Clock = Clock {
@@ -67,7 +64,6 @@ fn insert_link_selects_the_url_slot() {
     let s = run("format.link", "hello world", 0, 5);
     assert_eq!(s.doc(), "[hello](url) world");
     assert_eq!(sel(&s), (8, 11));
-    // Inside a link: nothing to do.
     let mut s = EditorState::new("[a](b)");
     s.select(Selection::cursor(2)).unwrap();
     assert!(!s.run_command("format.link", &CLOCK));
@@ -229,7 +225,6 @@ fn the_registry_has_stable_unique_ids_labels_and_chords() {
 
 #[test]
 fn mac_shortcuts_match_writers_documentation() {
-    // `docs/keyboard-shortcuts.md:50-70`.
     let documented = [
         ("format.bold", "Cmd+B"),
         ("format.italic", "Cmd+I"),
@@ -310,7 +305,6 @@ fn every_shortcut_is_typeable_on_azerty_and_qwerty() {
             }
         }
     }
-    // A key missing from the layout is reported.
     let missing = Chord {
         cmd: false,
         ctrl: true,

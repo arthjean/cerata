@@ -1,9 +1,3 @@
-//! Block image widths from the view: the resize handles (US-067) and the
-//! preset widths of the menu and the palette (US-068). The width lives in
-//! the text as Obsidian writes it (`cerata_markdown::image_size`, ADR
-//! 0008); during a gesture only the view's preview changes, and the release
-//! writes it in one undo step.
-
 use std::ops::Range;
 
 use cerata_markdown::image_size::{self, ImageNode};
@@ -15,16 +9,11 @@ use gpui::{
 use super::Editor;
 use super::mouse::Drag;
 
-/// The narrowest a handle makes an image.
 pub const MIN_WIDTH: f32 = 64.0;
-/// A width this close to the default one removes the size: the file stays
-/// clean (the magnet).
 pub const SNAP: f32 = 8.0;
-/// Handle bar: its width, its distance from the image's edge, its tallest.
 const BAR_WIDTH: f32 = 6.0;
 const BAR_INSET: f32 = 8.0;
 const BAR_MAX_HEIGHT: f32 = 48.0;
-/// The handle's hit zone (WCAG 2.2 SC 2.5.8).
 const HIT: f32 = 24.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -33,26 +22,18 @@ pub enum Side {
     Right,
 }
 
-/// A resize gesture on a block image.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Resize {
-    /// The image's node and its source when the gesture started: a release
-    /// writes only if the text there is still the same.
     pub range: Range<usize>,
     pub source: String,
     pub side: Side,
     pub start_x: Pixels,
     pub start_width: f32,
-    /// What the view shows.
     pub width: f32,
-    /// `min(natural, column)`: a release this close removes the size.
     pub default_width: f32,
-    /// Escape: the width went back, the release writes nothing.
     pub canceled: bool,
 }
 
-/// The block image a handle resizes: its node, host key, line and the
-/// size it is drawn at.
 #[derive(Clone, Debug)]
 pub struct Grip {
     pub range: Range<usize>,
@@ -62,7 +43,6 @@ pub struct Grip {
     pub height: f32,
 }
 
-/// A preset width (US-068), from the menu or the palette.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Preset {
     Quarter,
@@ -81,7 +61,6 @@ impl Preset {
         Self::Original,
     ];
 
-    /// The menu's label.
     pub fn label(self) -> &'static str {
         match self {
             Self::Quarter => "25%",
@@ -92,7 +71,6 @@ impl Preset {
         }
     }
 
-    /// The palette's label.
     pub fn command_label(self) -> &'static str {
         match self {
             Self::Quarter => "Image width: 25%",
@@ -103,8 +81,6 @@ impl Preset {
         }
     }
 
-    /// The width written for a column `column` wide, `None` for the
-    /// original size.
     fn width(self, column: f32) -> Option<f32> {
         let share = match self {
             Self::Quarter => 0.25,
@@ -117,8 +93,6 @@ impl Preset {
     }
 }
 
-/// The presets that apply to `image`: `Original size` only when it has a
-/// size.
 pub fn image_presets_of(image: &ImageNode) -> Vec<(Preset, bool)> {
     Preset::ALL
         .iter()
@@ -126,16 +100,12 @@ pub fn image_presets_of(image: &ImageNode) -> Vec<(Preset, bool)> {
         .collect()
 }
 
-/// The size written for a width the view shows: none within [`SNAP`] of
-/// the default width.
 pub fn written_width(width: f32, default_width: f32) -> Option<u32> {
     let width = width.round();
     ((width - default_width).abs() >= SNAP).then_some(width.max(1.0) as u32)
 }
 
 impl Editor {
-    /// The preview of the gesture in flight, for the layout: the image's
-    /// start and the width shown.
     pub(super) fn image_preview(&self) -> Option<(usize, f32)> {
         match &self.drag {
             Some(Drag::Resize(resize)) => Some((resize.range.start, resize.width)),
@@ -143,15 +113,11 @@ impl Editor {
         }
     }
 
-    /// The block image the main selection's head is on, or in the source
-    /// of, as an image node (the menu and the palette act on it).
     pub fn image_at_head(&self) -> Option<ImageNode> {
         let head = self.state.selection().main().head;
         image_size::image_at(self.state.tree(), self.state.text(), head).filter(|i| i.block)
     }
 
-    /// `min(natural, column)` for the image of `url` (an embed by its
-    /// key), the column when its size is unknown.
     fn default_width(&self, url: &str) -> f32 {
         let column = self.column_width();
         self.images
@@ -159,7 +125,6 @@ impl Editor {
             .map_or(column, |(w, _)| w.min(column).floor().max(1.0))
     }
 
-    /// The host key of `image`: its destination, or an embed's key.
     pub(super) fn image_key(&self, image: &ImageNode) -> Option<String> {
         let text = self.state.text();
         if image.embed {
@@ -179,8 +144,6 @@ impl Editor {
         ))
     }
 
-    /// A press on a handle (or the benchmark's, US-066): the gesture
-    /// starts from the width shown.
     pub fn start_resize(
         &mut self,
         grip: &Grip,
@@ -202,12 +165,9 @@ impl Editor {
             default_width: self.default_width(&grip.url),
             canceled: false,
         }));
-        // The next frame installs the window-wide drag listeners.
         cx.notify();
     }
 
-    /// A move during the gesture: twice the horizontal move, since the
-    /// image stays centered, between [`MIN_WIDTH`] and the column.
     pub fn resize_to(&mut self, x: Pixels, cx: &mut Context<Self>) {
         let column = self.column_width();
         let Some(Drag::Resize(resize)) = &mut self.drag else {
@@ -230,7 +190,6 @@ impl Editor {
         }
     }
 
-    /// The release ends the gesture in flight; `false` without one.
     pub fn release_resize(&mut self, cx: &mut Context<Self>) -> bool {
         if !matches!(self.drag, Some(Drag::Resize(_))) {
             return false;
@@ -241,8 +200,6 @@ impl Editor {
         true
     }
 
-    /// The width shown is written, unless Escape canceled the gesture or
-    /// the image's source changed meanwhile (a reload).
     fn finish_resize(&mut self, resize: Resize, cx: &mut Context<Self>) {
         cx.notify();
         if resize.canceled || resize.width == resize.start_width {
@@ -256,7 +213,6 @@ impl Editor {
         self.update_state(cx, |state| state.set_image_width(resize.range, width));
     }
 
-    /// Escape during a gesture: the width goes back. `false` without one.
     pub fn cancel_resize(&mut self, cx: &mut Context<Self>) -> bool {
         let Some(Drag::Resize(resize)) = &mut self.drag else {
             return false;
@@ -267,8 +223,6 @@ impl Editor {
         true
     }
 
-    /// The preset width of the image at the head (US-068), in one undo
-    /// step. A width within [`SNAP`] of the default one removes the size.
     pub fn set_image_width_preset(&mut self, preset: Preset, cx: &mut Context<Self>) -> bool {
         match self.image_at_head() {
             Some(image) => self.set_image_width_preset_of(&image, preset, cx),
@@ -276,8 +230,6 @@ impl Editor {
         }
     }
 
-    /// [`Editor::set_image_width_preset`] for `image`, wherever the caret
-    /// is (the toolbar's, US-070).
     pub fn set_image_width_preset_of(
         &mut self,
         image: &ImageNode,
@@ -293,14 +245,11 @@ impl Editor {
         self.update_state(cx, |state| state.set_image_width(range, width))
     }
 
-    /// The presets that apply to the image at the head.
     pub fn image_presets(&self) -> Vec<(Preset, bool)> {
         self.image_at_head()
             .map_or_else(Vec::new, |image| image_presets_of(&image))
     }
 
-    /// The two handles of `grip`'s image, shown on hover of `group` (its
-    /// frame), or always (`shown`: selected as an object, or resizing).
     pub(super) fn image_handles(
         &self,
         grip: &Grip,
@@ -329,8 +278,6 @@ impl Editor {
                     .h(px(hit_height))
                     .cursor(CursorStyle::ResizeLeftRight)
                     .child(
-                        // Dark fill, light border: seen on a white image as
-                        // on a black one (SC 1.4.11).
                         div()
                             .absolute()
                             .left(px(bar_left))

@@ -1,9 +1,3 @@
-//! Classifies a path handed to Cerata (argv, CLI, OS "open with").
-//!
-//! Ported from Writer `open_target.rs`. A folder opens as a workspace, a
-//! `.md` or `.markdown` file (any case, the shared predicate) as a standalone
-//! file; both are canonicalized first.
-
 use crate::markdown::is_markdown_path;
 use std::path::{Path, PathBuf};
 
@@ -35,7 +29,6 @@ pub enum OpenTargetError {
     },
 }
 
-/// Strict classification, for the CLI: reports why a path cannot open.
 pub fn validate_and_resolve(path: &Path) -> Result<OpenTarget, OpenTargetError> {
     if !path.exists() {
         return Err(OpenTargetError::NotFound(path.to_path_buf()));
@@ -54,7 +47,6 @@ pub fn validate_and_resolve(path: &Path) -> Result<OpenTarget, OpenTargetError> 
     Err(OpenTargetError::Unsupported(path.to_path_buf()))
 }
 
-/// Lenient classification, for argv and OS open requests.
 pub fn resolve(path: &Path) -> Option<OpenTarget> {
     validate_and_resolve(path).ok()
 }
@@ -64,8 +56,6 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::tempdir;
-
-    // Ported from Writer `open_target.rs` tests.
 
     #[test]
     fn directory_resolves_to_workspace() {

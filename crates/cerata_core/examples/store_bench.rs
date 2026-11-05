@@ -1,18 +1,3 @@
-//! Library store benchmark (US-081, US-083, US-084; docs/benchmarks.md).
-//!
-//! cargo run -p cerata_core --release --example store_bench -- generate <dir> 50000
-//! cargo run -p cerata_core --release --example store_bench -- store <dir> [runs]
-//! cargo run -p cerata_core --release --example store_bench -- reconcile <dir> [runs]
-//!
-//! `generate` writes `index_bench`'s corpus. `store` fills a new store
-//! with every note of `<dir>` (path, size, time, hash, title, sketch), then
-//! times opening it, reading every title, and updating one row, and gives
-//! the file's size. `reconcile` opens `<dir>` as a library would (store in
-//! a temporary folder): a first pass fills the store, then `runs` passes
-//! over the unchanged library are timed, with the files each one opened;
-//! it also times reading the index back from the store, the part of a
-//! launch before the first frame shows the titles.
-
 #[path = "support/corpus.rs"]
 mod corpus;
 
@@ -65,7 +50,6 @@ fn open_store(dir: &Path) -> Result<Store, String> {
     }
 }
 
-/// Median, p99 (nearest rank), min and max.
 fn summary(mut timings: Vec<Duration>) -> String {
     timings.sort();
     let at = |rank: f64| {
@@ -181,7 +165,6 @@ fn store(root: &Path, runs: usize) -> Result<(), String> {
     Ok(())
 }
 
-/// Counts the files a pass opens.
 #[derive(Default)]
 struct Counting(AtomicUsize);
 

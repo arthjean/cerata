@@ -1,6 +1,3 @@
-//! The spike editor entity: buffer, selection, IME state, scroll anchor,
-//! per-line layout on demand, hit-testing and `EntityInputHandler`.
-
 use std::{cell::RefCell, collections::HashMap, ops::Range, path::PathBuf, rc::Rc};
 
 use gpui::{
@@ -42,7 +39,6 @@ pub const BASE_FONT_SIZE: f32 = 16.0;
 pub const MAX_COLUMN_WIDTH: f32 = 720.0;
 pub const SIDE_PADDING: f32 = 24.0;
 pub const TOP_INSET: f32 = 16.0;
-/// Layout margin above and below the viewport, in pixels.
 pub const LAYOUT_MARGIN: f64 = 300.0;
 const FALLBACK_IMAGE: (f32, f32) = (320.0, 180.0);
 
@@ -66,27 +62,21 @@ pub struct Viewport {
 #[derive(Debug, Clone, PartialEq)]
 pub struct BlockLayout {
     pub mode: BlockMode,
-    /// Top of the widget, relative to the line top.
     pub top: f32,
     pub width: f32,
     pub height: f32,
     pub path: PathBuf,
 }
 
-/// One buffer line laid out at its own font size.
 pub struct LaidLine {
     pub ix: usize,
-    /// Absolute byte offset of the line start.
     pub start: usize,
     pub len: usize,
-    /// Read by the tests to rebuild the text runs.
     #[cfg_attr(not(test), allow(dead_code))]
     pub syntax: LineSyntax,
     pub metrics: LineMetrics,
     pub display: DisplayLine,
-    /// `None` when a block widget replaces the line.
     pub wrapped: Option<WrappedLine>,
-    /// Display offsets where each wrapped row starts.
     pub row_starts: Vec<usize>,
     pub text_top: f32,
     pub block: Option<BlockLayout>,
@@ -114,12 +104,8 @@ pub struct Editor {
     pub selected_range: Range<usize>,
     pub selection_reversed: bool,
     pub marked_range: Option<Range<usize>>,
-    /// Scroll position as an anchor line plus an offset into it, so height
-    /// corrections above the anchor never move what is on screen.
     pub scroll_line: usize,
     pub scroll_offset: f64,
-    /// Selection used for hide decisions while a drag is in progress
-    /// (Writer's `unfurlFreezeFacet`): text does not reflow under the pointer.
     pub frozen_selection: Option<Range<usize>>,
     pub is_selecting: bool,
     pub viewport: Option<Viewport>,
@@ -128,7 +114,6 @@ pub struct Editor {
     pub autoscroll: bool,
     pub bench: Option<Rc<RefCell<BenchState>>>,
     pub status: SharedString,
-    /// Lines laid out by the last prepaint.
     pub laid_out: Range<usize>,
 }
 
@@ -170,8 +155,6 @@ impl Editor {
         self.heights.reset(heights);
     }
 
-    /// Height of a line before it is shaped: average glyph width of half an
-    /// em, Writer-like CodeMirror estimates. Exact once laid out.
     fn estimate_height(&mut self, ix: usize) -> f64 {
         let text = self.buffer.line_text(ix);
         let syntax = scan_line(text);
@@ -186,7 +169,6 @@ impl Editor {
         (metrics.pad_top + rows * metrics.row_height + metrics.pad_bottom) as f64
     }
 
-    /// Natural size read from the file header, scaled to fit the column.
     pub fn image_display_size(&mut self, url: &str) -> (f32, f32) {
         let natural = match self.image_sizes.get(url) {
             Some(size) => *size,
@@ -199,9 +181,6 @@ impl Editor {
                 size
             }
         };
-        // GPUI's layout (taffy) rounds element sizes to whole pixels, so the
-        // height map takes the size the widget will actually be laid out at:
-        // exact, and never rounded to a multiple of the row height.
         let width = natural.0.min(self.wrap_width()).floor();
         (width, (natural.1 * width / natural.0).round())
     }
@@ -257,7 +236,6 @@ impl Editor {
         self.scroll_offset = offset;
     }
 
-    /// Window y of a scroll-space y.
     pub fn screen_y(&self, scroll_y: f64) -> Pixels {
         let top = self
             .viewport
@@ -269,8 +247,6 @@ impl Editor {
         self.screen_y(self.heights.prefix(ix))
     }
 
-    /// Lays out one line from the model (never from a stale frame) and
-    /// records its exact height in the height map.
     pub fn layout_line(&mut self, ix: usize, window: &Window) -> LaidLine {
         let range = self.buffer.line_range(ix);
         let text = &self.buffer.text()[range.clone()];
@@ -345,8 +321,6 @@ impl Editor {
             None => text_height,
         };
         if replaced {
-            // Criterion 4: a replaced image line is exactly as tall as the
-            // image, never rounded to a multiple of the row height.
             debug_assert_eq!(Some(height), block.as_ref().map(|b| b.height));
         }
         if (self.heights.get(ix) - height as f64).abs() > 1e-6 {
@@ -367,7 +341,6 @@ impl Editor {
         }
     }
 
-    /// Window position of the top of the caret at `offset`, plus its height.
     pub fn caret_bounds(&mut self, offset: usize, window: &Window) -> Option<Bounds<Pixels>> {
         self.viewport?;
         let offset = self.buffer.clip_offset(offset);
@@ -395,7 +368,6 @@ impl Editor {
         }
     }
 
-    /// Buffer offset under a window point.
     pub fn offset_for_point(&mut self, position: Point<Pixels>, window: &Window) -> usize {
         let Some(viewport) = self.viewport else {
             return 0;
@@ -557,7 +529,6 @@ impl Editor {
         cx: &mut Context<Self>,
     ) {
         window.focus(&self.focus_handle, cx);
-        // Freeze hide decisions in the shape the user is looking at.
         self.frozen_selection = Some(self.selected_range.clone());
         self.is_selecting = true;
         let offset = self.offset_for_point(event.position, window);
@@ -598,8 +569,6 @@ impl Editor {
     }
 }
 
-/// Text runs for the visible part of a line: bold headings and strong
-/// text, muted revealed markup, link styling, underlined IME marked text.
 pub fn text_runs(
     syntax: &LineSyntax,
     display: &DisplayLine,
@@ -794,10 +763,6 @@ impl EntityInputHandler for Editor {
         cx.notify();
     }
 
-    /// Caret or range bounds in window coordinates, computed from the model
-    /// so it is correct between an edit and the next frame (macOS asks for
-    /// it right after setting marked text). The IME positions its
-    /// composition and candidate windows from this.
     fn bounds_for_range(
         &mut self,
         range_utf16: Range<usize>,

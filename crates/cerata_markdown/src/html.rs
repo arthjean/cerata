@@ -1,17 +1,7 @@
-//! HTML blocks (US-035): sanitized with `ammonia` on Writer's allow list,
-//! then read into a small tree the editor draws. Ported from
-//! `html-block-decorations.ts:12-164`.
-//!
-//! Writer's DOMPurify keeps the text of a tag it removes; so does
-//! `ammonia`, except for `script` and `style`, whose content is dropped.
-//! `iframe`, `object`, `embed` and every `on*` attribute are not on the
-//! list. URLs keep `ammonia`'s scheme list (no `file:`, no `javascript:`).
-
 use std::collections::HashSet;
 
 use crate::preview::{self, Inline};
 
-/// `html-block-decorations.ts:12-82`.
 const ALLOWED_TAGS: &[&str] = &[
     "div",
     "p",
@@ -78,16 +68,12 @@ const ALLOWED_TAGS: &[&str] = &[
     "rp",
 ];
 
-/// `html-block-decorations.ts:84-108`, without `rel` and `target`, which
-/// Writer forces on links (`ammonia`'s `link_rel` here; links open through
-/// the editor's rules, never in a frame).
 const ALLOWED_ATTRIBUTES: &[&str] = &[
     "href", "src", "alt", "title", "width", "height", "align", "valign", "colspan", "rowspan",
     "id", "class", "style", "dir", "lang", "open", "controls", "autoplay", "loop", "muted",
     "poster",
 ];
 
-/// Tags laid out as blocks; the others flow as text.
 const BLOCK_TAGS: &[&str] = &[
     "div",
     "p",
@@ -164,7 +150,6 @@ impl Node {
     }
 }
 
-/// Whether Writer leaves this block as source (`/^<(?:script|style)[\s>]/i`).
 pub fn is_script_or_style(source: &str) -> bool {
     let lower = source
         .trim_start()
@@ -181,7 +166,6 @@ pub fn is_script_or_style(source: &str) -> bool {
     })
 }
 
-/// The HTML with only Writer's tags and attributes left.
 pub fn sanitize(source: &str) -> String {
     ammonia::Builder::default()
         .tags(ALLOWED_TAGS.iter().copied().collect::<HashSet<_>>())
@@ -192,7 +176,6 @@ pub fn sanitize(source: &str) -> String {
         .to_string()
 }
 
-/// The sanitized HTML of `source` as a tree.
 pub fn render(source: &str) -> Vec<Node> {
     parse(&sanitize(source))
 }
@@ -218,9 +201,6 @@ fn decode(text: &str) -> String {
     out
 }
 
-/// Reads serialized HTML (as `ammonia` writes it: quoted attributes,
-/// escaped text, void tags unclosed) into a tree. Unbalanced closing tags
-/// close up to their match, or are ignored.
 pub fn parse(html: &str) -> Vec<Node> {
     let mut stack: Vec<Element> = vec![Element {
         tag: String::new(),
@@ -340,8 +320,6 @@ fn collapse(text: &str) -> String {
     out
 }
 
-/// A text node: white space collapsed, inline Markdown read
-/// (`convertInlineMarkdown`), its edge spaces kept.
 fn text_inline(text: &str, out: &mut Vec<Inline>) {
     let collapsed = collapse(text);
     let trimmed = collapsed.trim();
@@ -370,15 +348,12 @@ fn verbatim(nodes: &[Node], out: &mut String) {
     }
 }
 
-/// The text of `nodes` as written, line breaks included (`pre`).
 pub fn plain(nodes: &[Node]) -> String {
     let mut out = String::new();
     verbatim(nodes, &mut out);
     out
 }
 
-/// Inline content: tags Cerata draws map to their style, the others to
-/// their text.
 pub fn inline(nodes: &[Node]) -> Vec<Inline> {
     let mut out = Vec::new();
     for node in nodes {
@@ -406,7 +381,6 @@ pub fn inline(nodes: &[Node]) -> Vec<Inline> {
     out
 }
 
-/// [`inline`] for a paragraph of its own: no space at its edges.
 pub fn paragraph(nodes: &[Node]) -> Vec<Inline> {
     let mut out = inline(nodes);
     while matches!(out.first(), Some(Inline::Text(t)) if t.trim().is_empty()) {
@@ -418,7 +392,6 @@ pub fn paragraph(nodes: &[Node]) -> Vec<Inline> {
     out
 }
 
-/// Whether `nodes` hold anything visible.
 pub fn is_empty(nodes: &[Node]) -> bool {
     nodes.iter().all(|n| match n {
         Node::Text(t) => t.trim().is_empty(),

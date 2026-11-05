@@ -1,24 +1,3 @@
-//! The app's menu, on coss ui's (https://coss.com/ui/docs/components/menu),
-//! re-implemented from its measures over Base UI's behavior. Every context
-//! menu draws with it: the sidebar's, the tabs', the status bar's and the
-//! editor's.
-//!
-//! The popup is the select's surface (`crate::select::surface`) with 4 px
-//! of padding and at least 128 px wide. Items are 28 px high with 14 px
-//! text, a shortcut at their end in 12 px muted text, a destructive one in
-//! the danger color, a disabled one at 64 %. A check item keeps its check
-//! in a 12 px column, and the other items of its list are inset to line up
-//! with it. One level of submenus opens beside its row, scrolling when it
-//! is taller than the window.
-//!
-//! The pointer and the keyboard move the same highlight, drawn as the
-//! sidebar's active row (`theme::row_active`) rather than coss ui's 4 %
-//! `accent`, which measured 1.08:1 against the dark popup: too faint to
-//! show the keyboard where it is. A press outside
-//! closes the menu. An open menu holds the keyboard focus: arrows move,
-//! Right and Left enter and leave a submenu, Enter and Space choose,
-//! Escape closes and gives the focus back.
-
 use std::rc::Rc;
 
 use gpui::{
@@ -37,9 +16,7 @@ const BORDER: f32 = 1.0;
 const MIN_WIDTH: f32 = 128.0;
 const ITEM_HEIGHT: f32 = 28.0;
 const ITEM_RADIUS: f32 = crate::input::RADIUS * 0.6;
-/// What a submenu keeps clear of the window's edges.
 const EDGE: f32 = 8.0;
-/// Between a menu's edge and its submenu's.
 const SUBMENU_GAP: f32 = 4.0;
 
 type Run<V> = Rc<dyn Fn(&mut V, &mut Window, &mut Context<V>)>;
@@ -47,12 +24,9 @@ type Run<V> = Rc<dyn Fn(&mut V, &mut Window, &mut Context<V>)>;
 pub enum Item<V> {
     Action {
         label: SharedString,
-        /// The chord that runs it outside the menu, shown at the end.
         shortcut: Option<SharedString>,
         enabled: bool,
-        /// Drawn in the danger color (coss ui's `destructive` variant).
         destructive: bool,
-        /// `Some` for a check item.
         checked: Option<bool>,
         run: Run<V>,
     },
@@ -100,7 +74,6 @@ impl<V> Item<V> {
         }
     }
 
-    /// Shows `chord` at the end of an action.
     pub fn shortcut(mut self, chord: impl Into<SharedString>) -> Self {
         if let Self::Action { shortcut, .. } = &mut self {
             *shortcut = Some(chord.into());
@@ -135,16 +108,10 @@ pub struct Menu<V> {
     pub position: Point<Pixels>,
     pub items: Vec<Item<V>>,
     pub open_submenu: Option<usize>,
-    /// The highlighted item, and the one inside the open submenu.
     pub cursor: Option<usize>,
     pub sub_cursor: Option<usize>,
-    /// The pointer is over the open submenu, which lies outside the menu's
-    /// bounds: a press there runs its item instead of closing the menu.
     in_submenu: bool,
-    /// The open submenu's scroll: one taller than the window scrolls, and
-    /// the keyboard keeps its highlight in sight.
     sub_scroll: ScrollHandle,
-    /// Taken on the first frame; the focus to give back on close.
     focus: Option<FocusHandle>,
     restore: Option<FocusHandle>,
 }
@@ -164,13 +131,10 @@ impl<V> Menu<V> {
         }
     }
 
-    /// Highlights the first item: a menu opened from the keyboard (Shift+F10,
-    /// the Menu key) is ready for Enter.
     pub fn highlight_first(&mut self) {
         self.cursor = step(&self.items, None, true);
     }
 
-    /// Labels in order, `-` for separators (tests compare menus with it).
     #[cfg(test)]
     pub fn labels(&self) -> Vec<String> {
         self.items
@@ -179,7 +143,6 @@ impl<V> Menu<V> {
             .collect()
     }
 
-    /// Runs the action labeled `label`, searching submenus too.
     #[cfg(test)]
     pub fn find(&self, label: &str) -> Option<Run<V>> {
         fn walk<V>(items: &[Item<V>], label: &str) -> Option<Run<V>> {
@@ -193,14 +156,11 @@ impl<V> Menu<V> {
     }
 }
 
-/// A view that shows one of these menus.
 pub trait HasMenu: Sized + 'static {
     fn menu(&mut self) -> Option<&mut Menu<Self>>;
     fn take_menu(&mut self) -> Option<Menu<Self>>;
 }
 
-/// The next item the keyboard can land on from `from`, wrapping around;
-/// separators and disabled items are skipped.
 fn step<V>(items: &[Item<V>], from: Option<usize>, forward: bool) -> Option<usize> {
     let landable: Vec<usize> = items
         .iter()
@@ -231,8 +191,6 @@ fn step<V>(items: &[Item<V>], from: Option<usize>, forward: bool) -> Option<usiz
     }
 }
 
-/// Closes the menu; `restore` gives the focus back to where it was when
-/// the menu opened (keyboard close or a chosen item).
 fn close<V: HasMenu>(view: &mut V, restore: bool, window: &mut Window, cx: &mut Context<V>) {
     if let Some(menu) = view.take_menu()
         && restore
@@ -249,8 +207,6 @@ fn choose<V: HasMenu>(view: &mut V, run: Run<V>, window: &mut Window, cx: &mut C
     cx.notify();
 }
 
-/// Escape closes (or leaves the submenu), arrows move, Right and Left
-/// enter and leave a submenu, Enter and Space choose.
 fn on_key<V: HasMenu>(view: &mut V, key: &str, window: &mut Window, cx: &mut Context<V>) {
     let Some(menu) = view.menu() else {
         return;
@@ -328,9 +284,6 @@ fn on_key<V: HasMenu>(view: &mut V, key: &str, window: &mut Window, cx: &mut Con
     }
 }
 
-/// Moves the highlight to the row under the pointer: `index` of the top
-/// list, or of the open submenu when `sub`. Over a top row, the submenu
-/// opens when the row is its own and closes otherwise.
 fn point_at<V: HasMenu>(view: &mut V, index: usize, sub: bool, cx: &mut Context<V>) {
     let Some(menu) = view.menu() else {
         return;
@@ -356,8 +309,6 @@ fn point_at<V: HasMenu>(view: &mut V, index: usize, sub: bool, cx: &mut Context<
     }
 }
 
-/// The pointer left row `index`: its highlight goes, unless the row opened
-/// the submenu, which keeps its row highlighted.
 fn point_out<V: HasMenu>(view: &mut V, index: usize, sub: bool, cx: &mut Context<V>) {
     let Some(menu) = view.menu() else {
         return;
@@ -373,7 +324,6 @@ fn point_out<V: HasMenu>(view: &mut V, index: usize, sub: bool, cx: &mut Context
     }
 }
 
-/// Draws `menu`; on its first frame it takes the keyboard focus.
 pub fn render<V: HasMenu>(
     menu: &mut Menu<V>,
     window: &mut Window,
@@ -413,19 +363,15 @@ struct State {
     open: Option<usize>,
     sub_cursor: Option<usize>,
     sub_scroll: ScrollHandle,
-    /// The window's height less its margins: a taller submenu scrolls.
     max_height: Pixels,
 }
 
-/// The popup of `items`: the menu's own list when `top`, else its open
-/// submenu's.
 fn list<V: HasMenu>(
     items: &[Item<V>],
     state: &State,
     top: bool,
     cx: &mut Context<V>,
 ) -> Stateful<Div> {
-    // A check item anywhere in the list insets every item to its label.
     let inset = items.iter().any(|item| {
         matches!(
             item,
@@ -563,11 +509,6 @@ fn list<V: HasMenu>(
                     )
                     .on_click(cx.listener(move |view, _, _, cx| point_at(view, index, false, cx)));
                 if is_open {
-                    // Beside the menu, clear of its edge (Base UI puts it
-                    // at the row's edge, over the menu's padding), its
-                    // first item level with the row, and kept inside the
-                    // window: the editor's Table submenu is taller than
-                    // the room below it.
                     row = row.child(
                         div()
                             .absolute()
@@ -588,7 +529,6 @@ fn list<V: HasMenu>(
     list
 }
 
-/// An item's row: 28 px, 8 px in from the popup's padding, rounded.
 fn row(id: SharedString, label: &SharedString) -> Stateful<Div> {
     let selector = label.clone();
     div()

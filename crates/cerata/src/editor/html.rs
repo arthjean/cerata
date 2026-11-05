@@ -1,10 +1,3 @@
-//! HTML blocks drawn in place of their source (US-035), from the tree
-//! `cerata_markdown::html` sanitized: Writer's `.cm-html-block-widget`
-//! styles (`html-block-decorations.ts:230-301`). Links follow the editor's
-//! rules (US-033); `<summary>` opens and closes its `<details>`; images
-//! load through the editor's image host, so only `https:`, `data:` and
-//! files inside the workspace are read.
-
 use std::rc::Rc;
 
 use cerata_markdown::html::{self, Element, Node};
@@ -17,20 +10,16 @@ use super::blocks::{BlockStyle, rich_text, rich_text_element};
 use super::layout::ImageBox;
 use super::{Editor, LoadJob, theme};
 
-/// What drawing one block needs.
 struct Cx<'a> {
     key: u64,
     style: &'a BlockStyle,
     row_height: f32,
-    /// `<details>` seen so far, in document order: their index.
     details: usize,
     images: usize,
     jobs: Vec<LoadJob>,
 }
 
 impl Editor {
-    /// The element drawn for the HTML block `source` in a column `width`
-    /// wide.
     pub(super) fn html_element(
         &mut self,
         source: &str,
@@ -49,7 +38,6 @@ impl Editor {
             jobs: Vec::new(),
         };
         let body = if html::is_empty(&nodes) {
-            // Nothing survives sanitizing: the source, muted.
             vec![
                 div()
                     .font_family(style.fonts.mono.clone())
@@ -73,8 +61,6 @@ impl Editor {
             .into_any_element()
     }
 
-    /// Blocks of `nodes`: runs of inline content become paragraphs of
-    /// rich text.
     fn html_blocks(
         &mut self,
         nodes: &[Node],
@@ -397,8 +383,6 @@ impl Editor {
     }
 }
 
-/// Parsed blocks by source, and which `<details>` the user opened or
-/// closed.
 #[derive(Default)]
 pub struct HtmlBlocks {
     trees: std::collections::HashMap<u64, Rc<Vec<Node>>>,

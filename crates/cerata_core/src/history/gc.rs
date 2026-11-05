@@ -1,31 +1,14 @@
-//! Retention passes and purges (US-090).
-//!
-//! A pass drops the versions the tiers no longer keep
-//! ([`super::retention::kept`]), then the blobs no version and no note's
-//! head refers to. A blob a kept delta was built on is re-encoded first on
-//! the nearest blob that stays, so nothing kept depends on what goes.
-//!
-//! A purge deletes versions at the user's request and must leave none of
-//! their bytes in the store's files: `secure_delete` zeroes the freed
-//! pages, and the purge then truncates the WAL, vacuums and truncates it
-//! again. A flag in `meta`, committed with the deletion, says a vacuum is
-//! owed: an app closed during the vacuum vacuums at the next opening.
-
 use super::retention::{Dated, kept};
 use super::{hash_of, reencode_blob};
 use crate::store::ContentHash;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use std::collections::{HashMap, HashSet};
 
-/// `meta` key: Unix time of the last retention pass.
 pub const LAST_PASS: &str = "last_retention";
-/// `meta` key: a purge committed its deletions but not yet its vacuum.
 pub const VACUUM_OWED: &str = "vacuum_owed";
 
-/// A pass runs at most this often.
 pub const PASS_INTERVAL_SECS: i64 = 24 * 3600;
 
-/// What a pass or a purge removed.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Removed {
     pub versions: usize,
@@ -54,12 +37,10 @@ pub fn meta_set(connection: &Connection, key: &str, value: Option<i64>) -> rusql
     Ok(())
 }
 
-/// Whether a pass is due at `now`.
 pub fn pass_due(connection: &Connection, now: i64) -> rusqlite::Result<bool> {
     Ok(meta_get(connection, LAST_PASS)?.is_none_or(|last| now - last >= PASS_INTERVAL_SECS))
 }
 
-/// Applies the tiers at `now` to every note, then collects the blobs.
 pub fn retention_pass(transaction: &Transaction, now: i64) -> rusqlite::Result<Removed> {
     let mut by_note: HashMap<i64, Vec<(i64, Dated)>> = HashMap::new();
     {
@@ -96,8 +77,6 @@ pub fn retention_pass(transaction: &Transaction, now: i64) -> rusqlite::Result<R
     Ok(removed)
 }
 
-/// Deletes the blobs no version and no note's head refers to, after
-/// re-encoding the kept deltas built on them. Returns how many went.
 pub fn collect_blobs(transaction: &Transaction) -> rusqlite::Result<usize> {
     let orphans: HashSet<ContentHash> = {
         let mut statement = transaction.prepare(
@@ -112,7 +91,6 @@ pub fn collect_blobs(transaction: &Transaction) -> rusqlite::Result<usize> {
     if orphans.is_empty() {
         return Ok(0);
     }
-    // Kept blobs whose base goes, with the nearest base that stays.
     let mut base_of = transaction.prepare_cached("SELECT base FROM blob WHERE hash = ?1")?;
     let mut dependents = transaction.prepare_cached("SELECT hash FROM blob WHERE base = ?1")?;
     let mut rebased: Vec<(ContentHash, Option<ContentHash>)> = Vec::new();
@@ -151,12 +129,9 @@ pub fn collect_blobs(transaction: &Transaction) -> rusqlite::Result<usize> {
     Ok(count)
 }
 
-/// Which versions a purge deletes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Purge {
-    /// Every version of one note.
     Note(i64),
-    /// Every version of every note older than this Unix time.
     Before(i64),
 }
 
@@ -169,7 +144,6 @@ impl Purge {
     }
 }
 
-/// How many versions `purge` would delete.
 pub fn purge_count(connection: &Connection, purge: Purge) -> rusqlite::Result<usize> {
     let (filter, value) = purge.filter();
     let count: i64 = connection.query_row(
@@ -180,8 +154,6 @@ pub fn purge_count(connection: &Connection, purge: Purge) -> rusqlite::Result<us
     Ok(usize::try_from(count).unwrap_or(0))
 }
 
-/// Deletes the versions of `purge` and their blobs, and records that a
-/// vacuum is owed; [`vacuum`] must follow once committed.
 pub fn purge_versions(transaction: &Transaction, purge: Purge) -> rusqlite::Result<Removed> {
     let (filter, value) = purge.filter();
     let versions = transaction.execute(&format!("DELETE FROM version WHERE {filter}"), [value])?;
@@ -190,8 +162,6 @@ pub fn purge_versions(transaction: &Transaction, purge: Purge) -> rusqlite::Resu
     Ok(Removed { versions, blobs })
 }
 
-/// Rewrites the store without the freed pages and empties the WAL, then
-/// clears the owed vacuum. Outside any transaction.
 pub fn vacuum(connection: &Connection) -> rusqlite::Result<()> {
     checkpoint(connection)?;
     connection.execute_batch("VACUUM")?;

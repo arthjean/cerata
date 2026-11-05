@@ -1,11 +1,3 @@
-//! Image widths in Obsidian's syntax (ADR 0008): `![alt|300](x.png)`,
-//! `![300](x.png)` and `![[x.png|300]]`, read and written by pure functions
-//! that the renderer, the resize handles and the width commands share.
-//!
-//! Obsidian documents the forms in `Basic formatting syntax.md:216-225` and
-//! `Embed files.md:46-62` (`obsidianmd/obsidian-help`). A height (`|WxH`)
-//! is read and ignored; it is never written.
-
 use std::ops::Range;
 
 use crate::change::Change;
@@ -15,18 +7,14 @@ use crate::state::{EditorState, Transaction};
 use crate::text::Text;
 use crate::tree::{MarkdownTree, Node, NodeKind};
 
-/// The most digits a width or a height is written with.
 const MAX_DIGITS: usize = 5;
 
-/// A size written after an image's `|`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ImageSize {
     pub width: u32,
-    /// Read, never applied nor written.
     pub height: Option<u32>,
 }
 
-/// `^[0-9]{1,5}(x[0-9]{1,5})?$` with a width of at least 1.
 pub fn parse_size(s: &str) -> Option<ImageSize> {
     let digits =
         |d: &str| (1..=MAX_DIGITS).contains(&d.len()) && d.bytes().all(|b| b.is_ascii_digit());
@@ -45,17 +33,13 @@ pub fn parse_size(s: &str) -> Option<ImageSize> {
     (width >= 1).then_some(ImageSize { width, height })
 }
 
-/// Where a label (an alt text, an embed's inner text) holds a size.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SizeSpan {
-    /// The bytes the size takes in the label, its `|` (or `\|`) included.
     pub span: Range<usize>,
-    /// The digits alone.
     pub digits: Range<usize>,
     pub size: ImageSize,
 }
 
-/// The last `|` of `s` not escaped by an odd run of backslashes.
 fn last_unescaped_pipe(s: &str) -> Option<usize> {
     let bytes = s.as_bytes();
     (0..bytes.len()).rev().find(|&i| {
@@ -63,8 +47,6 @@ fn last_unescaped_pipe(s: &str) -> Option<usize> {
     })
 }
 
-/// The size in a Markdown image's alt text: after its last unescaped `|`,
-/// else the whole alt when it has the form of a size (`![300](x.png)`).
 pub fn alt_size(alt: &str) -> Option<SizeSpan> {
     if let Some(bar) = last_unescaped_pipe(alt)
         && let Some(size) = parse_size(&alt[bar + 1..])
@@ -82,8 +64,6 @@ pub fn alt_size(alt: &str) -> Option<SizeSpan> {
     })
 }
 
-/// The size in an embed's inner text (`x.png|300`), read on its last `|`
-/// segment. A `\|` separates too, as in a table (`wiki::parse`).
 pub fn embed_size(inner: &str) -> Option<SizeSpan> {
     let bar = inner.rfind('|').filter(|bar| *bar > 0)?;
     let size = parse_size(&inner[bar + 1..])?;
@@ -99,15 +79,12 @@ pub fn embed_size(inner: &str) -> Option<SizeSpan> {
     })
 }
 
-/// A Markdown image or an image embed, by its node.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ImageNode {
     pub range: Range<usize>,
-    /// The alt text of a Markdown image, the inner text of an embed.
     pub label: Range<usize>,
     pub embed: bool,
     pub size: Option<ImageSize>,
-    /// Alone on its line: drawn as a block.
     pub block: bool,
 }
 
@@ -116,7 +93,6 @@ impl ImageNode {
         self.size.map(|s| s.width)
     }
 
-    /// The size's bytes in the document.
     fn size_span(&self, text: &Text) -> Option<SizeSpan> {
         let label = text.slice(self.label.clone());
         if self.embed {
@@ -126,20 +102,17 @@ impl ImageNode {
         }
     }
 
-    /// Where the caret goes to edit the alt text: its end, before a size.
     pub fn alt_end(&self, text: &Text) -> usize {
         self.size_span(text)
             .map_or(self.label.end, |size| self.label.start + size.span.start)
     }
 }
 
-/// `node` as an image: a Markdown image, or an embed naming an image file.
 pub fn image_node(text: &Text, node: Node<'_>) -> Option<ImageNode> {
     let range = node.range();
     let line = text.line_at(range.start);
     let block = range.start == line.from && range.end == line.to;
     match node.kind() {
-        // An embed holds an `Image` node with no destination.
         NodeKind::Image if node.children().any(|c| c.kind() == NodeKind::Url) => {
             let mut marks = node.children().filter(|c| c.kind() == NodeKind::LinkMark);
             let open = marks.next()?;
@@ -171,7 +144,6 @@ pub fn image_node(text: &Text, node: Node<'_>) -> Option<ImageNode> {
     }
 }
 
-/// The image whose node holds `pos`, bounds included.
 pub fn image_at(tree: &MarkdownTree, text: &Text, pos: usize) -> Option<ImageNode> {
     tree.iter_range(pos..pos)
         .filter(|n| n.from() <= pos && pos <= n.to())
@@ -179,9 +151,6 @@ pub fn image_at(tree: &MarkdownTree, text: &Text, pos: usize) -> Option<ImageNod
         .last()
 }
 
-/// The change that sets an image's width to `width`, or removes its size
-/// for `None`, leaving the rest of its alt text or embed alone; `None`
-/// when the text already says so.
 pub fn width_change(text: &Text, image: &ImageNode, width: Option<u32>) -> Option<Change> {
     let label = text.slice(image.label.clone());
     let base = image.label.start;
@@ -219,9 +188,6 @@ pub fn width_change(text: &Text, image: &ImageNode, width: Option<u32>) -> Optio
 }
 
 impl EditorState {
-    /// Sets the width of the image whose node is `range` (US-063), in one
-    /// undo step; a selection equal to the image (an object selection,
-    /// ADR 0008) stays equal to it. `false` when nothing changed.
     pub fn set_image_width(&mut self, range: Range<usize>, width: Option<u32>) -> bool {
         if self.is_loading() {
             return false;
@@ -273,11 +239,6 @@ impl EditorState {
 }
 
 impl EditorState {
-    /// Removes the Markdown of the image whose node is `range` (US-069),
-    /// in one undo step; its file stays. The selection follows the text: an
-    /// object selection becomes a caret where the image was, a caret
-    /// elsewhere stays (a toolbar click, US-070). `false` when no image is
-    /// there.
     pub fn delete_image(&mut self, range: Range<usize>) -> bool {
         if self.is_loading()
             || image_at(self.tree(), self.text(), range.start).is_none_or(|i| i.range != range)
@@ -324,7 +285,6 @@ mod tests {
         assert_eq!(read("|300"), Some((0..4, 300, None)));
         assert_eq!(read("300"), Some((0..3, 300, None)));
         assert_eq!(read("640x480"), Some((0..7, 640, Some(480))));
-        // An escaped backslash before the pipe leaves it unescaped.
         assert_eq!(read("a\\\\|300"), Some((3..7, 300, None)));
         for refused in [
             "alt\\|300",
@@ -396,7 +356,6 @@ mod tests {
         ] {
             assert_eq!(written(doc, width), expected, "{doc} with {width:?}");
         }
-        // Nothing to write: the text already says so.
         let (state, image) = first_image("![a|300](x)");
         assert_eq!(width_change(state.text(), &image, Some(300)), None);
         let (state, image) = first_image("![a](x)");

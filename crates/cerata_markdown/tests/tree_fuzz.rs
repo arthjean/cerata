@@ -1,11 +1,7 @@
-//! US-010: 10 000 random edits never make the parser panic, and every
-//! windowed reparse equals a full parse of the same text.
-
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use cerata_markdown::{Change, ChangeSet, MarkdownTree, Text};
 
-/// Deterministic xorshift, so a failure replays.
 struct Rng(u64);
 
 impl Rng {
@@ -132,20 +128,16 @@ fn ten_thousand_random_edits_reparse_like_a_full_parse() {
                 .get(pos.saturating_sub(40)..(pos + 40).min(old.len()))
         );
         tree = incremental;
-        // Keep the document from drifting to empty or huge.
         if doc.len() > 12_000 || doc.len() < 200 {
             doc = seed_document();
             tree = MarkdownTree::parse(&doc);
         }
     }
-    // Most edits stay in their window; the rest fall back to a full parse.
     assert!(windowed > 5_000, "only {windowed} windowed reparses");
 }
 
 #[test]
 fn duplicate_definitions_reparse_like_a_full_parse() {
-    // pulldown-cmark keeps the first definition of a label only: the window
-    // must not depend on a definition outside it.
     let doc = "[a]: /x\n\np1\n\np2\n\np3\n\n[a]: /y\n\np4\n";
     let edits = [
         Change::insert(doc.find("p3").unwrap() + 2, "z"),
@@ -164,7 +156,6 @@ fn duplicate_definitions_reparse_like_a_full_parse() {
 
 #[test]
 fn a_line_break_before_the_last_dollars_reparses_like_a_full_parse() {
-    // No `$` edited, yet the last `$$` now opens a line: unclosed math.
     let doc = "# a\n\np1\n\np2\n\ntext $$ x\n\np3\n";
     let at = doc.find("$$").unwrap();
     for change in [Change::insert(at, "\n"), Change::new(at - 5..at, "")] {
@@ -196,7 +187,6 @@ fn unclosed_fence_and_display_math_run_to_the_end() {
             .range(),
         6..8
     );
-    // Closed later: Writer's inline rule.
     let closed = MarkdownTree::parse("$$\nx\n$$\n");
     assert_eq!(closed.root().first_child().unwrap().name(), "Paragraph");
 }

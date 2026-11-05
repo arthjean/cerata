@@ -1,13 +1,3 @@
-//! Autosave: at most one write per second per file, never two writes of the
-//! same file at once, and a catch-up save when the text changed during a
-//! write.
-//!
-//! Ported from Writer `src/lib/save.ts` (`scheduleSave`, `isSaveInFlight`,
-//! `cancelSave`, throttle, follow-up save). The open documents live in the
-//! editor; the saver reaches them through [`SaveTarget`] and identifies each
-//! text by a revision number, so a write that finishes after a newer edit
-//! can never mark the newer text as saved.
-
 use crate::fs::text::{SaveOptions, TextFormat, encode, prepare_for_save};
 use crate::fs::{FsError, WorkspaceFs};
 use crate::index::modified_ns;
@@ -19,42 +9,22 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-/// Minimum delay between two writes of the same file (Writer `THROTTLE_MS`).
 pub const SAVE_THROTTLE: Duration = Duration::from_secs(1);
 
-/// A file modified this recently is read before an autosave even when its
-/// size and modified time are those of Cerata's last write: on a file
-/// system with coarse times, another write in the same instant looks the
-/// same (US-086).
 pub const DISK_SETTLE: Duration = Duration::from_secs(2);
 
-/// Text of an open document with unsaved changes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SaveSnapshot {
-    /// Increases on every edit of the document.
     pub revision: u64,
     pub text: String,
     pub format: TextFormat,
 }
 
-/// The editor side of autosave.
 pub trait SaveTarget: Send + Sync + 'static {
-    /// Current text of `path` if it is open and dirty, `None` otherwise.
     fn dirty_snapshot(&self, path: &Path) -> Option<SaveSnapshot>;
-    /// `revision` reached the disk as `disk_text`. The target marks the
-    /// document clean only if its revision is still `revision`; otherwise it
-    /// stays dirty and the saver writes again.
     fn saved(&self, path: &Path, revision: u64, disk_text: &str, modified_at: u64);
-    /// The write of `revision` failed; the document stays dirty and nothing
-    /// partial is left on disk.
     fn save_failed(&self, path: &Path, revision: u64, error: &FsError);
-    /// The text `path` holds on disk as far as the target knows (what it
-    /// last read or wrote). An autosave writes only while the disk still
-    /// holds it; `None` writes without checking.
     fn expected_disk(&self, path: &Path) -> Option<String>;
-    /// The disk no longer holds [`Self::expected_disk`]: an external change
-    /// the watcher has not reported yet. `revision` was not written and no
-    /// later save is queued until the target schedules one.
     fn save_conflicted(&self, path: &Path, revision: u64);
 }
 
@@ -75,14 +45,10 @@ struct Shared {
     options: Mutex<SaveOptions>,
     self_writes: Option<Arc<SelfWriteLog>>,
     throttle: Duration,
-    /// Wall clock of the settle check, moved forward by tests.
     clock: fn() -> SystemTime,
-    /// Files read to check the disk before an autosave.
     disk_reads: AtomicUsize,
 }
 
-/// Background autosave for one workspace. Dropping it stops the timer
-/// thread; writes already started complete.
 pub struct AutoSaver {
     shared: Arc<Shared>,
 }
@@ -134,9 +100,6 @@ impl AutoSaver {
         Ok(Self { shared })
     }
 
-    /// Requests a save of `path` (Writer `scheduleSave`): immediately if the
-    /// last write is older than the throttle, otherwise when it expires, and
-    /// after the current write if one is in flight.
     pub fn schedule(&self, path: &Path) {
         let mut controllers = self.shared.controllers.lock();
         let controller = controllers.entry(path.to_path_buf()).or_default();
@@ -145,8 +108,6 @@ impl AutoSaver {
         self.shared.wake.notify_all();
     }
 
-    /// Drops a pending save of `path` (Writer `cancelSave`). A write already
-    /// in flight completes.
     pub fn cancel(&self, path: &Path) {
         let mut controllers = self.shared.controllers.lock();
         if let Some(controller) = controllers.get_mut(path) {
@@ -164,21 +125,14 @@ impl AutoSaver {
             .is_some_and(|controller| controller.in_flight)
     }
 
-    /// Applies new `files.*` settings to the next writes.
     pub fn set_options(&self, options: SaveOptions) {
         *self.shared.options.lock() = options;
     }
 
-    /// Files read so far to check the disk before an autosave.
     pub fn disk_reads(&self) -> usize {
         self.shared.disk_reads.load(Ordering::SeqCst)
     }
 
-    /// Writes every pending save now, throttle ignored, and waits for the
-    /// writes in flight, up to `timeout`. Called before the saver or its
-    /// documents go away (window close, workspace change, quit): dropping
-    /// the saver forgets the saves the throttle still holds. `false` if
-    /// writes were still running at the deadline.
     pub fn flush(&self, timeout: Duration) -> bool {
         let deadline = Instant::now() + timeout;
         let mut controllers = self.shared.controllers.lock();
@@ -199,8 +153,6 @@ impl AutoSaver {
                     }
                 }
                 drop(controllers);
-                // The window is going away: its text is written even over a
-                // change the watcher has not reported, as Writer does.
                 for path in due {
                     perform_save(&self.shared, path, false);
                 }
@@ -227,8 +179,6 @@ impl AutoSaver {
 impl Drop for AutoSaver {
     fn drop(&mut self) {
         *self.shared.shutdown.lock() = true;
-        // Take the controllers lock so the timer is either waiting (and gets
-        // the notification) or will see the flag before waiting again.
         let _controllers = self.shared.controllers.lock();
         self.shared.wake.notify_all();
     }
@@ -247,9 +197,6 @@ fn queue(controller: &mut Controller, throttle: Duration) {
     controller.due = Some(due);
 }
 
-/// Forgets an idle controller once its throttle window has passed. Writer
-/// dropped it as soon as it was idle, which forgot the last write time and
-/// let a save scheduled right after a write go to disk immediately.
 fn cleanup(controllers: &mut HashMap<PathBuf, Controller>, path: &Path, throttle: Duration) {
     if controllers
         .get(path)
@@ -310,11 +257,6 @@ fn run_timer(shared: &Arc<Shared>) {
     }
 }
 
-/// Whether the disk no longer holds the text the target last read or
-/// wrote. When the file's size and modified time are still those read
-/// right after Cerata's last write, and it was not modified within
-/// [`DISK_SETTLE`], it is not read (US-086). A read error other than a
-/// missing file lets the write go on and report it.
 fn disk_moved(shared: &Shared, path: &Path) -> bool {
     let Some(expected) = shared.target.expected_disk(path) else {
         return false;
@@ -338,8 +280,6 @@ fn disk_moved(shared: &Shared, path: &Path) -> bool {
     }
 }
 
-/// `true` unless the file still has the size and modified time of the last
-/// write and that time is at least [`DISK_SETTLE`] before `now`.
 fn needs_read(last: &WrittenFile, metadata: &std::fs::Metadata, now: SystemTime) -> bool {
     let modified = modified_ns(metadata);
     let now_ns = now.duration_since(UNIX_EPOCH).map_or(0, |since| {
@@ -351,12 +291,8 @@ fn needs_read(last: &WrittenFile, metadata: &std::fs::Metadata, now: SystemTime)
         || now_ns.saturating_sub(modified) < settle_ns
 }
 
-/// Writes the dirty text of `path`. With `check`, a disk that changed since
-/// the target last read or wrote it is reported instead of overwritten.
 fn perform_save(shared: &Shared, path: PathBuf, check: bool) {
     let mut follow_up = false;
-    // A move of Cerata's waits for this write and its result, or happens
-    // before the disk check, which then sees the file gone.
     let gate = shared.self_writes.as_ref().map(|log| log.write_gate());
     if let Some(snapshot) = shared.target.dirty_snapshot(&path) {
         if check && disk_moved(shared, &path) {
@@ -501,7 +437,6 @@ mod tests {
     const CONFLICT: u64 = u64::MAX - 1;
 
     const THROTTLE: Duration = Duration::from_millis(300);
-    /// Start-up of a save thread, as seen between two write snapshots.
     const THREAD_START_SLACK: Duration = Duration::from_millis(10);
     const WAIT: Duration = Duration::from_secs(5);
 
@@ -532,9 +467,6 @@ mod tests {
         (dir, path, editor, saver, receiver)
     }
 
-    /// A file rewritten on disk before the watcher reports it (sync client,
-    /// `git checkout`) is never overwritten by an autosave: the target hears
-    /// of the conflict, and a disk that matches again is written.
     #[test]
     fn an_unreported_external_change_is_reported_instead_of_overwritten() {
         let (_dir, path, editor, saver, saved) = setup();
@@ -558,16 +490,12 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "mine");
     }
 
-    /// Writer `save.test.ts`: "keeps newer edits dirty until a follow-up save
-    /// completes".
     #[test]
     fn keeps_newer_edits_dirty_until_a_follow_up_save_completes() {
         let (_dir, path, editor, saver, saved) = setup();
         let (release_tx, release_rx) = mpsc::channel::<()>();
         let (in_write_tx, in_write_rx) = mpsc::channel::<()>();
         let release_rx = Mutex::new(release_rx);
-        // Hold the first write open (between disk write and completion)
-        // and edit the document meanwhile.
         *editor.on_saved_hook.lock() = Some(Box::new(move |editor: &FakeEditor| {
             editor.edit("second draft");
             in_write_tx.send(()).unwrap();
@@ -578,7 +506,6 @@ mod tests {
         saver.schedule(&path);
         in_write_rx.recv_timeout(WAIT).unwrap();
         assert!(saver.is_in_flight(&path));
-        // More schedule calls while in flight never start a parallel write.
         saver.schedule(&path);
         std::thread::sleep(THROTTLE * 2);
         assert_eq!(editor.writes.lock().len(), 1);
@@ -597,8 +524,6 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "second draft");
     }
 
-    /// An edit the throttle is still holding reaches the disk on flush,
-    /// before the saver is dropped (window close, quit).
     #[test]
     fn flush_writes_the_save_the_throttle_holds() {
         let (_dir, path, editor, saver, saved) = setup();
@@ -629,12 +554,6 @@ mod tests {
         assert_eq!(saved.recv_timeout(WAIT).unwrap(), 4);
         let writes = editor.writes.lock();
         assert_eq!(writes.len(), 2, "the burst coalesced into one write");
-        // Snapshots taken at write start (the follow-up probe after a
-        // write also snapshots, so compare the first and the last start).
-        // The throttle runs from the timer's dispatch of the first write;
-        // each snapshot is taken once its save thread has started, so the
-        // first thread's start-up can eat a fraction of a millisecond of the
-        // gap (299.2 ms seen on Linux). A broken throttle gives a gap near 0.
         let starts = editor.write_starts.lock();
         let (first, last) = (starts[0], starts[starts.len() - 1]);
         assert!(
@@ -713,8 +632,6 @@ mod tests {
         SystemTime::now() + DISK_SETTLE + Duration::from_secs(1)
     }
 
-    /// US-086: the disk is not read again before an autosave while it has
-    /// the size and time Cerata's last write left.
     #[test]
     fn a_one_megabyte_note_saves_without_reading_the_disk_again() {
         let (_dir, path, editor, saver, saved) = saver_with_log(settled_clock);
@@ -722,7 +639,6 @@ mod tests {
         editor.edit(&big);
         saver.schedule(&path);
         assert_eq!(saved.recv_timeout(WAIT).unwrap(), 1);
-        // The first save checked the text it had read.
         assert_eq!(saver.disk_reads(), 1);
         editor.doc.lock().expected = Some(big.clone());
         let bigger = format!("{big}one more line\n");
@@ -733,8 +649,6 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&path).unwrap(), bigger);
     }
 
-    /// US-086: same size, same modified time, but too recent to trust: the
-    /// disk is read and the outside change is found.
     #[test]
     fn an_outside_change_of_the_same_size_and_time_is_still_detected() {
         let (_dir, path, editor, saver, saved) = saver_with_log(SystemTime::now);
@@ -758,8 +672,6 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "bbbb");
     }
 
-    /// A move of Cerata's holds the write gate: no autosave is written
-    /// meanwhile, so none recreates the path the move empties.
     #[test]
     fn no_autosave_is_written_while_a_move_holds_the_gate() {
         let dir = TempDir::new().unwrap();

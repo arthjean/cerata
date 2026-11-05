@@ -1,20 +1,9 @@
-//! The sidebar of a workspace window: Pinned, Recents, then the tree,
-//! virtualized: one section per root folder (a project), then the root's
-//! own files (Unfiled).
-//!
-//! Ported from Writer `sidebar-navigator.tsx`, `file-tree.tsx`,
-//! `use-sidebar-files.ts` and `workspace-store.ts:249-421`. Folder reads run
-//! in the background and carry the generation of the workspace they were
-//! started for: a read that finishes after a workspace switch is dropped.
-
 mod filter;
 pub mod ops;
 mod render;
 pub(crate) mod reveal;
 pub mod tree;
 
-/// The notes of loaded folders whose conflict copy (Syncthing, Dropbox)
-/// sits beside them; a copy without its original is an ordinary note.
 fn conflicted<'a>(listings: impl Iterator<Item = &'a Listing>) -> HashSet<PathBuf> {
     let mut originals = HashSet::new();
     for listing in listings {
@@ -54,10 +43,8 @@ use gpui::{
 
 use tree::{LabelMode, Listing, Row, Selection, SortMode, SortOptions};
 
-/// Rows per page of Pinned and Recents (`use-sidebar-files.ts`).
 pub const PINNED_PAGE: usize = 6;
 pub const RECENTS_PAGE: usize = 4;
-/// Recents shows only in workspaces with at least this many files.
 pub const RECENTS_MIN_FILES: usize = 10;
 pub const ROW_HEIGHT: f32 = 32.0;
 
@@ -79,29 +66,21 @@ pub fn bindings() -> Vec<gpui::KeyBinding> {
     )]
 }
 
-/// What the sidebar asks its window to do.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SidebarEvent {
     Open(PathBuf),
-    /// A note just made by "New File": opened with the caret at its end.
     OpenCreated(PathBuf),
     OpenInNewTab(PathBuf),
-    /// `links`: how the destinations of a renamed note change, its assets
-    /// folder having followed it or stayed (EP-015).
     Renamed {
         old: PathBuf,
         new: PathBuf,
         links: Option<cerata_core::fs::assets::LinkRewrite>,
     },
     Notice(String),
-    /// The window decides: it knows which files have unsaved changes.
     Delete(Vec<PathBuf>),
     Duplicate(PathBuf),
-    /// "Show Note History" (US-091).
     ShowHistory(PathBuf),
-    /// "Review Conflict" on a note with a sync conflict copy (US-093).
     ReviewConflict(PathBuf),
-    /// A sidebar setting changed (sort, sections).
     SettingsChanged,
 }
 
@@ -114,11 +93,9 @@ pub enum Section {
 pub struct Sidebar {
     window: Arc<WindowState>,
     runtime: Option<Arc<WorkspaceRuntime>>,
-    /// Bumped on every workspace change; stale reads compare it.
     generation: u64,
     pub root_listing: Listing,
     pub listings: HashMap<PathBuf, Listing>,
-    /// Notes with a sync service's conflict copy beside them (US-093).
     pub conflicted: HashSet<PathBuf>,
     pub expanded: HashSet<PathBuf>,
     pub rows: Vec<Row>,
@@ -132,32 +109,22 @@ pub struct Sidebar {
     pub recents_visible: usize,
     pub recents_more: bool,
     pub show_recents: bool,
-    /// Unfiled shows the root's own files; open in every new workspace.
     pub unfiled_open: bool,
     pub collapsed: HashSet<Section>,
-    /// The last opening or closing of each section toggled.
     pub section_reveals: HashMap<Section, reveal::Reveal>,
-    /// The folder last expanded, and its rows' fade once its listing is read.
     pub opening: Option<(PathBuf, Option<reveal::Reveal>)>,
-    /// Folders whose closed and open glyphs are crossfading.
     pub folder_glyphs: HashMap<PathBuf, reveal::Reveal>,
-    /// Bumped by every section refresh: only the latest one is applied.
     sections_version: u64,
-    /// Latest read of each folder: an older read finishing last is dropped.
     read_versions: HashMap<PathBuf, u64>,
     pub menu: Option<crate::menu::Menu<Sidebar>>,
     pub renaming: Option<ops::Renaming>,
     pub drag: Option<ops::Drag>,
-    /// A drop just ended: the click that follows the release is ignored.
     suppress_click: bool,
-    /// A created entry to rename once its row is shown.
     pending_rename: Option<PathBuf>,
     reveal_version: u64,
     revealing: Option<(PathBuf, u64)>,
     pub focus_handle: FocusHandle,
     pub scroll: UniformListScrollHandle,
-    /// Where each shown row was drawn last frame: the keyboard opens a
-    /// row's menu (Shift+F10) under it.
     pub row_bounds: std::rc::Rc<std::cell::RefCell<HashMap<PathBuf, gpui::Bounds<gpui::Pixels>>>>,
     pub filter: filter::Filter,
     tasks: Vec<Task<()>>,
@@ -231,7 +198,6 @@ impl Sidebar {
         self.runtime.as_ref().map(|runtime| runtime.root.as_path())
     }
 
-    /// The key of the library shown, for its pins.
     pub fn library(&self) -> Option<cerata_core::library::LibraryKey> {
         self.runtime.as_ref().map(|runtime| runtime.library())
     }
@@ -258,7 +224,6 @@ impl Sidebar {
             .and_then(|value| value.as_bool())
     }
 
-    /// Sort, label and section options from the settings.
     pub fn read_settings(&mut self) {
         self.options = SortOptions {
             mode: SortMode::parse(self.setting_str(SORT_KEY).as_deref()),
@@ -268,7 +233,6 @@ impl Sidebar {
         self.show_recents = self.setting_bool(SHOW_RECENTS_KEY).unwrap_or(true);
     }
 
-    /// Settings changed: re-sort and re-show without reading the disk.
     pub fn settings_changed(&mut self, cx: &mut Context<Self>) {
         self.read_settings();
         self.rebuild_rows();
@@ -276,7 +240,6 @@ impl Sidebar {
         cx.notify();
     }
 
-    /// The window opened, switched or closed its workspace.
     pub fn workspace_changed(&mut self, cx: &mut Context<Self>) {
         self.generation += 1;
         self.runtime = self.window.runtime();
@@ -318,18 +281,11 @@ impl Sidebar {
     pub fn set_active_path(&mut self, path: Option<PathBuf>, cx: &mut Context<Self>) {
         if self.active_path != path {
             self.active_path = path;
-            // Recents leaves out the note being shown.
             self.refresh_sections(cx);
             cx.notify();
         }
     }
 
-    // ---- Listings ----
-
-    /// Reads `dir` in the background. Titles already known for an unchanged
-    /// file are kept; a folder with few unknown titles is shown with all of
-    /// them, a larger one is shown at once by file name and its titles fill
-    /// in by chunks, so a huge folder never holds the tree back.
     pub fn load_dir(&mut self, dir: &Path, cx: &mut Context<Self>) {
         let Some(runtime) = self.runtime.clone() else {
             return;
@@ -373,9 +329,6 @@ impl Sidebar {
                     this.listings.insert(dir.clone(), listing);
                 }
                 this.rebuild_rows();
-                // The tree shows the index's titles: the library's first
-                // reconciliation starts now, after that frame (US-084),
-                // not while the folder is still being read for it.
                 if is_root && shown.index_ready.load(std::sync::atomic::Ordering::SeqCst) {
                     shown.request_reconcile(cerata_core::reconcile::ReconcileTrigger::FirstRender);
                 }
@@ -385,7 +338,6 @@ impl Sidebar {
             }) else {
                 return;
             };
-            // Chunks double, so a huge folder is re-sorted a handful of times.
             let mut rest = untitled.as_slice();
             let mut size = TITLE_CHUNK;
             while !rest.is_empty() {
@@ -461,12 +413,8 @@ impl Sidebar {
             conflicted(std::iter::once(&self.root_listing).chain(self.listings.values()));
     }
 
-    /// Expands or collapses a folder. Collapsing is immediate; expanding
-    /// reads the folder unless it is already loaded, and retries a folder
-    /// whose last read failed.
     pub fn toggle_dir(&mut self, dir: &Path, cx: &mut Context<Self>) {
         if matches!(self.listings.get(dir), Some(Listing::Failed(_))) {
-            // Shown collapsed with its error: this press expands again.
             self.expanded.remove(dir);
         }
         if self.expanded.remove(dir) {
@@ -492,8 +440,6 @@ impl Sidebar {
         cx.notify();
     }
 
-    /// Crossfades a folder's glyph toward open or closed, from what is
-    /// shown (Paneflow's workspace folders). Reduced motion swaps it.
     fn fade_folder_glyph(&mut self, dir: &Path, open: bool, cx: &Context<Self>) {
         if cx.reduce_motion() {
             self.folder_glyphs.remove(dir);
@@ -505,7 +451,6 @@ impl Sidebar {
             .retarget(open, std::time::Instant::now());
     }
 
-    /// How open a folder's glyph is drawn, from 0 (closed) to 1 (open).
     pub fn folder_openness(&self, dir: &Path, expanded: bool, now: std::time::Instant) -> f32 {
         let settled = if expanded { 1. } else { 0. };
         self.folder_glyphs
@@ -520,7 +465,6 @@ impl Sidebar {
         }
     }
 
-    /// A folder's listing changed on disk: re-read it if it is shown.
     pub fn refresh_dir(&mut self, dir: &Path, cx: &mut Context<Self>) {
         let shown = self.root() == Some(dir) || self.listings.contains_key(dir);
         if shown {
@@ -528,7 +472,6 @@ impl Sidebar {
         }
     }
 
-    /// Re-reads every listing shown (after an index rebuild).
     pub fn refresh_all(&mut self, cx: &mut Context<Self>) {
         let mut dirs: Vec<PathBuf> = self.listings.keys().cloned().collect();
         dirs.extend(self.root().map(Path::to_path_buf));
@@ -538,11 +481,6 @@ impl Sidebar {
         self.refresh_sections(cx);
     }
 
-    // ---- Sections ----
-
-    /// Reloads Pinned and Recents for their current page sizes. Recents
-    /// leaves out pinned files, the active one, already in view, and a new
-    /// file still being named in the tree.
     pub fn refresh_sections(&mut self, cx: &mut Context<Self>) {
         let Some(runtime) = self.runtime.clone() else {
             self.pinned_entries.clear();
@@ -638,9 +576,6 @@ impl Sidebar {
         cx.notify();
     }
 
-    // ---- Selection and activation ----
-
-    /// A press on a row with the modifiers of the event.
     pub fn press_row(&mut self, path: &Path, shift: bool, secondary: bool, cx: &mut Context<Self>) {
         if shift {
             self.selection.extend(path, &self.rows);
@@ -652,8 +587,6 @@ impl Sidebar {
         cx.notify();
     }
 
-    /// A plain click (no drag): the selection clears, a folder toggles, a
-    /// file opens.
     pub fn click_row(&mut self, entry: &DirEntry, cx: &mut Context<Self>) {
         if !self.take_click() {
             return;
@@ -667,8 +600,6 @@ impl Sidebar {
         cx.notify();
     }
 
-    /// A click on a project or Unfiled header: it opens or closes, nothing
-    /// is selected.
     pub fn click_header(&mut self, row: &tree::Row, cx: &mut Context<Self>) {
         if !self.take_click() {
             return;
@@ -680,13 +611,11 @@ impl Sidebar {
         }
     }
 
-    /// `false` for the click that ends a drag or a drop.
     fn take_click(&mut self) -> bool {
         !std::mem::take(&mut self.suppress_click)
             && !self.drag.as_ref().is_some_and(|drag| drag.active)
     }
 
-    /// Unfiled's rows are in the tree: they fade in like a folder's.
     fn toggle_unfiled(&mut self, cx: &mut Context<Self>) {
         self.unfiled_open = !self.unfiled_open;
         if self.unfiled_open {
@@ -696,7 +625,6 @@ impl Sidebar {
         cx.notify();
     }
 
-    /// Shows the root's own files, for a new one or a reveal.
     pub fn open_unfiled(&mut self) {
         if !self.unfiled_open {
             self.unfiled_open = true;
@@ -712,11 +640,8 @@ impl Sidebar {
     }
 }
 
-/// Unknown titles past this count are read after the folder is shown.
 const TITLE_CHUNK: usize = 512;
 
-/// Titles of a loaded listing's files, by path and modified time. A file
-/// without one is left out: its title may simply not be read yet.
 fn known_titles(listing: Option<&Listing>) -> HashMap<PathBuf, (u64, String)> {
     match listing {
         Some(Listing::Loaded(entries)) => entries
@@ -730,11 +655,6 @@ fn known_titles(listing: Option<&Listing>) -> HashMap<PathBuf, (u64, String)> {
     }
 }
 
-/// One folder's entries. Titles come from the library's index (its store,
-/// US-083) for a note whose content it knows, else from `known` while the
-/// file is unchanged and settled, else are read here when at most
-/// [`TITLE_CHUNK`] are missing; otherwise the paths still to read are
-/// returned.
 fn read_listing(
     runtime: &WorkspaceRuntime,
     dir: &Path,
@@ -750,8 +670,6 @@ fn read_listing(
     } else {
         runtime.fs.read_directory(dir, &ignore, None)
     }?;
-    // Modified times are in seconds: a file changed within the last two
-    // may have changed again since its title was read, so it is read anew.
     let settled = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |now| now.as_secs().saturating_sub(2));
@@ -783,8 +701,6 @@ fn read_listing(
     Ok((entries, untitled))
 }
 
-/// Titles of `entries` from the index, read from the file (off the UI
-/// thread) only for a note whose content the index does not know yet.
 fn with_titles(runtime: &WorkspaceRuntime, mut entries: Vec<DirEntry>) -> Vec<DirEntry> {
     for entry in &mut entries {
         if entry.is_markdown && entry.title.is_none() {
@@ -804,8 +720,6 @@ fn known_or_read_title(runtime: &WorkspaceRuntime, path: &Path) -> Option<String
     known.unwrap_or_else(|| extract_title(path))
 }
 
-/// Recents for `visible` rows, pinned files left out: pages of 100 are
-/// read until one more than `visible` rows are collected.
 fn load_recents(
     runtime: &WorkspaceRuntime,
     excluded: &HashSet<PathBuf>,

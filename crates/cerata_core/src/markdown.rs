@@ -1,14 +1,7 @@
-//! The single Markdown file predicate used everywhere: index, sidebar,
-//! watcher and open targets. Fixes Writer's inconsistent filters
-//! (`fs.rs:174,294`, `search.rs:194`, `watcher.rs:506,597` accepted only a
-//! lowercase `.md`; `open_target.rs:93` also accepted `.markdown`).
-
 use std::path::Path;
 
-/// Extensions Cerata treats as Markdown, compared case-insensitively.
 pub const MARKDOWN_EXTENSIONS: [&str; 2] = ["md", "markdown"];
 
-/// `true` for `*.md` and `*.markdown`, in any letter case.
 pub fn is_markdown_path(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())

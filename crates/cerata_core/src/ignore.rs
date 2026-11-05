@@ -1,26 +1,7 @@
-//! The single ignore model shared by the index, the sidebar and the watcher.
-//!
-//! Ported from Writer `ignore.rs` (`WorkspaceIgnore`) and extended to fix
-//! Writer's two-model defect: Writer's index used `ignore::WalkBuilder` with
-//! its own rules (hidden files, global gitignore, `.git/info/exclude`) while
-//! the sidebar and watcher used `WorkspaceIgnore`, so the two could disagree.
-//! Here every consumer asks [`WorkspaceIgnore::excludes`], and the index walk
-//! (`crate::index`) builds the very matcher it filters with.
-//!
-//! A path is excluded when any of these holds, checked in this order:
-//! 1. a `node_modules` or `.git` component (safety net, even without rules);
-//! 2. a component below the workspace root starting with `.` (hidden);
-//! 3. the nested `.gitignore` files, each scoped to its own directory, the
-//!    deepest scope deciding first (a whitelist `!rule` stops the search);
-//! 4. `.git/info/exclude` at the workspace root;
-//! 5. the user's global gitignore (`core.excludesFile`).
-
 use ignore::Match;
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use std::path::{Path, PathBuf};
 
-/// A `.gitignore` paired with the directory it lives in. Its rules only apply
-/// to paths inside that directory.
 #[derive(Debug, Clone)]
 pub(crate) struct ScopedGitignore {
     pub(crate) scope: PathBuf,
@@ -28,8 +9,6 @@ pub(crate) struct ScopedGitignore {
 }
 
 impl ScopedGitignore {
-    /// Reads `{dir}/.gitignore` if it exists. A malformed rule is skipped
-    /// rather than discarding the whole file.
     pub(crate) fn read(dir: &Path) -> Option<Self> {
         let candidate = dir.join(".gitignore");
         if !candidate.is_file() {
@@ -61,7 +40,6 @@ impl ScopedGitignore {
     }
 }
 
-/// Root-level matchers that are not `.gitignore` files.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct RootRules {
     exclude: Option<ScopedGitignore>,
@@ -97,20 +75,14 @@ fn build_rooted(root: &Path, file: &Path) -> Option<ScopedGitignore> {
     }
 }
 
-/// Per-workspace ignore matcher. Querying is a pure function of the collected
-/// rules, so it can be shared across threads behind an `Arc`.
 #[derive(Debug, Clone)]
 pub struct WorkspaceIgnore {
     root: PathBuf,
-    /// Deepest scope first, so nested rules take precedence (git semantics).
     gitignores: Vec<ScopedGitignore>,
     root_rules: RootRules,
 }
 
 impl WorkspaceIgnore {
-    /// Matcher with no collected rules: only the safety net and the hidden
-    /// rule apply. A near-instant placeholder while [`Self::load`] or the
-    /// index walk runs off the UI thread.
     pub fn bootstrap(root: &Path) -> Self {
         Self {
             root: root.to_path_buf(),
@@ -119,16 +91,10 @@ impl WorkspaceIgnore {
         }
     }
 
-    /// Builds the matcher for `root` with the user's global gitignore.
     pub fn load(root: &Path) -> Self {
         Self::load_with_global(root, global_gitignore_path().as_deref())
     }
 
-    /// Builds the matcher for `root` with an explicit global gitignore file.
-    ///
-    /// Walks directories only, pruning excluded ones with the rules found so
-    /// far, and probes each visited directory for a `.gitignore` by a direct
-    /// stat (a `.gitignore` containing `*` would otherwise hide itself).
     pub fn load_with_global(root: &Path, global_file: Option<&Path>) -> Self {
         let builder = IgnoreBuilder::new(root, global_file);
         let mut stack = vec![(root.to_path_buf(), builder.chain_for_root())];
@@ -158,9 +124,6 @@ impl WorkspaceIgnore {
         &self.root
     }
 
-    /// Gitignore-only check, as in Writer: the safety net and `.gitignore`,
-    /// exclude and global rules, without the hidden rule. Prefer
-    /// [`Self::excludes`], which is what every consumer must use.
     pub fn is_ignored(&self, path: &Path, is_dir: bool) -> bool {
         if has_safety_component(path) {
             return true;
@@ -168,21 +131,15 @@ impl WorkspaceIgnore {
         decide_rules(self.gitignores.iter(), &self.root_rules, path, is_dir)
     }
 
-    /// The one predicate the index, the sidebar and the watcher share: `true`
-    /// when `path` must not be shown, indexed or reported.
     pub fn excludes(&self, path: &Path, is_dir: bool) -> bool {
         is_hidden_below(&self.root, path) || self.is_ignored(path, is_dir)
     }
 }
 
-/// `true` if `path` is a `.gitignore` file. The watcher rebuilds the matcher
-/// when one changes.
 pub fn is_gitignore_path(path: &Path) -> bool {
     path.file_name().is_some_and(|name| name == ".gitignore")
 }
 
-/// Path of the user's global gitignore (`core.excludesFile`, or the XDG
-/// default), if git configuration names one.
 pub fn global_gitignore_path() -> Option<PathBuf> {
     ignore::gitignore::gitconfig_excludes_path()
 }
@@ -194,9 +151,6 @@ fn has_safety_component(path: &Path) -> bool {
     })
 }
 
-/// A component below `root` starting with `.`. Components of `root` itself
-/// never count: a workspace may live inside a hidden directory. Paths
-/// outside `root` are not workspace paths and are never hidden by this rule.
 fn is_hidden_below(root: &Path, path: &Path) -> bool {
     let Ok(relative) = path.strip_prefix(root) else {
         return false;
@@ -223,17 +177,12 @@ fn decide_rules<'a>(
     false
 }
 
-/// Incremental construction of a [`WorkspaceIgnore`] during a top-down walk.
-/// The walk keeps, per directory, the chain of `.gitignore` files that apply
-/// to it (deepest first), so each check costs the depth of the path rather
-/// than the number of `.gitignore` files in the workspace.
 pub(crate) struct IgnoreBuilder {
     root: PathBuf,
     root_rules: RootRules,
     collected: parking_lot::Mutex<Vec<ScopedGitignore>>,
 }
 
-/// The `.gitignore` files applying to one directory, deepest first.
 pub(crate) type GitignoreChain = std::sync::Arc<Vec<std::sync::Arc<ScopedGitignore>>>;
 
 impl IgnoreBuilder {
@@ -249,7 +198,6 @@ impl IgnoreBuilder {
         self.enter(&GitignoreChain::default(), &self.root.clone())
     }
 
-    /// Chain for `dir`, a non-excluded child of the directory owning `parent`.
     pub(crate) fn enter(&self, parent: &GitignoreChain, dir: &Path) -> GitignoreChain {
         match ScopedGitignore::read(dir) {
             Some(scoped) => {
@@ -263,8 +211,6 @@ impl IgnoreBuilder {
         }
     }
 
-    /// Same decision as [`WorkspaceIgnore::excludes`], restricted to the
-    /// rules that can apply below the directory owning `chain`.
     pub(crate) fn excludes_with(&self, chain: &GitignoreChain, path: &Path, is_dir: bool) -> bool {
         is_hidden_below(&self.root, path)
             || has_safety_component(path)
@@ -309,8 +255,6 @@ mod tests {
     fn load(dir: &TempDir) -> WorkspaceIgnore {
         WorkspaceIgnore::load_with_global(dir.path(), None)
     }
-
-    // Ported from Writer `ignore.rs` tests.
 
     #[test]
     fn node_modules_is_always_ignored() {
@@ -394,7 +338,6 @@ mod tests {
         touch(&dir.path().join(".gitignore"), "dist/\n");
         let ignore = load(&dir);
         assert!(!ignore.is_ignored(&dir.path().join(".gitignore"), false));
-        // It is still hidden from every listing by the hidden rule.
         assert!(ignore.excludes(&dir.path().join(".gitignore"), false));
     }
 
@@ -415,8 +358,6 @@ mod tests {
         assert!(!is_gitignore_path(Path::new("/a/b/gitignore.txt")));
         assert!(!is_gitignore_path(Path::new("/a/b/.gitignore.bak")));
     }
-
-    // Cerata additions: the rules Writer applied only in its index walker.
 
     #[test]
     fn git_info_exclude_is_applied() {
@@ -448,7 +389,6 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         let ignore = WorkspaceIgnore::load_with_global(&root, None);
         assert!(!ignore.excludes(&root.join("note.md"), false));
-        // Writer `watcher.rs` test_ignores_hidden_files: hidden files too.
         assert!(ignore.excludes(&root.join(".DS_Store"), false));
         assert!(ignore.excludes(&root.join("sub").join(".hidden.md"), false));
         assert!(ignore.excludes(&root.join(".obsidian").join("app.md"), false));

@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# Fails when cerata_core, cerata_markdown or cerata_render pulls any `gpui*`
-# crate, on any target and through any edge kind (normal, build, dev). These
-# crates must stay usable without a window: pure tests now, an Android UI
-# later (PRD hard constraint, PLAN.md section 3.7).
 set -euo pipefail
 
 status=0

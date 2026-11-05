@@ -1,8 +1,3 @@
-//! Libraries in a window (EP-016): the welcome form that creates the
-//! default library (US-078), Ctrl+N and "Open File…" without a library
-//! (US-079), and the switcher's actions with a library that is not found
-//! (US-080). The registry itself is `cerata_core::library`.
-
 use std::path::PathBuf;
 
 use cerata_core::library::{CreateError, Library, LocateOutcome, name_problem};
@@ -17,34 +12,24 @@ use crate::editor::text_field::{FieldEvent, TextField};
 use crate::palette::{Intent, LibraryAction};
 use crate::routing::{Chrome, OpenRequest};
 
-/// Setting that caps the libraries the welcome screen lists.
 pub const MAX_RECENT_KEY: &str = "workspace.max-recent-workspaces";
 const MAX_RECENT_DEFAULT: usize = 10;
 
 pub const DEFAULT_NOT_FOUND: &str =
     "Your default library wasn't found. Locate it or create a new one.";
 
-/// The welcome screen's "Create Library" form and library list.
 pub struct Welcome {
     pub name: Entity<TextField>,
-    /// The folder the library is created in; `None` until chosen when the
-    /// OS reports no home folder.
     pub location: Option<PathBuf>,
-    /// The service that syncs `location`, for the warning under it.
     pub synced_by: Option<String>,
     pub problem: Option<WelcomeProblem>,
-    /// The registry, most recently opened first.
     pub libraries: Vec<Library>,
     _events: Subscription,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum WelcomeProblem {
-    /// A non-empty folder without a marker is at the place: "Open" adopts it.
-    Exists {
-        path: PathBuf,
-        name: String,
-    },
+    Exists { path: PathBuf, name: String },
     Failed(String),
 }
 
@@ -62,7 +47,6 @@ impl WelcomeProblem {
     }
 }
 
-/// A button of the window notice.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NoticeAction {
     Locate(String),
@@ -107,7 +91,6 @@ impl Welcome {
     }
 }
 
-/// The OS error of a failed creation, as the form shows it.
 fn os_error(error: &CreateError) -> String {
     match error {
         CreateError::Fs(cerata_core::fs::FsError::Io { source, .. }) => source.to_string(),
@@ -116,7 +99,6 @@ fn os_error(error: &CreateError) -> String {
 }
 
 impl WindowView {
-    /// Reads the registry again for the welcome list.
     pub fn refresh_libraries(&mut self, cx: &mut Context<Self>) {
         match crate::app::core(cx).libraries.list() {
             Ok(libraries) => self.welcome.libraries = libraries,
@@ -125,8 +107,6 @@ impl WindowView {
         cx.notify();
     }
 
-    /// The welcome list: most recent first, capped by
-    /// `workspace.max-recent-workspaces`.
     pub fn listed_libraries(&self) -> &[Library] {
         let cap = self
             .core
@@ -138,12 +118,10 @@ impl WindowView {
         &libraries[..libraries.len().min(cap)]
     }
 
-    /// The trimmed name of the form.
     pub fn welcome_name(&self, cx: &gpui::App) -> String {
         self.welcome.name.read(cx).text.trim().to_owned()
     }
 
-    /// Why "Create" is inactive: the name's validation message.
     pub fn welcome_name_problem(&self, cx: &gpui::App) -> Option<String> {
         name_problem(&self.welcome_name(cx))
     }
@@ -152,8 +130,6 @@ impl WindowView {
         self.welcome.location.is_some() && self.welcome_name_problem(cx).is_none()
     }
 
-    /// "Create": `{location}/{name}` becomes the default library and opens
-    /// in this window.
     pub fn create_library(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.can_create_library(cx) {
             cx.notify();
@@ -183,7 +159,6 @@ impl WindowView {
         }
     }
 
-    /// "Open" after "A folder named … already exists here".
     pub fn adopt_existing_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(WelcomeProblem::Exists { path, .. }) = self.welcome.problem.clone() else {
             return;
@@ -216,7 +191,6 @@ impl WindowView {
         self.open_elsewhere(request, window, cx);
     }
 
-    /// "Change…": the folder picker sets the location.
     pub fn pick_library_location(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: false,
@@ -244,10 +218,6 @@ impl WindowView {
         cx.notify();
     }
 
-    /// Ctrl+N in a window without a library: the default library opens
-    /// here (or its window comes forward) with "Create New File"; without
-    /// one, the welcome form takes the focus; a default that is gone says
-    /// so with its actions. Nothing is created.
     pub fn new_note_without_library(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let default = match crate::app::core(cx).libraries.default_library() {
             Ok(default) => default,
@@ -288,9 +258,6 @@ impl WindowView {
         }
     }
 
-    /// A library chosen in the switcher or the welcome list: the routing
-    /// reveals its window, reuses this one without a library, or opens a
-    /// new one.
     pub fn open_library(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
         match crate::app::core(cx).libraries.get(id) {
             Ok(Some(library)) if library.exists() => self.open_library_here(&library, window, cx),
@@ -337,7 +304,6 @@ impl WindowView {
         self.refresh_libraries(cx);
     }
 
-    /// Forgets the library; its folder, marker and store stay.
     pub fn remove_library(&mut self, id: &str, cx: &mut Context<Self>) {
         let core = crate::app::core(cx);
         let name = core.libraries.get(id).ok().flatten().map(|l| l.name);
@@ -356,7 +322,6 @@ impl WindowView {
         self.refresh_libraries(cx);
     }
 
-    /// "Locate…": the folder picker, then [`located`].
     pub fn locate_library(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: false,
@@ -400,7 +365,6 @@ impl WindowView {
         cx.notify();
     }
 
-    /// The notice with buttons; they go with this text only.
     pub fn show_notice_with(
         &mut self,
         notice: impl Into<SharedString>,
@@ -412,7 +376,6 @@ impl WindowView {
         self.show_notice(notice, cx);
     }
 
-    /// The buttons of the notice shown now.
     pub fn current_notice_actions(&self) -> &[NoticeAction] {
         match (&self.notice, &self.notice_actions) {
             (Some(notice), Some((text, actions))) if notice == text => actions,
@@ -420,15 +383,11 @@ impl WindowView {
         }
     }
 
-    /// Whether Ctrl+N goes to [`Self::new_note_without_library`].
     pub fn needs_a_library(&self) -> bool {
         !self.has_root() && self.chrome == Chrome::Workspace
     }
 }
 
-/// "Locate…" once a folder is picked: a folder whose marker holds the id
-/// becomes the library's place and opens; any other is refused with an
-/// offer to open it as a new library.
 pub fn located(
     cx: &mut gpui::App,
     id: &str,
@@ -468,9 +427,6 @@ pub fn located(
     }
 }
 
-/// "Open File…" once a file is picked: in its registered library when it
-/// is in one, otherwise on its own in a compact window; its folder never
-/// becomes a library.
 pub fn open_picked_file(
     cx: &mut gpui::App,
     file: PathBuf,

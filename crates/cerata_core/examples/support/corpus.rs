@@ -1,7 +1,3 @@
-//! The benchmark corpus (docs/benchmarks.md), shared by `index_bench` and
-//! `store_bench`: 100 notes per folder on two folder levels, a PNG per
-//! folder, a `.gitignore` and an ignored folder of 200 notes.
-
 use std::path::Path;
 
 pub fn generate(root: &Path, count: usize) -> std::io::Result<()> {

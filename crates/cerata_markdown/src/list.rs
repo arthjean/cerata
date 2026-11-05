@@ -1,13 +1,3 @@
-//! List editing: the caret guard on list prefixes, Enter, Backspace, Tab and
-//! Shift-Tab, the checkbox toggle and the list rendering geometry.
-//!
-//! Ported from prosemark-core `list/index.ts` (MIT). Nesting targets come
-//! from the syntax tree, as in Writer, so loose lists, ordered parents and
-//! tab indentation behave per CommonMark. Two of Writer's open bugs are fixed
-//! (`TODOS.md:95-96`): Backspace on an empty item two levels deep outdents
-//! it instead of leaving a line of spaces, and nested ordered items get the
-//! same depth-aware indent as bullets instead of showing their source spaces.
-
 use std::ops::Range;
 
 use crate::change::{Bias, Change, ChangeSet};
@@ -17,13 +7,9 @@ use crate::state::{EditorState, Transaction};
 use crate::text::{Line, Text};
 use crate::tree::{MarkdownTree, Node, NodeKind};
 
-/// Width of one nesting level and of the marker column, in `ch`.
 pub const LIST_UNIT_CH: usize = 3;
-/// Offset of the checkbox's inner character from the marker: `- [x]`.
 const TASK_INNER_OFFSET: usize = 3;
 
-/// A bullet or task line's prefix: indent, marker, one space or tab, and
-/// the optional checkbox (`BULLET_TASK_LINE_RE`, `list/index.ts:167`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BulletTaskLine {
     pub line_from: usize,
@@ -38,7 +24,6 @@ fn is_blank_byte(b: u8) -> bool {
     b == b' ' || b == b'\t'
 }
 
-/// `^([ \t]*)[-+*][ \t](\[[ xX]\][ \t])?` on one line.
 pub fn parse_bullet_task_line(line_from: usize, line: &str) -> Option<BulletTaskLine> {
     let b = line.as_bytes();
     let indent = b.iter().take_while(|c| is_blank_byte(**c)).count();
@@ -74,23 +59,17 @@ fn parse_at(text: &Text, pos: usize) -> Option<BulletTaskLine> {
     parse_bullet_task_line(line.from, line_str(text, &line))
 }
 
-/// The line holding `pos` has a list or task marker in the tree.
 pub fn is_on_list_line(tree: &MarkdownTree, text: &Text, pos: usize) -> bool {
     let line = text.line_at(pos);
     tree.iter_range(line.from..line.to)
         .any(|n| matches!(n.kind(), NodeKind::ListMark | NodeKind::TaskMarker))
 }
 
-/// The bullet or task line holding `pos`, confirmed by the tree, so a
-/// `- item` line inside a fence is not a list line.
 pub fn list_line_at(tree: &MarkdownTree, text: &Text, pos: usize) -> Option<BulletTaskLine> {
     let parsed = parse_at(text, pos)?;
     is_on_list_line(tree, text, pos).then_some(parsed)
 }
 
-/// A list item line as the tree sees it (`ListItemLine`, `list/index.ts:377`):
-/// the whitespace before its marker, and the whitespace a line needs to
-/// nest under it (marker characters turned into spaces, tabs kept).
 #[derive(Clone, Debug)]
 pub struct ListItemLine<'t> {
     pub line: Line,
@@ -136,7 +115,6 @@ fn is_list(node: Option<Node<'_>>) -> bool {
     node.is_some_and(|n| matches!(n.kind(), NodeKind::BulletList | NodeKind::OrderedList))
 }
 
-/// The item before `item` at its level, also across an adjacent list.
 fn prev_list_item<'t>(item: Node<'t>) -> Option<Node<'t>> {
     if let Some(prev) = item.prev_sibling()
         && prev.kind() == NodeKind::ListItem
@@ -166,7 +144,6 @@ fn list_item_line_of<'t>(
     list_item_line_at(tree, text, text.line_at(item.from()))
 }
 
-/// `^(\d{1,9})([.)])` on an ordered marker.
 fn ordered_mark(s: &str) -> Option<(usize, char)> {
     let digits = s.bytes().take_while(u8::is_ascii_digit).count();
     if digits == 0 || digits > 9 {
@@ -179,7 +156,6 @@ fn ordered_mark(s: &str) -> Option<(usize, char)> {
     Some((s[..digits].parse().ok()?, delimiter))
 }
 
-/// `^\d+[.)]$`: an ordered list marker.
 fn is_ordered_mark_text(s: &str) -> bool {
     let b = s.as_bytes();
     b.len() >= 2
@@ -203,7 +179,6 @@ fn renumber_ordered_mark(
     (current != number).then(|| Change::new(mark.from()..mark.to(), format!("{number}{delimiter}")))
 }
 
-/// The ordered item line holding `pos` with no text yet (`1. `).
 fn empty_ordered_item_at<'t>(
     tree: &'t MarkdownTree,
     text: &Text,
@@ -223,9 +198,6 @@ fn empty_ordered_item_at<'t>(
     (entry.item.parent()?.kind() == NodeKind::OrderedList).then_some(entry)
 }
 
-/// A caret inside a list prefix moves to the nearest allowed boundary:
-/// inside the indent to the marker, inside the marker to the body
-/// (`clampCollapsedListPrefixRange`).
 pub fn clamp_collapsed_list_prefix_range(
     tree: &MarkdownTree,
     text: &Text,
@@ -247,7 +219,6 @@ pub fn clamp_collapsed_list_prefix_range(
     }
 }
 
-/// The selection filter every editor installs (`listPrefixSelectionGuard`).
 pub fn prefix_selection_guard(state: &EditorState, selection: Selection) -> Selection {
     let ranges: Vec<SelectionRange> = selection
         .ranges()
@@ -283,8 +254,6 @@ enum Reindent {
     Outdent,
 }
 
-/// Tab nests under the previous item at the same level (its content
-/// column); Shift-Tab lifts to the parent's indent. `None`: nowhere to go.
 fn reindent_target(
     tree: &MarkdownTree,
     text: &Text,
@@ -318,9 +287,6 @@ fn ordered_target_number(text: &Text, mode: Reindent, entry: &ListItemLine<'_>) 
     }
 }
 
-/// Every line of an item's own paragraphs other than its marker line that
-/// starts with whitespace: hard-wrapped lines and later paragraphs. A line
-/// at the margin (a lazy continuation) is the writer's own paragraph.
 fn item_paragraph_lines(text: &Text, item: Node<'_>) -> Vec<Line> {
     let marker_line = text.line_at(item.from()).number;
     let mut lines = Vec::new();
@@ -344,11 +310,8 @@ fn item_paragraph_lines(text: &Text, item: Node<'_>) -> Vec<Line> {
     lines
 }
 
-/// What a key handler decided.
 enum Outcome {
-    /// Not handled: the next handler (or the default) runs.
     Pass,
-    /// Handled without changing anything (Tab with nowhere to go).
     Consumed,
     Apply(Transaction),
 }
@@ -362,47 +325,31 @@ impl EditorState {
         }
     }
 
-    /// Tab on list lines: nests each selected item under the item before
-    /// it; a selected parent moves its subtree. Consumed on any list line,
-    /// even when nothing can move, so no literal tab breaks the list.
     pub fn list_indent(&mut self) -> bool {
         let outcome = reindent(self, Reindent::Indent);
         self.run(outcome)
     }
 
-    /// Shift-Tab on list lines: lifts each selected item to its parent's
-    /// level.
     pub fn list_outdent(&mut self) -> bool {
         let outcome = reindent(self, Reindent::Outdent);
         self.run(outcome)
     }
 
-    /// Enter in a list: continues the item with the same marker (a new task
-    /// is unchecked); on an empty item, a nested one steps out a level and a
-    /// top-level one ends the list in place.
     pub fn list_enter(&mut self) -> bool {
         let outcome = list_enter(self);
         self.run(outcome)
     }
 
-    /// Enter on an indent-only line right after a blank line clears the
-    /// indent (leaving a continuation paragraph or an indented code block).
     pub fn leave_indented_blank(&mut self) -> bool {
         let outcome = leave_indented_blank(self);
         self.run(outcome)
     }
 
-    /// Backspace at a list prefix boundary: at the marker it removes one
-    /// indent level, at the body it removes the marker.
     pub fn list_backspace(&mut self) -> bool {
         let outcome = list_backspace(self);
         self.run(outcome)
     }
 
-    /// A click released on the task prefix of the line holding `pos`. A
-    /// press that turned into a drag selects text instead and must pass
-    /// `dragged`: only a plain click toggles (Writer listens on `click`, not
-    /// `mousedown`, `list/index.ts:1008-1050`).
     pub fn checkbox_click(&mut self, pos: usize, dragged: bool) -> bool {
         if dragged || self.is_loading() {
             return false;
@@ -417,8 +364,6 @@ impl EditorState {
         }
     }
 
-    /// Left or right arrow at a list prefix: jumps across the indent or the
-    /// marker as one step. `false` lets the plain motion run.
     pub fn list_arrow(&mut self, right: bool, extend: bool) -> bool {
         let Some(pos) = list_prefix_boundary_move(self, right) else {
             return false;
@@ -438,7 +383,6 @@ impl EditorState {
         .is_ok()
     }
 
-    /// List rendering geometry for the whole document.
     pub fn list_decorations(&self) -> ListDecorations {
         list_decorations(self.tree(), self.text())
     }
@@ -504,7 +448,6 @@ fn reindent(state: &EditorState, mode: Reindent) -> Outcome {
     let Ok(set) = ChangeSet::new(text, changes.clone()) else {
         return Outcome::Consumed;
     };
-    // A caret at a line start stays there; anything after rides along.
     let map = |pos: usize| {
         let bias = if pos == text.line_at(pos).from {
             Bias::Left
@@ -528,7 +471,6 @@ fn reindent(state: &EditorState, mode: Reindent) -> Outcome {
     )
 }
 
-/// Enter on an empty item (`exitEmptyItem`).
 fn exit_empty_item(state: &EditorState, line: Line, entry: Option<ListItemLine<'_>>) -> Outcome {
     let (tree, text) = (state.tree(), state.text());
     let parent = entry.as_ref().and_then(|e| parent_list_item(e.item));
@@ -660,7 +602,6 @@ fn list_backspace(state: &EditorState) -> Outcome {
     }
     let line = text.line_at(head);
     let entry = list_item_line_at(tree, text, line);
-    // One level back is where Shift-Tab would put the item.
     let outdent_ws = || {
         entry
             .as_ref()
@@ -688,9 +629,6 @@ fn list_backspace(state: &EditorState) -> Outcome {
         } else {
             String::new()
         };
-        // `TODOS.md:95`: on an empty item two levels deep, removing the
-        // marker would leave a line of spaces; outdent it instead, like Enter
-        // on an empty nested item.
         if parsed.body_from == line.to && !insert.is_empty() {
             return exit_empty_item(state, line, entry);
         }
@@ -699,7 +637,6 @@ fn list_backspace(state: &EditorState) -> Outcome {
     Outcome::Pass
 }
 
-/// The checkbox change for a task whose marker starts at `marker_pos`.
 pub fn checkbox_toggle(text: &Text, marker_pos: usize) -> Option<Change> {
     let parsed = parse_at(text, marker_pos)?;
     if !parsed.is_task || parsed.marker_from != marker_pos {
@@ -713,7 +650,6 @@ pub fn checkbox_toggle(text: &Text, marker_pos: usize) -> Option<Change> {
     ))
 }
 
-/// The checkbox change for the task line holding `pos`.
 pub fn checkbox_toggle_from_line(text: &Text, pos: usize) -> Option<Change> {
     let parsed = parse_at(text, pos)?;
     if !parsed.is_task {
@@ -722,7 +658,6 @@ pub fn checkbox_toggle_from_line(text: &Text, pos: usize) -> Option<Change> {
     checkbox_toggle(text, parsed.marker_from)
 }
 
-/// Arrow left or right across a list prefix (`listPrefixBoundaryMove`).
 fn list_prefix_boundary_move(state: &EditorState, right: bool) -> Option<usize> {
     let main = state.selection().main();
     if !main.is_empty() {
@@ -752,50 +687,44 @@ fn list_prefix_boundary_move(state: &EditorState, right: bool) -> Option<usize> 
     None
 }
 
-/// What a list prefix renders as.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PrefixKind {
     Bullet,
     Task { checked: bool },
 }
 
-/// List rendering, in `ch` units (`buildListDecorations`).
 #[derive(Clone, Debug, PartialEq)]
 pub enum ListDecoration {
-    /// The source prefix drawn as a bullet or a checkbox: `width_ch` wide,
-    /// the marker drawn at `marker_offset_ch` in a `LIST_UNIT_CH` column.
     Prefix {
         range: Range<usize>,
         kind: PrefixKind,
         width_ch: usize,
         marker_offset_ch: usize,
     },
-    /// Leading source whitespace drawn as a fixed indent.
     IndentVisual {
         range: Range<usize>,
         width_ch: usize,
     },
-    /// An ordered marker kept as text, at least `LIST_UNIT_CH` wide.
-    OrderedMarker { range: Range<usize> },
-    /// The body text after the prefix.
-    Body { range: Range<usize> },
-    /// A list line's start padding; marker lines pull their first visual
-    /// line back by `hanging_ch` (a hanging indent).
+    OrderedMarker {
+        range: Range<usize>,
+    },
+    Body {
+        range: Range<usize>,
+    },
     Line {
         line_start: usize,
         padding_ch: f32,
         hanging_ch: f32,
     },
-    /// The source indent of a continuation line, collapsed.
-    CollapsedIndent { range: Range<usize> },
+    CollapsedIndent {
+        range: Range<usize>,
+    },
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ListDecorations {
     pub all: Vec<ListDecoration>,
-    /// Ranges the caret and Backspace treat as one step.
     pub atomic: Vec<Range<usize>>,
-    /// Bullet and task marker ranges.
     pub marker: Vec<Range<usize>>,
 }
 
@@ -836,8 +765,6 @@ fn push_continuation_lines(
     }
 }
 
-/// Indent steps of a nested item's leading whitespace: one fixed-width
-/// indent and one atomic range per level.
 fn push_indent_steps(line: &Line, mark_from: usize, depth: usize, out: &mut ListDecorations) {
     let leading = mark_from - line.from;
     if depth == 0 || leading < depth {
@@ -866,7 +793,6 @@ pub fn list_decorations(tree: &MarkdownTree, text: &Text) -> ListDecorations {
     list_decorations_in(tree, text, 0..text.len())
 }
 
-/// [`list_decorations`] for the list markers touching `range` (inclusive).
 pub fn list_decorations_in(
     tree: &MarkdownTree,
     text: &Text,
@@ -877,7 +803,6 @@ pub fn list_decorations_in(
         .iter_range(range)
         .filter(|n| n.kind() == NodeKind::ListMark)
     {
-        // A bare marker with no space after it is still plain text.
         if !text
             .slice(mark.to()..(mark.to() + 1).min(text.len()))
             .bytes()
@@ -899,8 +824,6 @@ pub fn list_decorations_in(
             out.all.push(ListDecoration::OrderedMarker {
                 range: mark.range(),
             });
-            // `TODOS.md:96`: nested ordered items collapse their source
-            // indent and hang at their depth, like bullets.
             if !shares_parent_line {
                 push_indent_steps(&line, mark.from(), depth, &mut out);
             }

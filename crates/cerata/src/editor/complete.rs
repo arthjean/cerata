@@ -1,8 +1,3 @@
-//! Wiki link completion (US-033): typing `[[` and one non-blank character
-//! lists up to 20 notes of the workspace (name, folder); accepting writes
-//! the note's name and `]]`, absorbing a `]]` already after the caret.
-//! Ported from `wiki-link-extension.ts:263-307` and `lib/wiki-links.ts:193`.
-
 use cerata_core::index::SearchResult;
 use cerata_markdown::{Change, NodeKind, Selection, Transaction, UserEvent};
 use gpui::{
@@ -13,27 +8,21 @@ use gpui::{
 
 use super::{Editor, theme};
 
-/// Results Writer asks the index for.
 pub const LIMIT: usize = 20;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Item {
-    /// The note's file name without its extension.
     pub label: String,
-    /// Its folder, relative to the root; empty at the root.
     pub folder: String,
-    /// What accepting it writes before `]]`.
     pub insert: String,
 }
 
 #[derive(Clone, Debug)]
 pub struct Completion {
-    /// Start of the query, right after `[[`.
     pub from: usize,
     pub query: String,
     pub items: Vec<Item>,
     pub selected: usize,
-    /// Keeps the selected row in view as the arrows move it.
     pub scroll: ScrollHandle,
 }
 
@@ -50,8 +39,6 @@ fn strip_markdown_extension(path: &str) -> &str {
     }
 }
 
-/// The items for search results (`canonicalWikiTarget`): a note's name,
-/// or its relative path when another result shares the name.
 pub fn items(results: &[SearchResult]) -> Vec<Item> {
     results
         .iter()
@@ -78,7 +65,6 @@ pub fn items(results: &[SearchResult]) -> Vec<Item> {
 }
 
 impl Editor {
-    /// The `[[query` before a lone caret, outside code: its start and text.
     fn completion_query(&self) -> Option<(usize, String)> {
         let main = self.state.selection().main();
         if !main.is_empty() || self.state.selection().ranges().len() > 1 {
@@ -100,8 +86,6 @@ impl Editor {
         (!in_code).then(|| (line.from + open + 2, query.to_owned()))
     }
 
-    /// After a change: a typed `[[x` opens the list, a change of the query
-    /// searches again, anything else closes it.
     pub(super) fn refresh_completion(&mut self, typed: bool, cx: &mut Context<Self>) {
         let Some((from, query)) = self.completion_query() else {
             self.completion = None;
@@ -124,7 +108,6 @@ impl Editor {
         cx.spawn(async move |this, cx| {
             let results = task.await;
             this.update(cx, |editor, cx| {
-                // Only the answer to the query still under the caret counts.
                 if editor.completion_query() != Some((from, query.clone())) {
                     return;
                 }
@@ -142,7 +125,6 @@ impl Editor {
         .detach();
     }
 
-    /// Up or Down in the open list; `false` when it is closed.
     pub(super) fn completion_move(&mut self, delta: isize, cx: &mut Context<Self>) -> bool {
         let Some(c) = &mut self.completion else {
             return false;
@@ -154,7 +136,6 @@ impl Editor {
         true
     }
 
-    /// Escape closes the list; `false` when it was closed.
     pub(super) fn completion_close(&mut self, cx: &mut Context<Self>) -> bool {
         let open = self.completion.take().is_some();
         if open {
@@ -163,8 +144,6 @@ impl Editor {
         open
     }
 
-    /// Writes the selected note's name and `]]` over the query, absorbing a
-    /// `]]` right after the caret; `false` when the list is closed.
     pub(super) fn completion_accept(
         &mut self,
         index: Option<usize>,
@@ -197,7 +176,6 @@ impl Editor {
         true
     }
 
-    /// The list under the caret.
     pub(super) fn render_completion(
         &mut self,
         window: &mut Window,
@@ -304,8 +282,6 @@ mod tests {
         assert_eq!(items[2].insert, "b/plan");
     }
 
-    /// `wiki-links.test.ts:318-394`: a unique name, kept as written; a
-    /// shared one (case aside) is written as its relative path.
     #[test]
     fn canonical_targets_follow_writer() {
         let all = [result("Roadmap.md"), result("Notes.md")];

@@ -1,14 +1,8 @@
-//! The four candidates of US-031, each `source -> Result<svg, error>`.
-
 use std::path::Path;
 use std::sync::OnceLock;
 
 use rquickjs::{Context, Ctx, Runtime};
 
-/// A QuickJS context with ECMAScript intrinsics only: rquickjs ships no
-/// `std`/`os` module, no `fetch`, no `require`, and no module loader is
-/// installed, so the script can reach neither the network nor the disk. The
-/// only input it gets is the global `__src` string.
 pub struct Sandbox {
     _runtime: Runtime,
     context: Context,
@@ -21,7 +15,6 @@ impl Sandbox {
         runtime.set_max_stack_size(4 << 20);
         let context = Context::full(&runtime).map_err(|e| e.to_string())?;
         context.with(|ctx| -> Result<(), String> {
-            // Timers some bundles reach for: run on the next job drain.
             ctx.eval::<(), _>(
                 "globalThis.setTimeout = (f, _ms, ...a) => { Promise.resolve().then(() => f(...a)); return 0; };\
                  globalThis.clearTimeout = () => {};",
@@ -39,7 +32,6 @@ impl Sandbox {
         })
     }
 
-    /// Evaluates `call` with `__src = source`; the script returns a string.
     pub fn call(&self, call: &str, source: &str) -> Result<String, String> {
         self.context.with(|ctx| {
             ctx.globals()
@@ -51,7 +43,6 @@ impl Sandbox {
         })
     }
 
-    /// The globals a hostile script would use to escape, all `undefined`.
     pub fn escape_hatches(&self) -> String {
         self.context.with(|ctx| {
             ctx.eval::<String, _>(
@@ -90,8 +81,6 @@ fn js_error(ctx: &Ctx<'_>, error: rquickjs::Error) -> String {
     error.to_string()
 }
 
-// --- Diagrams ---------------------------------------------------------------
-
 pub fn mermaid_svg(source: &str) -> Result<String, String> {
     mermaid_svg::render(source).map_err(|e| e.to_string())
 }
@@ -117,20 +106,14 @@ impl Pele {
     }
 }
 
-// --- Formulas ---------------------------------------------------------------
-
 pub struct MathJax(Sandbox);
 
 impl MathJax {
-    /// MathJax 3.2.2's `tex-svg-full` component on its lite DOM adaptor
-    /// (the headless setup of its Node examples), no browser globals.
     pub fn new(js_dir: &Path) -> Result<Self, String> {
         let es5 = js_dir.join("mathjax3/package/es5");
         let read = |p: &str| std::fs::read_to_string(es5.join(p)).map_err(|e| e.to_string());
         let lite = read("adaptors/liteDOM.js")?;
         let full = read("tex-svg-full.js")?;
-        // SRE, the speech engine bundled in `-full`, asks Node's `require`
-        // for an XML DOM when it loads: inert stubs, deleted once loaded.
         let config = "globalThis.process = { env: {} };\
             globalThis.require = () => ({ DOMImplementation: function () { this.createDocument = () => ({}); }, XMLSerializer: function () {}, DOMParser: function () {}, install: () => {} });\
             globalThis.MathJax = {\
@@ -157,7 +140,6 @@ impl MathJax {
     }
 }
 
-/// MathJax sizes its SVG in `ex`; resvg needs pixels (1ex = 8px at 16px).
 fn ex_to_px(svg: &str) -> String {
     let mut out = String::with_capacity(svg.len());
     let head_end = svg.find('>').unwrap_or(0);
@@ -179,8 +161,6 @@ pub struct Typst {
     fonts: Vec<typst::text::Font>,
     book: typst::utils::LazyHash<typst::text::FontBook>,
     library: typst::utils::LazyHash<typst::Library>,
-    /// The mitex Typst spec (`specs/**`) and its `xarrow` import, served
-    /// from memory: the world reads no file.
     files: Vec<(typst::syntax::FileId, typst::syntax::Source)>,
 }
 
@@ -195,8 +175,6 @@ impl Typst {
         let mut files = Vec::new();
         let mut add =
             |root: VirtualRoot, vpath: &str, disk: std::path::PathBuf| -> Result<(), String> {
-                // Typst 0.14 dropped `sym.kai`, which the 2024 spec's `\KaTeX`
-                // logo still uses: the one line patched for Typst 0.15.
                 let text = std::fs::read_to_string(disk)
                     .map_err(|e| e.to_string())?
                     .replace("$kai A T E X$", "\"KaTeX\"");
@@ -234,7 +212,6 @@ impl Typst {
         })
     }
 
-    /// LaTeX -> Typst math (mitex) -> one auto-sized page -> SVG.
     pub fn render(&self, tex: &str) -> Result<String, String> {
         let math = mitex::convert_math(tex, None)?;
         let literal = math.replace('\\', "\\\\").replace('"', "\\\"");

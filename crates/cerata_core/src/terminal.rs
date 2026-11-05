@@ -1,11 +1,3 @@
-//! "Open in Terminal" for a workspace folder.
-//!
-//! Ported from Writer `commands/workspace.rs:61-342`: the launch commands
-//! per OS (`workspace.default-terminal` overrides them and is taken as one
-//! opaque program name), the validation of the target (a folder inside the
-//! workspace, symlinks resolved) and the guard that refuses to launch once
-//! the window has moved to another workspace or the folder was replaced.
-
 use crate::workspace::{WindowState, WorkspaceSnapshot};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -31,9 +23,7 @@ impl LaunchPlatform {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TerminalExecution {
-    /// Started and left running.
     Detached,
-    /// Run to completion (macOS `open`); a failure exit is an error.
     WaitForSuccess,
 }
 
@@ -42,7 +32,6 @@ pub struct TerminalLaunchSpec {
     pub program: String,
     pub args: Vec<String>,
     pub current_dir: PathBuf,
-    /// Windows: a console of its own (`CREATE_NEW_CONSOLE`).
     pub new_console: bool,
     pub execution: TerminalExecution,
 }
@@ -57,7 +46,6 @@ pub enum TerminalError {
     Io(String),
 }
 
-/// The commands to try, in order, to open a terminal in `target_dir`.
 pub fn terminal_launch_specs(
     platform: LaunchPlatform,
     target_dir: &Path,
@@ -122,7 +110,6 @@ pub fn terminal_launch_specs(
     }
 }
 
-/// The canonical form of an existing folder.
 pub fn validate_workspace_launch_root(path: &Path) -> Result<PathBuf, TerminalError> {
     if !path.is_dir() {
         return Err(TerminalError::NotFound(path.to_path_buf()));
@@ -130,8 +117,6 @@ pub fn validate_workspace_launch_root(path: &Path) -> Result<PathBuf, TerminalEr
     dunce::canonicalize(path).map_err(|error| TerminalError::Io(error.to_string()))
 }
 
-/// The folder to open: `requested` (or the root), which must resolve inside
-/// a root that still canonicalizes to `captured_root`.
 pub fn validate_terminal_target(
     captured_root: &Path,
     requested: Option<&Path>,
@@ -150,9 +135,6 @@ pub fn validate_terminal_target(
     Ok(target)
 }
 
-/// Runs `launch` only while `window` still shows the workspace of
-/// `snapshot` and `requested` still resolves to `captured_target`, holding
-/// the workspace lock so no switch can interleave.
 pub fn with_terminal_launch_snapshot<T>(
     window: &WindowState,
     snapshot: &WorkspaceSnapshot,
@@ -177,8 +159,6 @@ pub fn with_terminal_launch_snapshot<T>(
         })?
 }
 
-/// "Open folder" (the workspace root in the file manager), guarded the same
-/// way.
 pub fn open_workspace_in_file_manager_for_snapshot<T>(
     window: &WindowState,
     snapshot: &WorkspaceSnapshot,
@@ -208,9 +188,6 @@ pub fn terminal_launch_error(preferred_terminal: Option<&str>, reason: &str) -> 
     }
 }
 
-/// Tries each launch spec in order until one starts. `spawn` runs the
-/// command (behind the snapshot guard in the app, directly in tests); its
-/// inner `Err` is a failed start, its outer one aborts.
 pub fn launch_terminal(
     target_dir: &Path,
     preferred_terminal: &str,
@@ -272,8 +249,6 @@ pub fn launch_terminal(
     ))
 }
 
-/// Opens a terminal in `requested` (the root when `None`) of the workspace
-/// `window` shows now.
 pub fn open_in_terminal(
     window: &WindowState,
     requested: Option<&Path>,
@@ -302,8 +277,6 @@ mod tests {
     use std::sync::Arc;
     use std::sync::mpsc;
     use tempfile::TempDir;
-
-    // Ported from Writer `commands/workspace.rs` tests.
 
     #[test]
     fn terminal_launch_specs_cover_defaults_and_explicit_preferences_exactly() {
@@ -415,8 +388,6 @@ mod tests {
         assert!(message.contains("Preferences"));
     }
 
-    /// The same contract checked on every OS: a configured terminal that
-    /// cannot start names the preference and the way out.
     #[test]
     fn a_missing_configured_terminal_names_the_preference() {
         let dir = TempDir::new().unwrap();
@@ -576,7 +547,6 @@ mod tests {
             with_terminal_launch_snapshot(&state, &snapshot, None, &target, || Ok(())),
             Err(TerminalError::InvalidPath(_))
         ));
-        // Back on the first root, but in a newer epoch: still refused.
         open(&state, first.path());
         assert!(matches!(
             with_terminal_launch_snapshot(&state, &snapshot, None, &target, || Ok(())),

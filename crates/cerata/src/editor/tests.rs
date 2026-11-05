@@ -1,8 +1,3 @@
-//! GPUI interaction tests of the editor, on the test platform: real
-//! keystrokes through the key bindings, input through the input handler,
-//! pointer events through the element's listeners. The test text system is
-//! monospace and deterministic.
-
 use std::path::PathBuf;
 
 use cerata_markdown::{Selection, Transaction};
@@ -37,7 +32,6 @@ fn open<'a>(cx: &'a mut TestAppContext, text: &str) -> (Entity<Editor>, &'a mut 
     open_at(cx, text, None, EditorConfig::default())
 }
 
-/// The OS's command modifier, as the bindings spell it.
 fn secondary(keys: &str) -> String {
     let modifier = if cfg!(target_os = "macos") {
         "cmd"
@@ -68,7 +62,6 @@ fn selection(editor: &Entity<Editor>, cx: &mut VisualTestContext) -> Vec<(usize,
     })
 }
 
-/// The window point of the caret at `pos`, a pixel inside it.
 fn point_at(editor: &Entity<Editor>, cx: &mut VisualTestContext, pos: usize) -> Point<Pixels> {
     editor.update_in(cx, |editor, window, cx| {
         let caret = editor.caret_bounds(pos, window, cx).expect("caret");
@@ -109,8 +102,6 @@ fn drag_to(cx: &mut VisualTestContext, position: Point<Pixels>, pressed: bool) {
     });
 }
 
-/// A deterministic note of about `bytes`, with headings, emphasis, links,
-/// lists, code and quotes.
 fn long_note(bytes: usize) -> String {
     let mut out = String::new();
     let mut i = 0;
@@ -129,8 +120,6 @@ fn long_note(bytes: usize) -> String {
     }
     out
 }
-
-// US-016 ---------------------------------------------------------------
 
 #[gpui::test]
 fn each_heading_level_is_laid_out_at_its_own_font_size(cx: &mut TestAppContext) {
@@ -211,7 +200,6 @@ fn only_visible_lines_and_a_margin_are_laid_out(cx: &mut TestAppContext) {
     editor.update_in(cx, |editor, window, cx| {
         assert!(editor.laid_out.start > 500, "{:?}", editor.laid_out);
         assert!(editor.laid_out.len() < 120);
-        // Hit-testing through the height map lands on the line drawn there.
         let ix = editor.scroll_line() + 3;
         let top = editor.line_screen_top(ix);
         let viewport = editor.viewport.expect("painted");
@@ -224,7 +212,6 @@ fn only_visible_lines_and_a_margin_are_laid_out(cx: &mut TestAppContext) {
     });
 }
 
-/// `![x](file)` lines whose image is measured after the first frame.
 fn image_note(dir: &std::path::Path) -> String {
     let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="640" height="251"></svg>"#;
     std::fs::write(dir.join("a.svg"), svg).unwrap();
@@ -239,12 +226,10 @@ fn image_note(dir: &std::path::Path) -> String {
 fn a_height_measured_off_screen_does_not_move_the_first_visible_line(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let note = image_note(dir.path());
-    // The editor opens scrolled past the image, before it is measured.
     let path = dir.path().join("note.md");
     cx.update(actions::init);
     let (editor, cx) = cx.add_window_view(move |window, cx| {
         let mut editor = Editor::new(note, Some(path), EditorConfig::default(), cx);
-        // The caret away from the image, so it is folded.
         let _ = editor.state.select(Selection::cursor(40));
         editor.set_scroll_top(2000.0);
         window.focus(&editor.focus_handle, cx);
@@ -253,13 +238,10 @@ fn a_height_measured_off_screen_does_not_move_the_first_visible_line(cx: &mut Te
     cx.simulate_resize(size(px(1200.0), px(800.0)));
     cx.run_until_parked();
     let (first, before) = editor.update_in(cx, |editor, window, cx| {
-        // The image line is above the viewport, not yet measured: one row.
-        // Laying it out starts its measurement.
         assert_eq!(editor.layout_line(0, window, cx).height, 30.0);
         let line = editor.scroll_line();
         (line, editor.line_screen_top(line))
     });
-    // The measurement arrives, the next frame lays the line out again.
     cx.run_until_parked();
     editor.update_in(cx, |editor, window, cx| {
         assert_eq!(editor.layout_line(0, window, cx).height, 251.0, "measured");
@@ -289,7 +271,6 @@ fn an_unreadable_image_keeps_its_estimated_height(cx: &mut TestAppContext) {
         editor.layout_line(0, window, cx).height
     });
     assert_eq!(estimated, 30.0, "one row before it is measured");
-    // A retry (a new frame, a new layout) keeps the same height.
     editor.update(cx, |_, cx| cx.notify());
     cx.run_until_parked();
     editor.update_in(cx, |editor, window, cx| {
@@ -298,9 +279,6 @@ fn an_unreadable_image_keeps_its_estimated_height(cx: &mut TestAppContext) {
     });
 }
 
-/// Open a 1 MB note and scroll it, timing the app's work per frame on the
-/// test platform. A measurement, run in release:
-/// `cargo test -p cerata --release -- --ignored megabyte`.
 #[gpui::test]
 #[ignore = "measurement: run with --release --ignored"]
 fn megabyte_note_first_frame_and_scroll_frames(cx: &mut TestAppContext) {
@@ -331,8 +309,6 @@ fn megabyte_note_first_frame_and_scroll_frames(cx: &mut TestAppContext) {
     assert!(first.as_millis() < 100, "first frame {first:?}");
     assert!(p99.as_secs_f64() < 1.0 / 60.0, "scroll frame p99 {p99:?}");
 }
-
-// US-017 ---------------------------------------------------------------
 
 #[gpui::test]
 fn ime_composition_marks_text_then_commits_one_undo_step(cx: &mut TestAppContext) {
@@ -373,7 +349,6 @@ fn a_composition_canceled_by_escape_leaves_buffer_and_history_unchanged(cx: &mut
     editor.update_in(cx, |editor, window, cx| {
         editor.replace_and_mark_text_in_range(None, "に", None, window, cx);
         editor.replace_and_mark_text_in_range(None, "にほん", None, window, cx);
-        // Escape: the IME sends an empty commit (Windows IMM32, `lparam == 0`).
         editor.replace_text_in_range(None, "", window, cx);
         assert!(editor.marked_range.is_none());
     });
@@ -382,7 +357,6 @@ fn a_composition_canceled_by_escape_leaves_buffer_and_history_unchanged(cx: &mut
         assert_eq!(editor.state.history().undo_depth(), depth);
         assert_eq!(editor.state.selection().main().head, 2);
     });
-    // An empty marked text (macOS) cancels the same way.
     editor.update_in(cx, |editor, window, cx| {
         editor.replace_and_mark_text_in_range(None, "^", None, window, cx);
         editor.replace_and_mark_text_in_range(None, "", None, window, cx);
@@ -396,7 +370,6 @@ fn typing_and_dead_keys_reach_the_buffer(cx: &mut TestAppContext) {
     set_cursor(&editor, cx, 0);
     cx.simulate_input("caf");
     editor.update_in(cx, |editor, window, cx| {
-        // A dead key: marked `´`, then the composed character.
         editor.replace_and_mark_text_in_range(None, "\u{b4}", None, window, cx);
         editor.replace_text_in_range(None, "\u{e9}", window, cx);
     });
@@ -407,7 +380,6 @@ fn typing_and_dead_keys_reach_the_buffer(cx: &mut TestAppContext) {
 fn every_editing_shortcut_is_bound(cx: &mut TestAppContext) {
     let (editor, cx) = open(cx, "one two\nthree\nfour two\n");
     let s = secondary;
-    // Undo and redo.
     set_cursor(&editor, cx, 3);
     cx.simulate_input("!");
     cx.simulate_keystrokes(&s("z"));
@@ -415,10 +387,8 @@ fn every_editing_shortcut_is_bound(cx: &mut TestAppContext) {
     cx.simulate_keystrokes(&s("shift-z"));
     assert_eq!(doc(&editor, cx), "one! two\nthree\nfour two\n");
     cx.simulate_keystrokes(&s("z"));
-    // Select all.
     cx.simulate_keystrokes(&s("a"));
     assert_eq!(selection(&editor, cx), [(0, 23)]);
-    // Next occurrence, all occurrences.
     set_cursor(&editor, cx, 5);
     cx.simulate_keystrokes(&s("d"));
     cx.simulate_keystrokes(&s("d"));
@@ -426,7 +396,6 @@ fn every_editing_shortcut_is_bound(cx: &mut TestAppContext) {
     set_cursor(&editor, cx, 5);
     cx.simulate_keystrokes(&s("shift-l"));
     assert_eq!(selection(&editor, cx).len(), 2);
-    // Move and copy lines.
     set_cursor(&editor, cx, 9);
     cx.simulate_keystrokes("alt-up");
     assert_eq!(doc(&editor, cx), "three\none two\nfour two\n");
@@ -436,15 +405,12 @@ fn every_editing_shortcut_is_bound(cx: &mut TestAppContext) {
     assert_eq!(doc(&editor, cx), "one two\nthree\nthree\nfour two\n");
     cx.simulate_keystrokes("alt-shift-up");
     assert_eq!(doc(&editor, cx), "one two\nthree\nthree\nthree\nfour two\n");
-    // Delete line.
     cx.simulate_keystrokes(&s("shift-k"));
     assert_eq!(doc(&editor, cx), "one two\nthree\nthree\nfour two\n");
-    // Insert line below.
     set_cursor(&editor, cx, 1);
     cx.simulate_keystrokes(&s("enter"));
     assert_eq!(doc(&editor, cx), "one two\n\nthree\nthree\nfour two\n");
     assert_eq!(selection(&editor, cx), [(8, 8)]);
-    // Indent more and less, Tab and Shift+Tab.
     set_cursor(&editor, cx, 0);
     cx.simulate_keystrokes(&s("]"));
     assert!(doc(&editor, cx).starts_with("  one"));
@@ -453,13 +419,11 @@ fn every_editing_shortcut_is_bound(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("tab");
     assert!(doc(&editor, cx).starts_with("\tone"));
     cx.simulate_keystrokes("backspace");
-    // Word selection.
     set_cursor(&editor, cx, 0);
     cx.simulate_keystrokes("alt-shift-right");
     assert_eq!(selection(&editor, cx), [(0, 3)]);
     cx.simulate_keystrokes("alt-shift-left");
     assert_eq!(selection(&editor, cx), [(0, 0)]);
-    // Find, find next and previous, Escape.
     set_cursor(&editor, cx, 0);
     cx.simulate_keystrokes(&s("f"));
     assert!(editor.read_with(cx, |e, _| e.search.is_some()));
@@ -473,11 +437,9 @@ fn every_editing_shortcut_is_bound(cx: &mut TestAppContext) {
     assert_eq!(selection(&editor, cx), [(4, 7)]);
     cx.simulate_keystrokes("escape");
     assert!(editor.read_with(cx, |e, _| e.search.is_none()));
-    // Formatting through the registry (Bold).
     set_cursor(&editor, cx, 1);
     cx.simulate_keystrokes(&s("b"));
     assert!(doc(&editor, cx).starts_with("**one**"));
-    // Shift+Tab reaches the list outdent.
     editor.update(cx, |editor, cx| {
         editor.update_state(cx, |state| {
             let len = state.text().len();
@@ -532,7 +494,6 @@ fn every_cursor_motion_keeps_the_caret_inside_the_safe_margins(cx: &mut TestAppC
     cx.simulate_keystrokes(end);
     cx.run_until_parked();
     editor.update_in(cx, |editor, window, cx| {
-        // The last line can sit lower than the margin: the note ends there.
         let caret = editor
             .caret_bounds(editor.cursor(), window, cx)
             .expect("caret");
@@ -541,8 +502,6 @@ fn every_cursor_motion_keeps_the_caret_inside_the_safe_margins(cx: &mut TestAppC
     cx.simulate_keystrokes(start);
     cx.run_until_parked();
     editor.update_in(cx, |editor, window, cx| {
-        // The note cannot scroll above its start: the first line shows at
-        // the top, inside the margin.
         assert_eq!(editor.scroll_top(), 0.0);
         let caret = editor
             .caret_bounds(editor.cursor(), window, cx)
@@ -551,8 +510,6 @@ fn every_cursor_motion_keeps_the_caret_inside_the_safe_margins(cx: &mut TestAppC
     });
 }
 
-/// Writer's `keyboard-scroll.spec.js`: holding Down then Up through a long
-/// note keeps the caret on screen at every step and never edits.
 #[gpui::test]
 fn holding_down_then_up_follows_the_caret_through_a_long_note(cx: &mut TestAppContext) {
     let mut lines = vec!["# Keyboard scroll check".to_owned(), String::new()];
@@ -617,8 +574,6 @@ fn holding_down_then_up_follows_the_caret_through_a_long_note(cx: &mut TestAppCo
     });
 }
 
-/// Writer's `list-enter-exit.spec.js`: Enter, Enter, type ends the list;
-/// the empty item is cleared in place and the text is a paragraph.
 #[gpui::test]
 fn enter_enter_type_ends_a_list(cx: &mut TestAppContext) {
     let note = "# List enter check\n\n- first item\n- im creating a sub item!!\n- last item\n\nPlain paragraph after the list.\n";
@@ -658,15 +613,10 @@ fn unreachable_line(lines: &[&str]) -> usize {
     0
 }
 
-// US-018 ---------------------------------------------------------------
-
 #[gpui::test]
 fn clicks_map_through_hidden_syntax_and_list_prefix_zones(cx: &mut TestAppContext) {
-    // At depth 0 the prefix has no line-start zone (Writer's
-    // `listPrefixClickPosition`): the nested item has all three.
     let (editor, cx) = open(cx, "**bold** text\n\n- a\n  - item body\n");
     set_cursor(&editor, cx, 14);
-    // The `**` are hidden: the left edge of "bold" is offset 2.
     let at = point_at(&editor, cx, 2);
     press(cx, at, 1, false);
     release(cx, at);
@@ -722,7 +672,6 @@ fn a_drag_from_a_list_prefix_and_its_rectangles_stay_on_the_text(cx: &mut TestAp
     release(cx, to);
     let (anchor, head) = selection(&editor, cx)[0];
     assert_eq!((anchor.min(head), anchor.max(head)), (2, 8));
-    // The rectangle ends at the selected text, not at the column edge.
     editor.update_in(cx, |editor, window, cx| {
         let line = editor.layout_line(0, window, cx);
         let column_left = editor.viewport.expect("painted").column_left;
@@ -738,13 +687,9 @@ fn a_drag_from_a_list_prefix_and_its_rectangles_stay_on_the_text(cx: &mut TestAp
     });
 }
 
-/// Rewritten for ADR 0008: a rule still needs an empty selection; a block
-/// image is selected as an object whatever is selected
-/// (`a_click_on_an_image_selects_it_as_an_object_without_moving_it`).
 #[gpui::test]
 fn a_click_on_a_widget_selects_its_decoration_anchored_at_its_end(cx: &mut TestAppContext) {
     let (editor, cx) = open(cx, "intro\n\n---\n\nafter\n");
-    // A selection: the click on the rule places the caret instead.
     editor.update(cx, |e, cx| e.select(Selection::single(0, 3), cx));
     cx.run_until_parked();
     let rule = editor.read_with(cx, |editor, _| {
@@ -795,16 +740,11 @@ fn a_drag_released_outside_the_window_stops_at_its_last_position(cx: &mut TestAp
     );
     let to = point_at(&editor, cx, 12);
     drag_to(cx, to, true);
-    // The button is released outside: the next move has no button down.
     drag_to(cx, point(px(5000.0), px(5000.0)), false);
     editor.read_with(cx, |editor, _| {
         assert!(!editor.state.is_dragging(), "the freeze is lifted");
-        // Offset 12 sits inside the hidden closing `**`: the selection
-        // takes the markup that follows the visible text.
         assert_eq!(editor.state.selection().main().range(), 0..13);
     });
-    // A drag that leaves the window keeps following, and a release out
-    // there reaches the editor.
     let start = point_at(&editor, cx, 16);
     press(cx, start, 1, false);
     let anchor = selection(&editor, cx)[0].0;
@@ -833,9 +773,6 @@ fn a_click_on_a_checkbox_toggles_it(cx: &mut TestAppContext) {
     assert_eq!(doc(&editor, cx), "- [x] task\n\nend\n");
 }
 
-// US-019 ---------------------------------------------------------------
-
-/// Writer's `code-block-scroll.spec.js`, plus the frontmatter.
 #[gpui::test]
 fn code_blocks_scroll_horizontally_as_one_block(cx: &mut TestAppContext) {
     let long = format!("const long = \"{}\";", "x".repeat(200));
@@ -850,7 +787,6 @@ fn code_blocks_scroll_horizontally_as_one_block(cx: &mut TestAppContext) {
         let line = editor.layout_line(long_line, window, cx);
         assert_eq!(line.rows(), 1, "the long line does not wrap");
     });
-    // A mostly vertical gesture scrolls the note, not the block.
     let over = editor.read_with(cx, |e, _| {
         point(
             e.viewport.expect("painted").column_left + px(100.0),
@@ -867,7 +803,6 @@ fn code_blocks_scroll_horizontally_as_one_block(cx: &mut TestAppContext) {
         editor.read_with(cx, |e, _| e.code_scroll.offset_of_line(fence_line)),
         0.0
     );
-    // A horizontal one scrolls every line of the block together.
     let over = editor.read_with(cx, |e, _| {
         point(
             e.viewport.expect("painted").column_left + px(100.0),
@@ -889,7 +824,6 @@ fn code_blocks_scroll_horizontally_as_one_block(cx: &mut TestAppContext) {
             "same offset on every line"
         );
     });
-    // Clamped at the widest line, and back to zero.
     cx.simulate_event(ScrollEvent {
         position: over,
         delta: ScrollDelta::Pixels(point(px(-100_000.0), px(0.0))),
@@ -904,7 +838,6 @@ fn code_blocks_scroll_horizontally_as_one_block(cx: &mut TestAppContext) {
         code.scroll_x
     });
     assert!(max > 0.0);
-    // The drawn thumb has a minimum width and drags the block back.
     let thumb = editor.read_with(cx, |e, _| {
         e.thumbs
             .iter()
@@ -921,7 +854,6 @@ fn code_blocks_scroll_horizontally_as_one_block(cx: &mut TestAppContext) {
         editor.read_with(cx, |e, _| e.code_scroll.offset_of_line(fence_line)),
         0.0
     );
-    // The caret at the end of the long line is revealed by the smallest move.
     let end = note.find(&long).unwrap() + long.len();
     set_cursor(&editor, cx, end);
     editor.update_in(cx, |editor, window, cx| {
@@ -935,7 +867,6 @@ fn code_blocks_scroll_horizontally_as_one_block(cx: &mut TestAppContext) {
             "just inside the right edge: {caret:?}"
         );
     });
-    // The frontmatter scrolls the same way.
     set_cursor(&editor, cx, 0);
     let over_fm = editor.read_with(cx, |e, _| {
         point(
@@ -976,37 +907,29 @@ fn a_block_made_narrower_than_the_view_goes_back_to_zero(cx: &mut TestAppContext
         editor.read_with(cx, |e, _| e.code_scroll.offset_of_line(1)),
         200.0
     );
-    // Typing above the block keeps its offset (remapped).
     set_cursor(&editor, cx, 0);
     cx.simulate_input("x\n");
     cx.run_until_parked();
-    // The typed line goes before the fence: the block starts on line 2.
     assert_eq!(
         editor.read_with(cx, |e, _| e.code_scroll.offset_of_line(2)),
         200.0
     );
-    // Select most of the long line: the block scrolls to its end.
     let from = "x\nintro\n```\n".len();
     editor.update(cx, |editor, cx| {
         editor.select(Selection::single(from + 40, from + 300), cx);
     });
     cx.run_until_parked();
-    // The selection of the scrolled line stays inside the block's box.
     editor.read_with(cx, |editor, _| {
         let viewport = editor.viewport.expect("painted");
         let left = viewport.column_left + px(super::layout::CODE_PADDING);
         let right = viewport.column_left + px(viewport.column_width - super::layout::CODE_PADDING);
         let frame = editor.frames.last().expect("a frame");
         assert!(!frame.selections.is_empty());
-        // At the largest offset the caret ends the widest line, on the
-        // box's edge: it is still drawn.
         assert_eq!(frame.carets.len(), 1, "{:?}", frame.carets);
         for rect in &frame.selections {
             assert!(rect.left() >= left && rect.right() <= right, "{rect:?}");
         }
     });
-    // Delete it with the main caret outside the block, so no caret reveal
-    // moves the offset first: the block fits, offset and bar go.
     let after = from + 300 + "\n```\n".len() + 3;
     editor.update(cx, |editor, cx| {
         assert!(editor.code_scroll.offset_of_line(2) > 0.0);
@@ -1023,7 +946,6 @@ fn a_block_made_narrower_than_the_view_goes_back_to_zero(cx: &mut TestAppContext
     editor.read_with(cx, |editor, _| {
         assert_eq!(editor.code_scroll.offset_of_line(2), 0.0);
         assert!(editor.thumbs.is_empty());
-        // The first frame that shows the edit already paints at offset 0.
         let frame = editor.frames.first().expect("a frame after the edit");
         assert!(!frame.code_scroll.is_empty());
         assert!(
@@ -1033,8 +955,6 @@ fn a_block_made_narrower_than_the_view_goes_back_to_zero(cx: &mut TestAppContext
         );
     });
 }
-
-// US-020 ---------------------------------------------------------------
 
 fn png(width: u32, height: u32) -> Vec<u8> {
     let mut bytes = Vec::new();
@@ -1062,7 +982,6 @@ fn local_and_data_images_render_at_their_measured_height(cx: &mut TestAppContext
     );
     let path = dir.path().join("note.md");
     let (editor, cx) = open_at(cx, &note, Some(path), EditorConfig::default());
-    // The caret away from the images, which it would reveal as source.
     set_cursor(&editor, cx, note.len());
     cx.run_until_parked();
     editor.update_in(cx, |editor, window, cx| {
@@ -1073,7 +992,6 @@ fn local_and_data_images_render_at_their_measured_height(cx: &mut TestAppContext
         assert_eq!(local.height, 150.0);
         let inline = editor.layout_line(2, window, cx);
         assert_eq!(inline.block.expect("data image").height, 10.0);
-        // `http:` is never loaded; a missing file shows its source muted.
         for ix in [4, 6] {
             let line = editor.layout_line(ix, window, cx);
             assert!(line.block.is_none(), "line {ix}");
@@ -1089,9 +1007,6 @@ fn local_and_data_images_render_at_their_measured_height(cx: &mut TestAppContext
     );
 }
 
-/// US-033: `![[pic.png]]` shows the image found anywhere in the workspace
-/// (Obsidian's shortest-path links); an embed found nowhere shows its
-/// source muted (`ImageEmbedWidget`).
 #[gpui::test]
 fn image_embeds_render_the_file_they_name(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
@@ -1221,8 +1136,6 @@ fn an_image_over_5_mb_is_refused_with_a_notice(cx: &mut TestAppContext) {
     );
 }
 
-// US-021 ---------------------------------------------------------------
-
 fn search_counter(editor: &Entity<Editor>, cx: &mut VisualTestContext) -> String {
     editor.read_with(cx, |e, cx| {
         e.search.as_ref().expect("open").read(cx).counter()
@@ -1235,14 +1148,12 @@ fn find_is_prefilled_literal_and_case_insensitive(cx: &mut TestAppContext) {
     editor.update(cx, |e, cx| e.select(Selection::single(0, 5), cx));
     cx.simulate_keystrokes(&secondary("f"));
     assert_eq!(search_counter(&editor, cx), "1/4");
-    // Typing replaces the prefilled (selected) query.
     cx.simulate_input("a.b");
     assert_eq!(
         search_counter(&editor, cx),
         "1/1",
         "literal: `.` is not a wildcard"
     );
-    // A multi-line selection does not prefill.
     cx.simulate_keystrokes("escape");
     editor.update(cx, |e, cx| e.select(Selection::single(0, 25), cx));
     cx.simulate_keystrokes(&secondary("f"));
@@ -1265,8 +1176,6 @@ fn enter_steps_and_replace_all_is_one_undo(cx: &mut TestAppContext) {
     assert_eq!(search_counter(&editor, cx), "2/3");
     cx.simulate_keystrokes("shift-enter");
     assert_eq!(selection(&editor, cx), [(0, 3)]);
-    // A click in the replace field focuses it and leaves the text alone;
-    // Enter there replaces the selected result.
     let replace = editor.read_with(cx, |e, cx| {
         e.search.as_ref().expect("open").read(cx).replace.clone()
     });
@@ -1332,7 +1241,6 @@ fn marks_are_capped_merged_and_a_jump_lands_140_px_from_the_edge(cx: &mut TestAp
         let search = editor.search.as_ref().expect("open").read(cx);
         assert_eq!(search.matches().len(), 6000);
         assert_eq!(search.marks().count(), super::search::MAX_MARKS);
-        // Merged per pixel: at most one mark per pixel row of the bar.
         let height = editor
             .viewport
             .expect("painted")
@@ -1346,7 +1254,6 @@ fn marks_are_capped_merged_and_a_jump_lands_140_px_from_the_edge(cx: &mut TestAp
             editor.mark_hits.len()
         );
     });
-    // A click on a mark far down jumps there, 140 px from the bottom edge.
     let (mark, pos) = editor.read_with(cx, |e, _| e.mark_hits[e.mark_hits.len() / 2]);
     press(cx, mark.center(), 1, false);
     release(cx, mark.center());
@@ -1377,8 +1284,6 @@ fn escape_and_an_inactive_tab_close_the_search(cx: &mut TestAppContext) {
     assert!(editor.read_with(cx, |e, _| e.search.is_none()));
 }
 
-// US-022 ---------------------------------------------------------------
-
 #[gpui::test]
 fn cut_copy_and_paste_work_in_plain_text(cx: &mut TestAppContext) {
     let (editor, cx) = open(cx, "**bold** rest\n");
@@ -1404,10 +1309,8 @@ fn pasting_a_document_with_frontmatter_moves_its_yaml_to_the_top(cx: &mut TestAp
     ));
     cx.simulate_keystrokes(&secondary("v"));
     assert_eq!(doc(&editor, cx), "---\ntitle: a\n---\nintro\nbody text");
-    // A note that already has one gets the paste as is.
     cx.simulate_keystrokes(&secondary("v"));
     assert!(doc(&editor, cx).ends_with("body text---\ntitle: a\n---\nbody text"));
-    // An empty frontmatter stays empty, with no blank line inside.
     let (editor, cx) = open(cx, "intro\n");
     set_cursor(&editor, cx, 6);
     cx.write_to_clipboard(ClipboardItem::new_string("---\n---\nbody".to_owned()));
@@ -1434,7 +1337,6 @@ fn the_context_menu_is_drawn_in_the_app_with_the_registry(cx: &mut TestAppContex
         assert!(has(&|i| matches!(i, super::menu::MenuItem::Action { action: super::menu::MenuAction::OpenLink(l), .. } if l == "https://a.b")));
         assert!(has(&|i| matches!(i, super::menu::MenuItem::Action { action: super::menu::MenuAction::Paste, enabled: false, .. })), "empty clipboard: Paste disabled");
     });
-    // Run Bold from the Format submenu.
     editor.update_in(cx, |editor, window, cx| {
         editor.select(Selection::single(24, 28), cx);
         editor.run_menu_action(super::menu::MenuAction::Command("format.bold"), window, cx);
@@ -1447,14 +1349,12 @@ mod tables {
     use super::*;
     use crate::editor::layout::BlockKind;
 
-    /// Header, a link row, a row with an empty cell.
     const DOC: &str = "intro\n\n| Link | N |\n|:--|--:|\n| [site](https://example.test) | 2 |\n| alpha beta | |\n\nend";
 
     fn pos(needle: &str) -> usize {
         DOC.find(needle).unwrap()
     }
 
-    /// The last frame's bounds of cell `row`-`column` (row 0 is the header).
     fn cell(
         editor: &Entity<Editor>,
         cx: &mut VisualTestContext,
@@ -1497,8 +1397,6 @@ mod tables {
         })
     }
 
-    /// A row with a cell past the header: the grid while untouched, then a
-    /// click in a cell reveals the source, so the extra cell shows.
     #[gpui::test]
     fn a_click_in_a_table_with_an_extra_cell_reveals_its_source(cx: &mut TestAppContext) {
         let src = "intro\n\n| a | b |\n|---|---|\n| 1 | 2 | extra |\n\nend";
@@ -1513,9 +1411,6 @@ mod tables {
         assert!((src.find("| 1").unwrap()..src.find("extra").unwrap()).contains(&head));
     }
 
-    /// The table's layout is cached per state; a palette change that keeps
-    /// the mode (a new accent) still invalidates it, since the cells' runs
-    /// carry their colors.
     #[gpui::test]
     fn a_theme_change_in_the_same_mode_lays_the_table_out_again(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, DOC);
@@ -1541,9 +1436,6 @@ mod tables {
         );
     }
 
-    /// US-049: the editor lays the table out in the frame (no measuring
-    /// frame), its rows on the first line, the others folded away; cells
-    /// are named by row and column.
     #[gpui::test]
     fn a_table_is_laid_out_by_the_editor_in_its_frame(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, DOC);
@@ -1566,7 +1458,6 @@ mod tables {
         let header = cell(&editor, cx, 0, 0);
         let body = cell(&editor, cx, 1, 0);
         assert!(body.top() >= header.bottom() - px(1.0));
-        // Right-aligned column: its text ends at the cell's right padding.
         let n = table
             .cells
             .iter()
@@ -1583,7 +1474,6 @@ mod tables {
             (inner_right - right).abs() < 1.5,
             "{right} vs {inner_right}"
         );
-        // The empty cell is drawn and holds an insertion point.
         let empty = table
             .cells
             .iter()
@@ -1592,9 +1482,6 @@ mod tables {
         assert!(empty.content.is_empty() && !empty.missing);
     }
 
-    /// US-048: the keystroke that wraps a cell to a second row shows the
-    /// taller row in the first frame drawn after it, with the layout's
-    /// height: there is no measuring frame.
     #[gpui::test]
     fn a_wrapping_keystroke_grows_the_row_in_the_next_frame(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, DOC);
@@ -1644,9 +1531,6 @@ mod tables {
         );
     }
 
-    /// US-051: a click puts the caret in the cell, a click on a padding in
-    /// the nearest cell, never a whole-table selection; the caret is drawn
-    /// in the cell, one text row tall, even in an empty cell.
     #[gpui::test]
     fn clicks_put_the_caret_in_cells(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, DOC);
@@ -1667,7 +1551,6 @@ mod tables {
         });
         assert!((caret.size.height.as_f32() - row_height).abs() < 0.5);
 
-        // On the right padding of the header's first cell: its content's end.
         let link = cell(&editor, cx, 0, 0);
         click(cx, point(link.right() - px(3.0), link.center().y), 1, false);
         assert_eq!(
@@ -1675,7 +1558,6 @@ mod tables {
             vec![(pos("Link") + 4, pos("Link") + 4)]
         );
 
-        // In the empty cell: its insertion point, the caret drawn there.
         let empty = cell(&editor, cx, 2, 1);
         click(cx, empty.center(), 1, false);
         let point_in = DOC.rfind("| |").unwrap() + 2;
@@ -1686,9 +1568,6 @@ mod tables {
         assert!(table_drawn(&editor, cx));
     }
 
-    /// US-051: a link in a cell opens and the caret stays; a double click
-    /// takes a word of the cell, a triple click the table, whose source
-    /// then shows.
     #[gpui::test]
     fn links_words_and_the_whole_table(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, DOC);
@@ -1721,9 +1600,6 @@ mod tables {
         assert_eq!(revealed, vec![true; 4]);
     }
 
-    /// US-051: dragging in a cell selects its text with the usual rects;
-    /// Shift+click extends in the cell; a drag out of the table crosses its
-    /// edge and shows the source on release.
     #[gpui::test]
     fn drags_select_in_the_cell_or_across_the_edge(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, DOC);
@@ -1745,7 +1621,6 @@ mod tables {
         click(cx, extend, 1, true);
         assert_eq!(selection(&editor, cx), vec![(alpha, alpha + 8)]);
 
-        // Out of the table, below it: the source is revealed on release.
         let end = point_at(&editor, cx, DOC.len());
         press(cx, from, 1, false);
         drag_to(cx, end, true);
@@ -1756,8 +1631,6 @@ mod tables {
         assert!(!table_drawn(&editor, cx));
     }
 
-    /// US-051 and ADR 0007: typed `|` is escaped, the IME's marked text
-    /// shows in the cell and its window follows the cell's caret.
     #[gpui::test]
     fn typing_and_composing_in_a_cell(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, DOC);
@@ -1784,13 +1657,11 @@ mod tables {
             alpha_cell.contains(&bounds.origin),
             "{bounds:?} in {alpha_cell:?}"
         );
-        // Enter commits the composition and stays in the cell.
         cx.simulate_keystrokes("enter");
         let text = doc(&editor, cx);
         assert!(text.contains("alpha\\|xにほ beta"), "{text}");
         assert_eq!(selection(&editor, cx), vec![(caret_pos + 6, caret_pos + 6)]);
         assert!(editor.read_with(cx, |e, _| e.marked_range.is_none()));
-        // Tab likewise: committed in place, no move to the next cell.
         editor.update_in(cx, |editor, window, cx| {
             editor.replace_and_mark_text_in_range(None, "ん", None, window, cx);
         });
@@ -1802,8 +1673,6 @@ mod tables {
         assert!(editor.read_with(cx, |e, _| e.marked_range.is_none()));
     }
 
-    /// US-052: Tab, Shift+Tab and Enter go from cell to cell, selecting
-    /// them; Tab in the last cell adds a row; Shift+Enter writes `<br>`.
     #[gpui::test]
     fn tab_and_enter_walk_the_cells(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, DOC);
@@ -1831,9 +1700,6 @@ mod tables {
         assert!(table_drawn(&editor, cx));
     }
 
-    /// US-052: Up and Down keep the pixel column from cell to cell, leave
-    /// the table by its edges and enter it from the lines around without
-    /// revealing it; Home, End and Ctrl+A stay in the cell.
     #[gpui::test]
     fn arrows_home_end_and_select_all_in_cells(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, DOC);
@@ -1847,11 +1713,9 @@ mod tables {
         let empty = DOC.rfind("| |").unwrap() + 2;
         assert_eq!(selection(&editor, cx), vec![(empty, empty)]);
         assert!(table_drawn(&editor, cx));
-        // Down from the last row: the line below the table.
         cx.simulate_keystrokes("down");
         let below = pos("\n\nend") + 1;
         assert_eq!(selection(&editor, cx), vec![(below, below)]);
-        // Up from the blank line below: into the last row, source hidden.
         cx.simulate_keystrokes("up");
         let (_, head) = selection(&editor, cx)[0];
         assert!(
@@ -1859,7 +1723,6 @@ mod tables {
                 .is_some()
         );
         assert!(table_drawn(&editor, cx));
-        // Up from the header: out by the top.
         set_cursor(&editor, cx, pos("Link") + 2);
         editor.update(cx, |e, _| e.goal_x = None);
         cx.simulate_keystrokes("up");
@@ -1881,16 +1744,12 @@ mod tables {
         assert_eq!(selection(&editor, cx), vec![(alpha, alpha + 10)]);
         cx.simulate_keystrokes(&secondary("a"));
         assert_eq!(selection(&editor, cx), vec![(0, DOC.len())]);
-        // Left from a content's start: the previous content's end.
         set_cursor(&editor, cx, pos("2 |"));
         cx.simulate_keystrokes("left");
         let site_end = pos(" | 2");
         assert_eq!(selection(&editor, cx), vec![(site_end, site_end)]);
     }
 
-    /// US-053, review: the Table submenu works with the pointer. Hovering
-    /// "Table" opens it, a click on one of its items (outside the menu's
-    /// own bounds) runs the command instead of closing the menu.
     #[gpui::test]
     fn a_click_in_the_table_submenu_runs_its_command(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, DOC);
@@ -1921,7 +1780,6 @@ mod tables {
             text.contains("| 2 |\n|                              |   |\n| alpha"),
             "{text:?}"
         );
-        // A press outside both lists still closes the menu.
         cx.simulate_event(MouseDownEvent {
             button: MouseButton::Right,
             position: at,
@@ -1940,9 +1798,6 @@ mod tables {
         assert!(editor.read_with(cx, |e, _| e.menu.is_none()));
     }
 
-    /// US-053: a right click in a cell offers the Table submenu; its row
-    /// command edits the table, keeps it drawn with the caret in the new
-    /// row, and one undo puts the text and the caret back.
     #[gpui::test]
     fn the_context_menu_restructures_the_table(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, DOC);
@@ -2008,7 +1863,6 @@ mod tables {
         assert_eq!(selection(&editor, cx), before);
     }
 
-    /// Eight columns of long words: wider than any text column.
     fn wide_doc() -> String {
         let header: Vec<String> = (0..8).map(|c| format!("Heading{c}")).collect();
         let body: Vec<String> = (0..8)
@@ -2026,7 +1880,6 @@ mod tables {
         editor.read_with(cx, |e, _| e.code_scroll.offset_of_line(2))
     }
 
-    /// The text column's horizontal bounds.
     fn column(editor: &Entity<Editor>, cx: &mut VisualTestContext) -> (Pixels, Pixels) {
         editor.read_with(cx, |e, _| {
             let v = e.viewport.expect("painted");
@@ -2034,10 +1887,6 @@ mod tables {
         })
     }
 
-    /// US-056: a table wider than the text column scrolls horizontally with
-    /// a thin bar (Shift+wheel arrives as a horizontal delta); the caret
-    /// entering a hidden cell or typing there brings it into sight, and the
-    /// offset holds from one keystroke to the next.
     #[gpui::test]
     fn a_wide_table_scrolls_and_follows_the_caret(cx: &mut TestAppContext) {
         let src = wide_doc();
@@ -2063,7 +1912,6 @@ mod tables {
         assert_eq!(table_offset(&editor, cx), 120.0);
         assert_eq!(cell(&editor, cx, 1, 0).left(), first.left() - px(120.0));
         assert!(table_drawn(&editor, cx));
-        // The caret in the last cell, out of sight: the table follows it.
         let last = src.find("Unbreakablewordnumber7").unwrap() + 3;
         set_cursor(&editor, cx, last);
         let caret = last_caret(&editor, cx);
@@ -2078,16 +1926,12 @@ mod tables {
         assert!(typed >= offset, "kept while typing");
         let caret = last_caret(&editor, cx);
         assert!(caret.left() >= left && caret.right() <= right);
-        // Back to the first cell: the table scrolls back.
         set_cursor(&editor, cx, src.find("Unbreakablewordnumber0").unwrap());
         assert!(table_offset(&editor, cx) < typed);
         let caret = last_caret(&editor, cx);
         assert!(caret.left() >= left);
     }
 
-    /// US-056: search marks its results in the cells; going to one selects
-    /// it in the cell, keeps the table drawn and scrolls the table to it.
-    /// A result across a `|` reveals the source.
     #[gpui::test]
     fn search_finds_text_in_cells(cx: &mut TestAppContext) {
         let src = wide_doc();
@@ -2110,7 +1954,6 @@ mod tables {
             "{marks:?} in {hidden:?}"
         );
         assert!(table_offset(&editor, cx) > 0.0, "scrolled to the result");
-        // Across a pipe: selected as is, the source shows.
         cx.simulate_keystrokes("escape");
         set_cursor(&editor, cx, 0);
         cx.simulate_keystrokes(&secondary("f"));
@@ -2122,12 +1965,8 @@ mod tables {
         assert!(!table_drawn(&editor, cx));
     }
 
-    /// US-056 review: a result to the left of a table scrolled right comes
-    /// into sight whole, its start included, not just up to its end.
     #[gpui::test]
     fn a_result_left_of_the_scrolled_table_shows_whole(cx: &mut TestAppContext) {
-        // A second row whose first cell wraps: the result starts its
-        // second visual row.
         let mut src = wide_doc();
         let row: Vec<&str> = (0..8).map(|_| "x").collect();
         let at_row = src
@@ -2154,8 +1993,6 @@ end",
             .find(|c| c.row == 2 && c.column == 0)
             .map(|c| c.segments[0].row_starts.len());
         assert_eq!(wrapped, Some(2), "the cell wraps before the result");
-        // The caret leaves the table, which stays scrolled; the query is
-        // typed a letter at a time.
         set_cursor(&editor, cx, 0);
         assert!(table_offset(&editor, cx) > 0.0);
         cx.simulate_keystrokes(&secondary("f"));
@@ -2174,7 +2011,6 @@ end",
                 .all(|(r, _)| r.left() >= left && r.right() <= right),
             "{marks:?} in {left:?}..{right:?}"
         );
-        // A caret at that wrap boundary, the table scrolled right again.
         cx.simulate_keystrokes("escape");
         set_cursor(&editor, cx, src.find("Unbreakablewordnumber7").unwrap() + 3);
         set_cursor(&editor, cx, at);
@@ -2185,8 +2021,6 @@ end",
         );
     }
 
-    /// US-056: replacing a result in a cell escapes the replacement's `|`
-    /// and line breaks, so the row keeps its cells.
     #[gpui::test]
     fn replacing_in_a_cell_escapes_the_replacement(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, DOC);
@@ -2206,8 +2040,6 @@ end",
         assert!(text.contains("| alpha a\\|b | |"), "{text:?}");
     }
 
-    /// US-056: "Edit as Markdown" shows the table's source until the
-    /// selection leaves it; then the table is drawn again.
     #[gpui::test]
     fn edit_as_markdown_reveals_the_source_until_the_selection_leaves(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, DOC);
@@ -2221,7 +2053,6 @@ end",
         });
         cx.run_until_parked();
         assert!(!table_drawn(&editor, cx), "the source shows");
-        // The caret moves freely in the source, a pipe included.
         let pipe = pos("| alpha");
         set_cursor(&editor, cx, pipe);
         assert_eq!(selection(&editor, cx), [(pipe, pipe)]);
@@ -2247,10 +2078,6 @@ end",
         })
     }
 
-    /// US-054: a drag from one cell to another selects the rectangle
-    /// between them, painted as cell backgrounds with the table drawn;
-    /// Shift+click extends it from the caret's cell; a drag out of the
-    /// table is a text selection that shows the source on release.
     #[gpui::test]
     fn dragging_across_cells_selects_a_rectangle(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, DOC);
@@ -2279,12 +2106,10 @@ end",
             let b = cell(&editor, cx, r, c);
             assert!(painted.iter().any(|p| b.contains(&p.center())), "{r}-{c}");
         }
-        // Shift+click from the caret's cell.
         set_cursor(&editor, cx, pos("alpha"));
         let empty = cell(&editor, cx, 2, 1);
         click(cx, empty.center(), 1, true);
         assert_eq!(rect(&editor, cx), Some(((3, 0), (3, 1))));
-        // Out of the table: a text selection; the source shows on release.
         let alpha = point_at(&editor, cx, pos("alpha"));
         let end = point_at(&editor, cx, DOC.len());
         press(cx, alpha, 1, false);
@@ -2299,10 +2124,6 @@ end",
         assert!(!table_drawn(&editor, cx));
     }
 
-    /// US-054: Shift+arrows at a content's edge grow a rectangle cell by
-    /// cell; formatting applies to each non-empty cell and Backspace empties
-    /// them, one undo step each; a plain arrow collapses it; typing replaces
-    /// the anchor cell.
     #[gpui::test]
     fn the_keyboard_drives_a_rectangle(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, DOC);
@@ -2321,7 +2142,6 @@ end",
         );
         cx.simulate_keystrokes(&secondary("z"));
         assert_eq!(doc(&editor, cx), DOC);
-        // The rectangle again, then Backspace.
         set_cursor(&editor, cx, pos("Link") + 4);
         cx.simulate_keystrokes("shift-right shift-down");
         cx.simulate_keystrokes("backspace");
@@ -2332,7 +2152,6 @@ end",
         );
         cx.simulate_keystrokes(&secondary("z"));
         assert_eq!(doc(&editor, cx), DOC);
-        // Left collapses to the first cell, Right to the last.
         set_cursor(&editor, cx, pos("Link") + 4);
         cx.simulate_keystrokes("shift-right shift-down");
         cx.simulate_keystrokes("left");
@@ -2342,7 +2161,6 @@ end",
         cx.simulate_keystrokes("shift-right shift-down");
         cx.simulate_keystrokes("down");
         assert_eq!(selection(&editor, cx), [(pos(" 2 |") + 2, pos(" 2 |") + 2)]);
-        // Typing over it: the anchor cell's content goes.
         set_cursor(&editor, cx, pos("Link") + 4);
         cx.simulate_keystrokes("shift-right shift-down");
         cx.simulate_input("H");
@@ -2358,10 +2176,6 @@ end",
         TWO.find(needle).unwrap()
     }
 
-    /// US-055: a rectangle copies as a GFM table with the grid as metadata
-    /// and pastes into another table from the caret's cell, adding the rows
-    /// it needs, in one undo step; out of a table it pastes as Markdown;
-    /// cut empties the cells in one step.
     #[gpui::test]
     fn cells_copy_cut_and_paste_between_tables(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, TWO);
@@ -2377,7 +2191,6 @@ end",
             item.metadata()
                 .is_some_and(|m| m.contains("cerata.table-cells"))
         );
-        // Into the second table's last cell: one row added.
         set_cursor(&editor, cx, in_two("q |"));
         cx.simulate_keystrokes(&secondary("v"));
         let text = doc(&editor, cx);
@@ -2394,12 +2207,10 @@ end",
         assert!(drawn, "the second table stays drawn");
         cx.simulate_keystrokes(&secondary("z"));
         assert_eq!(doc(&editor, cx), TWO, "one step");
-        // Out of a table: the Markdown as is.
         set_cursor(&editor, cx, in_two("mid") + 3);
         cx.simulate_keystrokes(&secondary("v"));
         assert!(doc(&editor, cx).contains("mid| 1 | 2 |\n| :-- | --: |\n| 3 | 4 |\n"));
         cx.simulate_keystrokes(&secondary("z"));
-        // Cut: copied, then emptied in one step.
         set_cursor(&editor, cx, in_two("1 |") + 1);
         cx.simulate_keystrokes("shift-right");
         cx.simulate_keystrokes(&secondary("x"));
@@ -2412,9 +2223,6 @@ end",
         assert_eq!(doc(&editor, cx), TWO);
     }
 
-    /// US-055: spreadsheet TSV fills cells with its `|` and line breaks
-    /// escaped; unknown or broken metadata pastes the text; a grid over
-    /// the limit pastes nothing and says why.
     #[gpui::test]
     fn spreadsheet_cells_bad_metadata_and_the_limit(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, TWO);
@@ -2450,8 +2258,6 @@ end",
         );
     }
 
-    /// The table on line `ix` laid out afresh, every cell measured again,
-    /// with the column widths the caret's table keeps.
     fn fresh_table_at(
         editor: &Entity<Editor>,
         cx: &mut VisualTestContext,
@@ -2467,7 +2273,6 @@ end",
         table_at(editor, cx, ix)
     }
 
-    /// What a table layout shows, as comparable values.
     fn table_geometry(t: &crate::editor::table::TableLayout) -> Vec<String> {
         let mut out = vec![format!(
             "{} {} {:?} {:?}",
@@ -2506,10 +2311,6 @@ end",
 
 end";
 
-    /// US-057: after an edit in a table, the cells it left alone are taken
-    /// from the previous layout, and the table looks exactly as if every
-    /// cell were laid out again: typing, revealing syntax, moving between
-    /// cells, a new line in a cell, undo.
     #[gpui::test]
     fn reused_cells_match_a_fresh_layout(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, STYLED);
@@ -2524,7 +2325,6 @@ end";
         let first = check(&editor, cx, "enter");
         cx.simulate_input("ly");
         let typed = table_at(&editor, cx, 2);
-        // A cell away from the caret kept its shaped line.
         let link = |t: &crate::editor::table::TableLayout| {
             t.cells
                 .iter()
@@ -2534,13 +2334,11 @@ end";
         };
         assert!(std::rc::Rc::ptr_eq(&link(&first), &link(&typed)));
         check(&editor, cx, "typed");
-        // Into the bold cell (its syntax revealed), then typing there.
         let bold = doc(&editor, cx).find("bold**").unwrap() + 2;
         set_cursor(&editor, cx, bold);
         check(&editor, cx, "into bold");
         cx.simulate_input("er");
         check(&editor, cx, "typed in bold");
-        // To the next cell by Tab, a new line in it, then undo twice.
         cx.simulate_keystrokes("tab");
         check(&editor, cx, "tab");
         cx.simulate_keystrokes("enter");
@@ -2552,7 +2350,6 @@ end";
         assert!(table_drawn(&editor, cx));
     }
 
-    /// The column edges (left, right) of drawn row `row` in the last frame.
     fn column_edges(
         editor: &Entity<Editor>,
         cx: &mut VisualTestContext,
@@ -2567,7 +2364,6 @@ end";
             .collect()
     }
 
-    /// The table on line `ix`, laid out for the current state.
     fn table_at(
         editor: &Entity<Editor>,
         cx: &mut VisualTestContext,
@@ -2589,9 +2385,6 @@ end";
 
 end";
 
-    /// US-058: typing a sentence in a narrow column keeps every column's
-    /// edges while the caret stays in the table: the cell wraps and only
-    /// its row grows. Leaving the table sizes the columns again.
     #[gpui::test]
     fn column_widths_hold_while_typing_in_the_table(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, NARROW);
@@ -2608,14 +2401,11 @@ end";
             cell(&editor, cx, 1, 1).size.height > row_before,
             "the cell wraps in its column"
         );
-        // Out of the table: the columns are sized again, the typed column
-        // now asks for more room.
         let end = doc(&editor, cx).len();
         set_cursor(&editor, cx, end);
         let after = column_edges(&editor, cx, 1, 3);
         assert_ne!(after, before);
         assert!(after[1].1 - after[1].0 > before[1].1 - before[1].0);
-        // Back in the table: the widths it is entered with hold again.
         let x = doc(&editor, cx).find("xa sentence").unwrap();
         set_cursor(&editor, cx, x + 1);
         let entered = column_edges(&editor, cx, 1, 3);
@@ -2624,9 +2414,6 @@ end";
         assert_eq!(column_edges(&editor, cx, 1, 3), entered);
     }
 
-    /// US-058: a word longer than its frozen column wraps inside it without
-    /// running into the next column; out of the table, the column is at
-    /// least as wide as that word again (US-032).
     #[gpui::test]
     fn a_long_word_wraps_in_its_frozen_column(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, NARROW);
@@ -2661,9 +2448,6 @@ end";
         );
     }
 
-    /// US-058: a change of text column width (or of text size) sizes the
-    /// columns again, even with the caret in the table; the kept widths
-    /// live in the editor only.
     #[gpui::test]
     fn a_new_column_width_sizes_the_frozen_table_again(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, NARROW);
@@ -2700,7 +2484,6 @@ mod frontmatter {
         cx.run_until_parked();
     }
 
-    /// An active window, as focus-out events need.
     fn open_active<'a>(
         cx: &'a mut TestAppContext,
         text: &str,
@@ -2723,8 +2506,6 @@ mod frontmatter {
 
     const DOC: &str = "---\ntitle: Old\ntags:\n- a\n- b\n---\nbody";
 
-    /// One row per property in place of the YAML; editing a value rewrites
-    /// only its entry, the list keeps its text; keys stay in the panel.
     #[gpui::test]
     fn the_panel_replaces_the_yaml_and_edits_one_entry(cx: &mut TestAppContext) {
         let (editor, cx) = open_active(cx, DOC);
@@ -2756,12 +2537,10 @@ mod frontmatter {
             doc(&editor, cx),
             "---\ntitle: Older\ntags:\n- a\n- b\n---\nbody"
         );
-        // Up stays in the panel: the caret in the text does not move.
         keys(cx, "up");
         assert_eq!(selection(&editor, cx), vec![(DOC.len() + 2, DOC.len() + 2)]);
     }
 
-    /// A note opens with the caret in its body, its properties as a panel.
     #[gpui::test]
     fn a_note_opens_with_its_properties_as_a_panel(cx: &mut TestAppContext) {
         let (editor, cx) = open_active(cx, DOC);
@@ -2774,8 +2553,6 @@ mod frontmatter {
         );
     }
 
-    /// Enter on the last value adds a row; Backspace in an empty row
-    /// removes it; a row left without a key is removed.
     #[gpui::test]
     fn rows_are_added_removed_and_reaped(cx: &mut TestAppContext) {
         let doc_text = "---\na: 1\n---\nbody";
@@ -2795,11 +2572,9 @@ mod frontmatter {
         assert_eq!(rows(&editor, cx).len(), 1);
         assert_eq!(doc(&editor, cx), doc_text);
 
-        // A new row with a key is written; one left without is reaped.
         keys(cx, "enter");
         type_in(cx, "draft");
         assert_eq!(doc(&editor, cx), "---\na: 1\ndraft: \"\"\n---\nbody");
-        // Enter goes from the name to the value, then adds a row.
         keys(cx, "enter");
         keys(cx, "enter");
         type_in(cx, "x");
@@ -2815,7 +2590,6 @@ mod frontmatter {
         );
     }
 
-    /// Tab past the last field leaves the panel instead of stopping there.
     #[gpui::test]
     fn tab_leaves_the_panel_past_its_last_field(cx: &mut TestAppContext) {
         let doc_text = "---\na: 1\n---\nbody";
@@ -2832,8 +2606,6 @@ mod frontmatter {
         assert_eq!(doc(&editor, cx), doc_text);
     }
 
-    /// Emptying the last row and pressing Backspace removes the block and
-    /// gives the focus back to the text.
     #[gpui::test]
     fn removing_the_last_row_removes_the_frontmatter(cx: &mut TestAppContext) {
         let doc_text = "---\na: 1\n---\nbody";
@@ -2850,8 +2622,6 @@ mod frontmatter {
         assert!(editor.update_in(cx, |e, window, _| e.focus_handle.is_focused(window)));
     }
 
-    /// `---` typed on the first line opens an empty panel, its name field
-    /// focused.
     #[gpui::test]
     fn typing_three_dashes_on_the_first_line_opens_an_empty_panel(cx: &mut TestAppContext) {
         let (editor, cx) = open_active(cx, "--\nhello");
@@ -2869,7 +2639,6 @@ mod frontmatter {
         assert_eq!(doc(&editor, cx), "---\ntitle: \"\"\n---\nhello");
     }
 
-    /// Elsewhere `---` stays a rule.
     #[gpui::test]
     fn three_dashes_elsewhere_stay_text(cx: &mut TestAppContext) {
         let (editor, cx) = open_active(cx, "text\n--");
@@ -2878,7 +2647,6 @@ mod frontmatter {
         assert_eq!(doc(&editor, cx), "text\n---");
     }
 
-    /// An invalid YAML is shown raw with its error and never written.
     #[gpui::test]
     fn an_invalid_yaml_is_shown_raw_and_left_alone(cx: &mut TestAppContext) {
         let doc_text = "---\ntitle: [x\n---\nbody";
@@ -2899,9 +2667,6 @@ mod html_blocks {
     use super::*;
     use crate::editor::layout::BlockKind;
 
-    /// US-035: `<details>` drawn closed and opened by its summary, a link
-    /// opening with the URL rules, an image outside the note's folder never
-    /// loaded, and a click elsewhere revealing the source.
     #[gpui::test]
     fn html_blocks_render_toggle_and_reveal(cx: &mut TestAppContext) {
         let dir = tempfile::TempDir::new().unwrap();
@@ -2928,8 +2693,6 @@ mod html_blocks {
         let at = point(summary.left() + px(24.0), summary.center().y);
         press(cx, at, 1, false);
         cx.run_until_parked();
-        // The frame that draws it open measures it; the next one makes room:
-        // the caret on the following line is painted below its body.
         cx.update(|window, cx| window.simulate_next_frame(cx));
         cx.run_until_parked();
         let body = cx.debug_bounds("html-details-body-0").expect("opened");
@@ -2949,14 +2712,12 @@ mod html_blocks {
             "outside image not loaded"
         );
 
-        // The link opens with the URL rules.
         let link = point(body.left() + px(8.0), body.top() + px(8.0));
         press(cx, link, 1, false);
         release(cx, link);
         cx.run_until_parked();
         assert_eq!(cx.opened_url().as_deref(), Some("https://example.test"));
 
-        // A click on the frame selects the block, which shows its source.
         let frame = point(summary.right() - px(4.0), summary.top() - px(2.0));
         press(cx, frame, 1, false);
         release(cx, frame);
@@ -2972,7 +2733,6 @@ mod math {
     use crate::editor::math::MathState;
     use gpui::{Context, Window};
 
-    /// Lays the lines out until `done`, letting the renderer's thread answer.
     fn wait_for(
         editor: &Entity<Editor>,
         cx: &mut VisualTestContext,
@@ -2992,9 +2752,6 @@ mod math {
 
     const DOC: &str = "Inline $a^2$ here.\n\n$$\n\\frac{1}{2}\n$$\n\nBad $\\frac{a$ one.\n\nend";
 
-    /// US-036: inline and block formulas drawn from MathJax's SVG once the
-    /// renderer answers, an invalid one in red with its error, and a click
-    /// on a formula revealing its source.
     #[gpui::test]
     fn formulas_render_off_thread_and_errors_show_their_source(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, DOC);
@@ -3049,7 +2806,6 @@ mod math {
             "tooltip box drawn"
         );
 
-        // A click on the block formula selects it: its source shows.
         let at = block.center();
         press(cx, at, 1, false);
         release(cx, at);
@@ -3061,7 +2817,6 @@ mod math {
         assert!(line.block.is_none(), "source revealed");
     }
 
-    /// Currency stays text: nothing is sent to the renderer.
     #[gpui::test]
     fn currency_is_not_a_formula(cx: &mut TestAppContext) {
         let text = "I paid $5 and $10 more, 5 $ and 10 $.";
@@ -3086,7 +2841,6 @@ mod mermaid {
         })
     }
 
-    /// Waits for the renderer's thread, then draws again.
     fn wait_drawn(cx: &mut VisualTestContext, selector: &'static str) -> Bounds<Pixels> {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
         loop {
@@ -3108,9 +2862,6 @@ mod mermaid {
         canvas.read_with(cx, |c, _| (c.view.zoom, c.view.pan.x, c.view.pan.y))
     }
 
-    /// US-037: a 480 px canvas fitted with 16 px around the diagram; drag
-    /// pans, Ctrl+wheel zooms around the pointer within 0.25 and 4, keys pan,
-    /// zoom and fit.
     #[gpui::test]
     fn the_canvas_pans_zooms_and_fits(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, DOC);
@@ -3123,8 +2874,6 @@ mod mermaid {
         let frame = wait_drawn(cx, "mermaid-canvas");
         assert!((frame.size.height.as_f32() - CANVAS_HEIGHT).abs() < 1.0);
         let diagram = wait_drawn(cx, "mermaid-diagram");
-        // Fitted: centered, at least 16 px around (this small diagram stops
-        // at the 4x cap before filling an axis).
         let margin_x = (diagram.left() - frame.left()).as_f32();
         let margin_y = (diagram.top() - frame.top()).as_f32();
         assert!(margin_x.min(margin_y) >= 15.0, "{margin_x} {margin_y}");
@@ -3133,7 +2882,6 @@ mod mermaid {
         let canvas = canvas(&editor, cx);
         let fitted = view(&canvas, cx);
 
-        // Drag pans.
         let start = diagram.center();
         press(cx, start, 1, false);
         drag_to(cx, point(start.x + px(40.0), start.y + px(10.0)), true);
@@ -3145,8 +2893,6 @@ mod mermaid {
         );
         assert_eq!(selection(&editor, cx), vec![(0, 0)], "the caret stays");
 
-        // Ctrl+wheel zooms, bounded.
-        // GPUI's wheel up is a positive delta: it zooms in.
         for _ in 0..40 {
             cx.simulate_event(ScrollEvent {
                 position: start,
@@ -3174,7 +2920,6 @@ mod mermaid {
         cx.run_until_parked();
         let zoomed_out = view(&canvas, cx).0;
         assert!(zoomed_out >= 0.25f32.min(fitted.0) - 1e-3 && zoomed_out < fitted.0);
-        // Without Ctrl the wheel is the note's, not the diagram's.
         cx.simulate_event(ScrollEvent {
             position: start,
             delta: ScrollDelta::Pixels(point(px(0.0), px(-60.0))),
@@ -3183,10 +2928,8 @@ mod mermaid {
         cx.run_until_parked();
         assert_eq!(view(&canvas, cx).0, zoomed_out);
 
-        // Keys: `0` fits, `+` zooms in, arrows pan.
         cx.simulate_keystrokes("0");
         assert_eq!(view(&canvas, cx), fitted);
-        // A small diagram fits at the cap: zoom out first.
         cx.simulate_keystrokes("-");
         let smaller = view(&canvas, cx).0;
         assert!(smaller < fitted.0);
@@ -3195,13 +2938,10 @@ mod mermaid {
         cx.simulate_keystrokes("0 right");
         let moved = view(&canvas, cx);
         assert!((moved.1 - (fitted.1 - 24.0)).abs() < 0.5);
-        // Editing keys the canvas does not bind stop there too.
         cx.simulate_keystrokes("backspace tab delete shift-tab");
         assert_eq!(doc(&editor, cx), DOC, "keys never reach the text");
     }
 
-    /// The edit panel takes a third of the width and writes the fence back
-    /// 150 ms after the last keystroke.
     #[gpui::test]
     fn the_edit_panel_rewrites_the_fence_after_150_ms(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, DOC);
@@ -3217,10 +2957,8 @@ mod mermaid {
         let share = panel.size.width.as_f32() / frame.size.width.as_f32();
         assert!((share - PANEL_SHARE).abs() < 0.02, "{share}");
 
-        // Typing in the panel: the fence follows 150 ms after the last key.
         let fence_end = DOC.find("B\n```").unwrap() + 1;
         let inner = canvas.read_with(cx, |c, _| c.panel_editor().expect("panel editor"));
-        // Plain source across the panel: no code block, no page inset.
         let (code, column) = inner.update_in(cx, |e, window, cx| {
             let line = e.layout_line(1, window, cx);
             (line.code.is_some(), e.viewport.map(|v| v.column_width))
@@ -3246,7 +2984,6 @@ mod mermaid {
             .advance_clock(std::time::Duration::from_millis(60));
         cx.run_until_parked();
         assert_eq!(doc(&editor, cx), DOC.replace("A --> B", "A --> B --> C"));
-        // Digits typed in the panel stay text.
         cx.simulate_input("0");
         cx.executor()
             .advance_clock(std::time::Duration::from_millis(200));
@@ -3256,8 +2993,6 @@ mod mermaid {
         assert!(text.contains("B --> C0"), "{text:?} panel {panel_text:?}");
     }
 
-    /// Full screen opens from its button and closes with Escape, the close
-    /// button or the backdrop, the focus back on the canvas.
     #[gpui::test]
     fn full_screen_closes_and_gives_the_focus_back(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, DOC);
@@ -3292,8 +3027,6 @@ mod mermaid {
         assert_eq!(doc(&editor, cx), DOC);
     }
 
-    /// Tab moves from the canvas to its toolbar; Enter clicks the focused
-    /// button once (not the canvas's own Enter as well).
     #[gpui::test]
     fn the_toolbar_works_from_the_keyboard(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, DOC);
@@ -3323,7 +3056,6 @@ mod mermaid {
         assert_eq!(doc(&editor, cx), DOC);
     }
 
-    /// A canvas taking the keyboard focus off screen scrolls into sight.
     #[gpui::test]
     fn a_focused_canvas_scrolls_into_sight(cx: &mut TestAppContext) {
         let text = format!("{DOC}\n\n{}", "filler line\n\n".repeat(200));
@@ -3349,10 +3081,6 @@ mod mermaid {
         );
     }
 
-    /// ADR 0006: the caret steps over a diagram, which stays drawn: Down
-    /// stops before it, then after it, then on the next line; Backspace
-    /// after it selects it, then deletes it; typing at a boundary takes a
-    /// line of its own.
     #[gpui::test]
     fn the_caret_steps_over_a_diagram(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, DOC);
@@ -3385,11 +3113,9 @@ mod mermaid {
             assert!(canvas_drawn(&editor, cx), "the diagram stays drawn");
         }
         assert_eq!(heads, vec![start, end, end + 1, end + 2]);
-        // Up from the line under it: straight to its end.
         cx.simulate_keystrokes("up");
         cx.run_until_parked();
         assert_eq!(selection(&editor, cx), vec![(end, end)]);
-        // After the diagram: a caret on its right edge, its full height.
         let caret = last_caret(&editor, cx);
         assert!(
             (caret.right() - frame.right()).abs() < px(3.0),
@@ -3404,7 +3130,6 @@ mod mermaid {
             (caret.left() - frame.left()).abs() < px(3.0),
             "{caret:?} {frame:?}"
         );
-        // Right and Left never stop inside.
         cx.simulate_keystrokes("right");
         cx.run_until_parked();
         assert_eq!(selection(&editor, cx), vec![(end, end)]);
@@ -3412,7 +3137,6 @@ mod mermaid {
         cx.run_until_parked();
         assert_eq!(selection(&editor, cx), vec![(start, start)]);
 
-        // Typed at the start: a line of its own above the diagram.
         cx.simulate_input("x");
         cx.run_until_parked();
         let typed = DOC.replace("```mermaid", "x\n```mermaid");
@@ -3422,7 +3146,6 @@ mod mermaid {
         cx.run_until_parked();
         assert_eq!(doc(&editor, cx), DOC);
 
-        // Backspace after it selects it, then deletes it.
         set_cursor(&editor, cx, end);
         cx.simulate_keystrokes("backspace");
         cx.run_until_parked();
@@ -3440,7 +3163,6 @@ mod mermaid {
         })
     }
 
-    /// A diagram Pele rejects shows the message and the source.
     #[gpui::test]
     fn a_syntax_error_shows_its_message_and_source(cx: &mut TestAppContext) {
         let text =
@@ -3450,15 +3172,11 @@ mod mermaid {
         wait_drawn(cx, "mermaid-error");
         let canvas = canvas(&editor, cx);
         let error = canvas.read_with(cx, |c, _| c.rendered().cloned());
-        // `mermaid.test.ts:300-312`: the message is text, its markup shown
-        // as typed.
         let Some(Err(message)) = error else {
             panic!("an error");
         };
         assert!(message.contains("<img src=x onerror=1>"), "{message}");
 
-        // `mermaid.test.ts:576-587`: full screen opens on the error, and
-        // Escape closes it.
         let expand = cx.debug_bounds("mermaid-expand").expect("expand button");
         press(cx, expand.center(), 1, false);
         release(cx, expand.center());
@@ -3478,8 +3196,6 @@ mod mermaid {
         cx.run_until_parked();
         assert!(cx.debug_bounds("mermaid-fullscreen").is_none());
 
-        // `mermaid.test.ts:332-344`: fixing the source swaps the error for
-        // the diagram.
         let broken = text.find("  A --> B -->").unwrap();
         let line_end = broken + text[broken..].find("```").unwrap();
         editor.update(cx, |e, cx| {
@@ -3503,7 +3219,6 @@ mod rail {
     use crate::editor::menu::{MenuAction, MenuItem};
     use crate::editor::rail::{MIN_HEADINGS, POPOVER_WIDTH};
 
-    /// `count` h2 sections, each followed by 30 paragraphs.
     fn sections(count: usize) -> String {
         let mut out = String::new();
         for i in 0..count {
@@ -3534,8 +3249,6 @@ mod rail {
         })
     }
 
-    /// US-038: hidden under 5 headings; one 8 x 1 mark per heading, 6 px
-    /// apart, on the right edge.
     #[gpui::test]
     fn the_rail_shows_from_five_headings(cx: &mut TestAppContext) {
         let (_editor, cx) = open(cx, &sections(MIN_HEADINGS - 1));
@@ -3560,9 +3273,6 @@ mod rail {
         assert!(cx.debug_bounds("rail-popover").is_none());
     }
 
-    /// A note with thousands of headings builds only the marks that fit in
-    /// 70 % of the view, around the active one, and reparses its headings
-    /// only once typing pauses (`use-document-headings.ts:85-87`).
     #[gpui::test]
     fn a_long_note_builds_only_the_marks_that_fit(cx: &mut TestAppContext) {
         use crate::editor::rail::HEADINGS_DEBOUNCE;
@@ -3580,7 +3290,6 @@ mod rail {
         assert!(drawn > 10 && drawn <= 200, "{drawn} marks built");
         assert!(cx.debug_bounds("rail-tick-0").is_some());
 
-        // Far down the note, the marks around the active heading are drawn.
         let target = editor.update(cx, |e, _| e.rail.headings[1500].pos);
         editor.update(cx, |e, cx| e.rail_go_to(target, cx));
         cx.update(|window, _| window.refresh());
@@ -3592,7 +3301,6 @@ mod rail {
                 .is_some()
         );
 
-        // Typing keeps the parsed headings until the pause.
         set_cursor(&editor, cx, 0);
         cx.simulate_input("# New\n\n");
         cx.run_until_parked();
@@ -3603,8 +3311,6 @@ mod rail {
         assert_eq!(editor.read_with(cx, |e, _| e.rail.headings.len()), 2001);
     }
 
-    /// The active heading is the last one at or above the safe line, else
-    /// the first; it follows the scroll.
     #[gpui::test]
     fn the_active_heading_follows_the_scroll(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, &sections(6));
@@ -3620,8 +3326,6 @@ mod rail {
         assert_eq!(active(&editor, cx), Some(1), "not past the line yet");
     }
 
-    /// Hovering opens the 260 px outline; a row scrolls its heading to the
-    /// safe line and makes it active; leaving or Escape closes it.
     #[gpui::test]
     fn the_outline_opens_on_hover_and_jumps(cx: &mut TestAppContext) {
         let (editor, cx) = open(cx, &sections(6));
@@ -3657,15 +3361,12 @@ mod rail {
         );
     }
 
-    /// A right click on a mark offers "Copy heading link", which copies
-    /// `[text](#slug)`.
     #[gpui::test]
     fn a_right_click_copies_the_heading_link(cx: &mut TestAppContext) {
         let (editor, cx) = open(
             cx,
             &sections(6).replace("## Section 3", "## Sources & Notes"),
         );
-        // With the outline closed the marks take the click.
         let tick = cx.debug_bounds("rail-tick-3").expect("tick");
         cx.simulate_event(MouseDownEvent {
             button: MouseButton::Right,
@@ -3698,9 +3399,6 @@ mod rail {
     }
 }
 
-// EP-012: images added by paste, drop and picker ----------------------
-
-/// A note in a fresh folder, and a folder outside it holding `files`.
 fn note_with_files<'a>(
     cx: &'a mut TestAppContext,
     text: &str,
@@ -3735,8 +3433,6 @@ fn add_file(editor: &Entity<Editor>, cx: &mut VisualTestContext, path: PathBuf) 
 
 const SVG: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"></svg>"#;
 
-/// Files copied in the file manager paste as images; one undo removes them
-/// all, the copies stay, and one notice names the file that is no image.
 #[gpui::test]
 fn pasted_files_insert_image_blocks_in_one_undo_step(cx: &mut TestAppContext) {
     let png = png(4, 3);
@@ -3776,7 +3472,6 @@ fn pasted_files_insert_image_blocks_in_one_undo_step(cx: &mut TestAppContext) {
     assert!(dir.path().join("note-assets/b.png").is_file());
 }
 
-/// A 6 MB file copied in the file manager has no paste limit.
 #[gpui::test]
 fn a_pasted_file_has_no_byte_limit(cx: &mut TestAppContext) {
     let mut big = png(4, 3);
@@ -3798,7 +3493,6 @@ fn a_pasted_file_has_no_byte_limit(cx: &mut TestAppContext) {
     );
 }
 
-/// Inside a list item the images go inline at the caret.
 #[gpui::test]
 fn images_added_in_a_list_item_stay_inline(cx: &mut TestAppContext) {
     let png = png(4, 3);
@@ -3809,9 +3503,6 @@ fn images_added_in_a_list_item_stay_inline(cx: &mut TestAppContext) {
     assert_eq!(doc(&editor, cx), "- item![a](note-assets/a.png)");
 }
 
-/// The insertion point follows what is typed while the files are copied,
-/// a batch still copying after 300 ms shows a notice, and the notice goes
-/// with the insertion.
 #[gpui::test]
 fn a_slow_batch_shows_a_notice_and_lands_where_it_was_asked(cx: &mut TestAppContext) {
     let (editor, cx, _dir, _outside) = note_with_files(cx, "Intro", &[]);
@@ -3833,7 +3524,6 @@ fn a_slow_batch_shows_a_notice_and_lands_where_it_was_asked(cx: &mut TestAppCont
         notice(&editor, cx).as_deref(),
         Some("Adding 2 images\u{2026}")
     );
-    // Typed while copying, before the insertion point.
     editor.update(cx, |editor, cx| {
         editor.update_state(cx, |state| {
             let _ =
@@ -3846,7 +3536,6 @@ fn a_slow_batch_shows_a_notice_and_lands_where_it_was_asked(cx: &mut TestAppCont
     assert_eq!(notice(&editor, cx), None);
 }
 
-/// A tab closed during the copy inserts nothing and keeps the copies.
 #[gpui::test]
 fn a_closed_note_keeps_the_copies_and_inserts_nothing(cx: &mut TestAppContext) {
     let png = png(4, 3);
@@ -3858,12 +3547,10 @@ fn a_closed_note_keeps_the_copies_and_inserts_nothing(cx: &mut TestAppContext) {
     assert!(dir.path().join("note-assets/a.png").is_file());
 }
 
-/// A write error inserts nothing for the file and names the OS error.
 #[gpui::test]
 fn a_write_error_inserts_nothing(cx: &mut TestAppContext) {
     let png = png(4, 3);
     let (editor, cx, dir, outside) = note_with_files(cx, "Intro", &[("a.png", &png[..])]);
-    // A file where the assets folder should be.
     std::fs::write(dir.path().join("note-assets"), b"").unwrap();
     add_file(&editor, cx, outside.path().join("a.png"));
     cx.run_until_parked();
@@ -3884,8 +3571,6 @@ fn a_note_without_a_path_adds_no_image(cx: &mut TestAppContext) {
     );
 }
 
-/// The context menu's Insert > Image… opens the picker; canceling it
-/// changes nothing.
 #[gpui::test]
 fn the_menu_entry_opens_the_picker(cx: &mut TestAppContext) {
     use super::menu::{MenuAction, MenuItem, body_items};
@@ -3912,8 +3597,6 @@ fn the_menu_entry_opens_the_picker(cx: &mut TestAppContext) {
     assert_eq!(doc(&editor, cx), "Intro", "canceled: nothing changes");
 }
 
-/// A file drag carrying an image shows the bar at the nearest block
-/// boundary, starts no selection, and inserts there on drop.
 #[gpui::test]
 fn a_file_drag_shows_a_bar_and_drops_at_the_boundary(cx: &mut TestAppContext) {
     let png = png(4, 3);
@@ -3936,11 +3619,9 @@ fn a_file_drag_shows_a_bar_and_drops_at_the_boundary(cx: &mut TestAppContext) {
     let bar = editor.read_with(cx, |e, _| e.drop_bar);
     assert_eq!(bar.map(|b| b.pos), text.find("Para two"));
     assert_eq!(selection(&editor, cx), before, "no drag selection");
-    // Leaving the window hides the bar and keeps the selection.
     cx.simulate_event(gpui::FileDropEvent::Exited);
     assert_eq!(editor.read_with(cx, |e, _| e.drop_bar), None);
     assert_eq!(selection(&editor, cx), before);
-    // Back in, then dropped.
     cx.simulate_event(gpui::FileDropEvent::Entered {
         position: over,
         paths,
@@ -3955,8 +3636,6 @@ fn a_file_drag_shows_a_bar_and_drops_at_the_boundary(cx: &mut TestAppContext) {
     assert!(dir.path().join("note-assets/b.svg").is_file());
 }
 
-/// No bar for a drag without an image; inside a code block the bar snaps
-/// to one of its boundaries.
 #[gpui::test]
 fn the_drop_bar_snaps_to_block_boundaries(cx: &mut TestAppContext) {
     let text = "Intro\n\n```\ncode\nmore\n```\n\nEnd\n";
@@ -3982,8 +3661,6 @@ fn the_drop_bar_snaps_to_block_boundaries(cx: &mut TestAppContext) {
     cx.simulate_event(gpui::FileDropEvent::Exited);
 }
 
-/// A screenshot copied as a bitmap (`CF_DIB`, a BMP once read) over 5 MB
-/// is pasted as a PNG under the limit.
 #[gpui::test]
 fn a_pasted_bitmap_over_the_limit_is_saved_as_png(cx: &mut TestAppContext) {
     let (editor, cx, dir, _outside) = note_with_files(cx, "", &[]);
@@ -4010,8 +3687,6 @@ fn a_pasted_bitmap_over_the_limit_is_saved_as_png(cx: &mut TestAppContext) {
     assert!(std::fs::metadata(&saved[0]).unwrap().len() < 5 * 1024 * 1024);
 }
 
-/// A drop at the boundary that starts a list or a table inserts blocks
-/// before it, never inline in its first item or row.
 #[gpui::test]
 fn a_drop_before_a_list_or_a_table_inserts_blocks(cx: &mut TestAppContext) {
     let png = png(4, 3);
@@ -4042,10 +3717,6 @@ fn a_drop_before_a_list_or_a_table_inserts_blocks(cx: &mut TestAppContext) {
     );
 }
 
-// EP-013: image widths, object selection and resizing ------------------
-
-/// A note next to `wide.png` (1600 x 900), `small.png` (200 x 120) and an
-/// unreadable `bad.png`, the caret at its end and its images measured.
 fn image_editor<'a>(
     cx: &'a mut TestAppContext,
     note: &str,
@@ -4067,7 +3738,6 @@ fn selector(name: String) -> &'static str {
     Box::leak(name.into_boxed_str())
 }
 
-/// The painted bounds of the block image on line `ix`.
 fn image_bounds(cx: &mut VisualTestContext, ix: usize) -> gpui::Bounds<Pixels> {
     cx.debug_bounds(selector(format!("editor-image-{ix}")))
         .expect("image painted")
@@ -4100,9 +3770,6 @@ fn last_frame(editor: &Entity<Editor>, cx: &mut VisualTestContext) -> super::ele
     editor.read_with(cx, |e, _| e.frames.last().cloned().expect("a frame"))
 }
 
-/// US-064: the width a block image's source asks for, bounded by the
-/// column (and enlarging a small image), centered when narrower than the
-/// column; no size shows the natural width.
 #[gpui::test]
 fn block_images_show_at_their_width_and_narrow_ones_are_centered(cx: &mut TestAppContext) {
     let note = "![a|300](wide.png)\n\n![b|2000](wide.png)\n\n![c](small.png)\n\n![d|400](small.png)\n\nend";
@@ -4128,8 +3795,6 @@ fn block_images_show_at_their_width_and_narrow_ones_are_centered(cx: &mut TestAp
     assert_eq!(d.origin.x, centered(400.0));
 }
 
-/// US-064: the frame after a width change already has the lines below the
-/// image at their new place.
 #[gpui::test]
 fn a_new_width_moves_the_lines_below_in_the_next_frame(cx: &mut TestAppContext) {
     let note = "![a|300](wide.png)\nafter\n\nend";
@@ -4152,8 +3817,6 @@ fn a_new_width_moves_the_lines_below_in_the_next_frame(cx: &mut TestAppContext) 
     );
 }
 
-/// US-064: an unreadable image with a width reserves a box that wide at
-/// its estimated height; a missing one shows its source, muted.
 #[gpui::test]
 fn an_image_that_cannot_be_drawn_keeps_its_width_or_its_source(cx: &mut TestAppContext) {
     let note = "![x|300](bad.png)\n\n![m|300](missing.png)\n\nend";
@@ -4171,7 +3834,6 @@ fn an_image_that_cannot_be_drawn_keeps_its_width_or_its_source(cx: &mut TestAppC
     });
 }
 
-/// US-064: an embed and a `data:` image honor their width.
 #[gpui::test]
 fn embeds_and_data_images_honor_their_width(cx: &mut TestAppContext) {
     let data = format!("data:image/png;base64,{}", base64_encode(&png(20, 10)));
@@ -4205,9 +3867,6 @@ fn embeds_and_data_images_honor_their_width(cx: &mut TestAppContext) {
     });
 }
 
-/// US-065 (rewrites the click test of US-018 for ADR 0008): a click on a
-/// block image selects it as an object, anchored at its end, whatever was
-/// selected; it stays drawn where it was, with a ring and no caret.
 #[gpui::test]
 fn a_click_on_an_image_selects_it_as_an_object_without_moving_it(cx: &mut TestAppContext) {
     let note = "intro\n\n![a|300](wide.png)\n\nend";
@@ -4228,8 +3887,6 @@ fn a_click_on_an_image_selects_it_as_an_object_without_moving_it(cx: &mut TestAp
     assert!(frame.selections.is_empty(), "no highlight");
 }
 
-/// US-065: an image taller than the room left above the bottom margin
-/// does not scroll the note when clicked (found in the app on Windows).
 #[gpui::test]
 fn a_click_on_an_image_near_the_bottom_does_not_scroll(cx: &mut TestAppContext) {
     let mut note = String::new();
@@ -4251,8 +3908,6 @@ fn a_click_on_an_image_near_the_bottom_does_not_scroll(cx: &mut TestAppContext) 
     assert_eq!(image_bounds(cx, 11), before, "the note did not scroll");
 }
 
-/// US-065: a right click selects the image before the menu opens, whose
-/// Image width submenu comes first.
 #[gpui::test]
 fn a_right_click_on_an_image_selects_it_before_the_menu(cx: &mut TestAppContext) {
     let note = "intro\n\n![a|300](wide.png)\n\nend";
@@ -4291,8 +3946,6 @@ fn a_right_click_on_an_image_selects_it_before_the_menu(cx: &mut TestAppContext)
     );
 }
 
-/// US-065: a double click shows the source, the caret at the end of the
-/// alt text, before its size.
 #[gpui::test]
 fn a_double_click_on_an_image_edits_its_alt_text(cx: &mut TestAppContext) {
     let note = "intro\n\n![a|300](wide.png)\n\nend";
@@ -4312,9 +3965,6 @@ fn a_double_click_on_an_image_edits_its_alt_text(cx: &mut TestAppContext) {
     });
 }
 
-/// US-065: on an image selected as an object, Backspace, Delete and Ctrl+X
-/// remove its Markdown, Ctrl+C copies it and a typed character replaces
-/// it, each in one undo step that restores the text byte for byte.
 #[gpui::test]
 fn keys_act_on_an_image_selected_as_an_object(cx: &mut TestAppContext) {
     let note = "intro\n\n![a|300](wide.png)\n\nend";
@@ -4351,14 +4001,11 @@ fn keys_act_on_an_image_selected_as_an_object(cx: &mut TestAppContext) {
     assert_eq!(doc(&editor, cx), note);
 }
 
-/// US-065: arrows onto an image's line show its source as before; Shift+End
-/// from its start, or Shift+Home from its end, select it as an object.
 #[gpui::test]
 fn arrows_reveal_an_image_and_shift_home_end_select_it(cx: &mut TestAppContext) {
     let note = "intro\n\n![a|300](wide.png)\n\nend";
     let (editor, cx, _dir) = image_editor(cx, note);
     set_cursor(&editor, cx, 0);
-    // Past the blank line, onto the image (`revealBlockOnArrow`).
     cx.simulate_keystrokes("down");
     let head = selection(&editor, cx)[0].1;
     assert!((7..=25).contains(&head), "on the image's line: {head}");
@@ -4380,9 +4027,6 @@ fn arrows_reveal_an_image_and_shift_home_end_select_it(cx: &mut TestAppContext) 
     assert!(replaced(&editor, cx));
 }
 
-/// US-067 (and the US-066 assumption): a handle shows on hover, a press on
-/// it neither selects the image nor moves the caret, the gesture changes
-/// the view only, and the release writes the width in one undo step.
 #[gpui::test]
 fn dragging_a_handle_resizes_the_image_in_one_undo_step(cx: &mut TestAppContext) {
     let note = "intro\n\n![a](wide.png)\n\nend";
@@ -4426,8 +4070,6 @@ fn dragging_a_handle_resizes_the_image_in_one_undo_step(cx: &mut TestAppContext)
     assert_eq!(doc(&editor, cx), note, "one undo step");
 }
 
-/// US-067: Escape during the gesture puts the width back, and the release
-/// writes nothing.
 #[gpui::test]
 fn escape_cancels_a_resize(cx: &mut TestAppContext) {
     let note = "intro\n\n![a|300](wide.png)\n\nend";
@@ -4449,8 +4091,6 @@ fn escape_cancels_a_resize(cx: &mut TestAppContext) {
     assert_eq!(image_bounds(cx, 2).size.width, px(300.0));
 }
 
-/// US-067: a release within 8 px of the default width removes the size;
-/// the width stops at 64 px.
 #[gpui::test]
 fn a_resize_snaps_to_the_default_width_and_stops_at_64_px(cx: &mut TestAppContext) {
     let note = "intro\n\n![a|300](wide.png)\n\nend";
@@ -4459,7 +4099,6 @@ fn a_resize_snaps_to_the_default_width_and_stops_at_64_px(cx: &mut TestAppContex
     let image = image_bounds(cx, 2);
     hover(cx, image.center());
     let start = handle_bounds(cx, "right", 2).expect("handle").center();
-    // To 4 px short of the column, the default width of a wide image.
     let to = point(start.x + px((column - 4.0 - 300.0) / 2.0), start.y);
     press(cx, start, 1, false);
     drag_to(cx, to, true);
@@ -4468,7 +4107,6 @@ fn a_resize_snaps_to_the_default_width_and_stops_at_64_px(cx: &mut TestAppContex
     assert_eq!(doc(&editor, cx), "intro\n\n![a](wide.png)\n\nend");
     cx.simulate_keystrokes(&secondary("z"));
     assert_eq!(doc(&editor, cx), note);
-    // The left handle, dragged right past the center: 64 px.
     let image = image_bounds(cx, 2);
     hover(cx, image.center());
     let start = handle_bounds(cx, "left", 2).expect("handle").center();
@@ -4482,8 +4120,6 @@ fn a_resize_snaps_to_the_default_width_and_stops_at_64_px(cx: &mut TestAppContex
     assert_eq!(doc(&editor, cx), "intro\n\n![a|64](wide.png)\n\nend");
 }
 
-/// US-067: a source changed during the gesture (a reload from disk) is
-/// left alone by the release.
 #[gpui::test]
 fn a_resize_over_a_changed_source_writes_nothing(cx: &mut TestAppContext) {
     let note = "intro\n\n![a|300](wide.png)\n\nend";
@@ -4500,23 +4136,18 @@ fn a_resize_over_a_changed_source_writes_nothing(cx: &mut TestAppContext) {
     assert_eq!(doc(&editor, cx), reloaded);
 }
 
-/// US-067: an image selected as an object shows its handles without the
-/// pointer on it; a hidden handle takes no press (US-066: the handle is
-/// a child of the image that the pointer's arrival shows).
 #[gpui::test]
 fn handles_show_on_hover_or_while_the_image_is_selected(cx: &mut TestAppContext) {
     let note = "intro\n\n![a|300](wide.png)\n\nend";
     let (editor, cx, _dir) = image_editor(cx, note);
     let image = image_bounds(cx, 2);
     let start = handle_bounds(cx, "right", 2).expect("laid out").center();
-    // Not hovered yet: the press reaches the image, which it selects.
     hover(cx, point(px(5.0), px(5.0)));
     press(cx, start, 1, false);
     release(cx, start);
     cx.run_until_parked();
     assert_eq!(selection(&editor, cx), [(25, 7)]);
     assert!(editor.read_with(cx, |e, _| e.drag.is_none()));
-    // Selected, the pointer away: the handle takes the press.
     hover(cx, point(px(5.0), px(5.0)));
     press(cx, start, 1, false);
     assert!(editor.read_with(cx, |e, _| matches!(
@@ -4533,8 +4164,6 @@ fn handles_show_on_hover_or_while_the_image_is_selected(cx: &mut TestAppContext)
     let _ = image;
 }
 
-/// US-067: no handles on an inline image, a missing image, an image whose
-/// source shows, during a text drag or a file drag.
 #[gpui::test]
 fn handles_are_absent_where_they_do_not_apply(cx: &mut TestAppContext) {
     let note = "see ![c](small.png) here\n\n![m](missing.png)\n\n![a|300](wide.png)\n\nend";
@@ -4566,9 +4195,6 @@ fn handles_are_absent_where_they_do_not_apply(cx: &mut TestAppContext) {
     assert!(handle_bounds(cx, "right", 4).is_none(), "a file drag");
 }
 
-/// US-068: each preset width writes `|W` on the column (Full width the
-/// column, Original size removes the size and is disabled without one), in
-/// one undo step; a width near the default one removes the size.
 #[gpui::test]
 fn preset_widths_write_a_share_of_the_column(cx: &mut TestAppContext) {
     use super::resize::Preset;
@@ -4594,7 +4220,6 @@ fn preset_widths_write_a_share_of_the_column(cx: &mut TestAppContext) {
         cx.simulate_keystrokes(&secondary("z"));
         assert_eq!(doc(&editor, cx), note, "{preset:?} undone");
     }
-    // Original size, from the menu, on an image that has one.
     let sized = "intro\n\n![s|120](small.png)\n\nend";
     editor.update(cx, |e, cx| e.set_text(sized, cx));
     set_cursor(&editor, cx, 9);
@@ -4610,7 +4235,6 @@ fn preset_widths_write_a_share_of_the_column(cx: &mut TestAppContext) {
     assert_eq!(doc(&editor, cx), note);
     cx.simulate_keystrokes(&secondary("z"));
     assert_eq!(doc(&editor, cx), sized);
-    // 200 px is the default width of `small.png`: within 8 px, no size.
     editor.update(cx, |e, cx| e.set_text("![s|120](small.png)\n\nend", cx));
     set_cursor(&editor, cx, 2);
     let narrow = column.floor() * 0.25;
@@ -4620,8 +4244,6 @@ fn preset_widths_write_a_share_of_the_column(cx: &mut TestAppContext) {
     }
 }
 
-/// US-068: an image whose natural size is unknown (unreadable) takes its
-/// share of the column all the same.
 #[gpui::test]
 fn a_preset_width_applies_to_an_image_of_unknown_size(cx: &mut TestAppContext) {
     use super::resize::Preset;
@@ -4636,10 +4258,6 @@ fn a_preset_width_applies_to_an_image_of_unknown_size(cx: &mut TestAppContext) {
     assert_eq!(doc(&editor, cx), format!("![x|{half}](bad.png)\n\nend"));
 }
 
-// EP-014: image actions and the hover toolbar --------------------------
-
-/// The labels of the open menu's top level, `---` for a separator, with
-/// `false` after a disabled entry.
 fn menu_labels(editor: &Entity<Editor>, cx: &mut VisualTestContext) -> Vec<String> {
     editor.read_with(cx, |e, _| {
         e.menu
@@ -4682,7 +4300,6 @@ fn image_action(
     cx.run_until_parked();
 }
 
-/// The format and bytes of the image on the clipboard.
 fn copied(cx: &mut VisualTestContext) -> Option<(ImageFormat, Vec<u8>)> {
     match cx
         .read_from_clipboard()
@@ -4693,8 +4310,6 @@ fn copied(cx: &mut VisualTestContext) -> Option<(ImageFormat, Vec<u8>)> {
     }
 }
 
-/// US-069: on an image the menu starts with the Image section, then the
-/// text entries; Copy and Open are off for a missing file.
 #[gpui::test]
 fn the_image_menu_starts_with_its_section(cx: &mut TestAppContext) {
     let note = "intro\n\n![a|300](wide.png)\n\n![m](missing.png)\n\nend";
@@ -4717,7 +4332,6 @@ fn the_image_menu_starts_with_its_section(cx: &mut TestAppContext) {
             "---"
         ]
     );
-    // The missing image shows its source: the caret in it.
     let missing = note.find("![m").unwrap_or(0);
     set_cursor(&editor, cx, missing + 2);
     let at = point_at(&editor, cx, missing + 2);
@@ -4735,9 +4349,6 @@ fn the_image_menu_starts_with_its_section(cx: &mut TestAppContext) {
     );
 }
 
-/// US-069: Copy image reads the file off the main thread and puts it on
-/// the clipboard in its format, SVG included; a file deleted since the
-/// menu opened gives a notice.
 #[gpui::test]
 fn copy_image_puts_the_file_on_the_clipboard(cx: &mut TestAppContext) {
     use super::image_actions::ImageAction;
@@ -4771,7 +4382,6 @@ fn copy_image_puts_the_file_on_the_clipboard(cx: &mut TestAppContext) {
         Some("Image not found: small.png. Restore the file or edit the image's source.")
     );
     assert_eq!(copied(cx).map(|c| c.0), Some(ImageFormat::Svg), "unchanged");
-    // A file that no longer reads as an image.
     std::fs::write(dir.path().join("pic.svg"), b"garbage").unwrap();
     image_action(&editor, cx, ImageAction::Copy, 17..30);
     assert_eq!(
@@ -4782,16 +4392,12 @@ fn copy_image_puts_the_file_on_the_clipboard(cx: &mut TestAppContext) {
     );
 }
 
-/// US-069: Open image confirms before opening a local file (FR-14), says
-/// so when the file is gone, opens a remote image in the browser and is
-/// off for a `data:` URI, whose bytes Copy image still takes.
 #[gpui::test]
 fn open_image_follows_fr_14(cx: &mut TestAppContext) {
     use super::image_actions::ImageAction;
     let (editor, cx, dir) = image_editor(cx, "");
     let url = "https://example.com/a.png";
     let data = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
-    // Measured before the note draws it: no request leaves the test.
     let remote = std::sync::Arc::new(Image::from_bytes(ImageFormat::Png, png(3, 2)));
     editor.update(cx, |e, _| {
         e.images.finish(
@@ -4842,9 +4448,6 @@ fn open_image_follows_fr_14(cx: &mut TestAppContext) {
     );
 }
 
-/// US-069: Edit source shows the source, the caret at the end of the alt
-/// text; Delete image removes its Markdown in one undo step and leaves its
-/// file.
 #[gpui::test]
 fn edit_source_and_delete_image_act_on_the_text(cx: &mut TestAppContext) {
     use super::image_actions::ImageAction;
@@ -4878,7 +4481,6 @@ fn toolbar_button(
     cx.debug_bounds(selector(format!("image-toolbar-{name}-{ix}")))
 }
 
-/// The toolbar buttons drawn on line `ix`, in order.
 fn toolbar_buttons(cx: &mut VisualTestContext, ix: usize) -> Vec<&'static str> {
     let mut buttons: Vec<(Pixels, &'static str)> = ["width", "copy", "open", "edit", "delete"]
         .into_iter()
@@ -4892,10 +4494,6 @@ fn away(cx: &mut VisualTestContext) {
     hover(cx, point(px(5.0), px(5.0)));
 }
 
-/// US-070: hovering a block image shows its toolbar in its top right
-/// corner, 8 px from its edges, five 28 px buttons; it stays with the
-/// pointer on it, goes when the pointer leaves, shows while the image is
-/// selected as an object, and Escape closes it.
 #[gpui::test]
 fn the_toolbar_shows_on_hover_and_on_an_object_selection(cx: &mut TestAppContext) {
     let note = "intro\n\n![a|300](wide.png)\n\nend";
@@ -4914,13 +4512,11 @@ fn the_toolbar_shows_on_hover_and_on_an_object_selection(cx: &mut TestAppContext
         let button = toolbar_button(cx, name, 2).expect(name);
         assert_eq!(button.size, size(px(28.0), px(28.0)), "{name}");
     }
-    // On the toolbar, then away.
     let edit = toolbar_button(cx, "edit", 2).expect("edit").center();
     hover(cx, edit);
     assert!(toolbar_bounds(cx, 2).is_some(), "the pointer is on it");
     away(cx);
     assert!(toolbar_bounds(cx, 2).is_none(), "the pointer left");
-    // Selected as an object, the pointer away.
     click(cx, image.center(), 1);
     away(cx);
     assert_eq!(selection(&editor, cx), [(25, 7)]);
@@ -4932,10 +4528,8 @@ fn the_toolbar_shows_on_hover_and_on_an_object_selection(cx: &mut TestAppContext
         [(25, 7)],
         "the image stays selected"
     );
-    // The pointer coming onto the image shows it again.
     hover(cx, image.center());
     assert!(toolbar_bounds(cx, 2).is_some(), "the pointer came back");
-    // Escape with the pointer on the image: closed while it stays there.
     cx.simulate_keystrokes("escape");
     hover(cx, image.center() + point(px(3.0), px(3.0)));
     assert!(toolbar_bounds(cx, 2).is_none(), "the pointer did not leave");
@@ -4944,9 +4538,6 @@ fn the_toolbar_shows_on_hover_and_on_an_object_selection(cx: &mut TestAppContext
     assert!(toolbar_bounds(cx, 2).is_some(), "left, then back");
 }
 
-/// US-070: a toolbar button runs its action on its image and leaves the
-/// caret where it was: Copy image, the width submenu under its button,
-/// Delete image.
 #[gpui::test]
 fn toolbar_buttons_act_without_moving_the_caret(cx: &mut TestAppContext) {
     let note = "intro\n\n![a|300](wide.png)\n\nend";
@@ -4960,7 +4551,6 @@ fn toolbar_buttons_act_without_moving_the_caret(cx: &mut TestAppContext) {
     assert_eq!(selection(&editor, cx), [(2, 2)], "the caret stays");
     assert_eq!(copied(cx), Some((ImageFormat::Png, png(1600, 900))));
     assert!(editor.update_in(cx, |e, window, _| e.focus_handle.is_focused(window)));
-    // Image width: its submenu opens under the button.
     let width = toolbar_button(cx, "width", 2).expect("width");
     click(cx, width.center(), 1);
     let at = editor
@@ -4978,7 +4568,6 @@ fn toolbar_buttons_act_without_moving_the_caret(cx: &mut TestAppContext) {
     let sized = format!("intro\n\n![a|{w}](wide.png)\n\nend");
     assert_eq!(doc(&editor, cx), sized);
     assert_eq!(selection(&editor, cx), [(2, 2)]);
-    // Delete image: the Markdown goes, in one undo step.
     let image = image_bounds(cx, 2);
     hover(cx, image.center());
     let delete = toolbar_button(cx, "delete", 2).expect("delete").center();
@@ -4990,8 +4579,6 @@ fn toolbar_buttons_act_without_moving_the_caret(cx: &mut TestAppContext) {
     assert_eq!(doc(&editor, cx), sized);
 }
 
-/// US-070: on an image narrower than the toolbar, the toolbar keeps to
-/// the image's right edge and grows to the left, inside the editor.
 #[gpui::test]
 fn the_toolbar_of_a_narrow_image_grows_to_the_left(cx: &mut TestAppContext) {
     let note = "intro\n\n![a|64](wide.png)\n\nend";
@@ -5002,10 +4589,8 @@ fn the_toolbar_of_a_narrow_image_grows_to_the_left(cx: &mut TestAppContext) {
     let bar = toolbar_bounds(cx, 2).expect("shown");
     assert_eq!(bar.right(), image.right() - px(8.0));
     assert!(bar.left() < image.left(), "wider than the image");
-    // The pointer on the part past the image keeps it.
     hover(cx, point(bar.left() + px(4.0), bar.center().y));
     assert!(toolbar_bounds(cx, 2).is_some());
-    // An editor narrower than the toolbar: it stops at the editor's edge.
     away(cx);
     cx.simulate_resize(size(px(150.0), px(800.0)));
     cx.run_until_parked();
@@ -5016,9 +4601,6 @@ fn the_toolbar_of_a_narrow_image_grows_to_the_left(cx: &mut TestAppContext) {
     assert!(bar.left() >= left, "{:?} inside {left:?}", bar.left());
 }
 
-/// US-070: an image not measured keeps Edit source and Delete image; no
-/// toolbar on an inline image, a revealed source, during a resize, a text
-/// drag or a file drag.
 #[gpui::test]
 fn the_toolbar_is_absent_where_it_does_not_apply(cx: &mut TestAppContext) {
     let note = "see ![c](small.png) here\n\n![x](bad.png)\n\n![a|300](wide.png)\n\nend";
@@ -5032,7 +4614,6 @@ fn the_toolbar_is_absent_where_it_does_not_apply(cx: &mut TestAppContext) {
     let image = image_bounds(cx, 4);
     hover(cx, image.center());
     assert!(toolbar_bounds(cx, 4).is_some(), "a drawn image");
-    // During a resize.
     let start = handle_bounds(cx, "right", 4).expect("handle").center();
     press(cx, start, 1, false);
     drag_to(cx, point(start.x - px(20.0), start.y), true);
@@ -5040,7 +4621,6 @@ fn the_toolbar_is_absent_where_it_does_not_apply(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("escape");
     release(cx, start);
     cx.run_until_parked();
-    // Its source revealed.
     let at = note.find("![a").unwrap_or(0) + 2;
     set_cursor(&editor, cx, at);
     cx.update(|window, _| window.refresh());
@@ -5051,7 +4631,6 @@ fn the_toolbar_is_absent_where_it_does_not_apply(cx: &mut TestAppContext) {
     cx.run_until_parked();
     hover(cx, image.center());
     assert!(toolbar_bounds(cx, 4).is_some());
-    // A file drag.
     editor.update(cx, |e, cx| {
         e.drop_bar = Some(super::import::DropBar { pos: 0, y: 0.0 });
         cx.notify();
@@ -5063,7 +4642,6 @@ fn the_toolbar_is_absent_where_it_does_not_apply(cx: &mut TestAppContext) {
         cx.notify();
     });
     cx.run_until_parked();
-    // A text drag.
     let from = point_at(&editor, cx, note.len() - 3);
     press(cx, from, 1, false);
     drag_to(cx, image.center(), true);
@@ -5073,9 +4651,6 @@ fn the_toolbar_is_absent_where_it_does_not_apply(cx: &mut TestAppContext) {
     cx.run_until_parked();
 }
 
-/// US-070: a toolbar whose image goes without the pointer leaving it (a
-/// scroll, an edit) does not hold the hover: the next image hovered shows
-/// its own toolbar.
 #[gpui::test]
 fn a_toolbar_gone_under_the_pointer_lets_the_next_image_show_its_own(cx: &mut TestAppContext) {
     let note = "intro
@@ -5090,7 +4665,6 @@ end";
     hover(cx, first);
     let copy = toolbar_button(cx, "copy", 2).expect("copy").center();
     hover(cx, copy);
-    // The first image goes, its toolbar with it, the pointer still.
     editor.update(cx, |e, cx| {
         e.set_text(
             "intro
@@ -5113,8 +4687,6 @@ end",
     );
 }
 
-/// US-070: Escape with the pointer on the toolbar closes it; the image
-/// under the pointer does not bring it back until the pointer leaves.
 #[gpui::test]
 fn escape_on_the_toolbar_closes_it_until_the_pointer_leaves(cx: &mut TestAppContext) {
     let note = "intro

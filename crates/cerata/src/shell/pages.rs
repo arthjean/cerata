@@ -1,5 +1,3 @@
-//! What a tab shows besides an editor, and the window's notice.
-
 use gpui::{
     AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, div, prelude::FluentBuilder as _, px,
@@ -19,7 +17,6 @@ pub fn render(page: Page, view: &WindowView, cx: &mut Context<WindowView>) -> An
     }
 }
 
-/// The OS's name for a shortcut: ⌘N on macOS, Ctrl+N elsewhere.
 pub fn shortcut(key: &str) -> String {
     if cfg!(target_os = "macos") {
         format!("⌘{key}")
@@ -28,9 +25,6 @@ pub fn shortcut(key: &str) -> String {
     }
 }
 
-/// A welcome screen button: primary (filled), or secondary (outlined).
-/// An inactive one keeps its Tab stop, says why in its description, and
-/// does nothing.
 fn welcome_button(
     id: impl Into<gpui::ElementId>,
     test_id: &'static str,
@@ -48,9 +42,6 @@ fn welcome_button(
         .cursor_pointer()
         .map(|d| {
             if primary {
-                // The shared ring is a text-colored border, invisible on a
-                // text-colored fill: keyboard focus turns the fill into
-                // that ring instead.
                 d.bg(theme::text())
                     .text_color(theme::background())
                     .hover(|s| s.opacity(0.9))
@@ -91,9 +82,6 @@ fn field_note(text: impl Into<SharedString>, danger: bool) -> gpui::Div {
         .child(text)
 }
 
-/// The first screen without a library (US-078): "Create Library" (name,
-/// location, Create), "Open Folder…" and "Open File…", then the
-/// registered libraries.
 fn welcome(view: &WindowView, cx: &mut Context<WindowView>) -> AnyElement {
     let name_problem = view.welcome_name_problem(cx);
     let can_create = view.can_create_library(cx);
@@ -230,9 +218,6 @@ fn welcome(view: &WindowView, cx: &mut Context<WindowView>) -> AnyElement {
         list
     });
 
-    // The column is centered in a box at least as tall as the window: when
-    // it is taller, it starts at the top and scrolls, instead of being
-    // centered with its heading above the scroll origin.
     let column = div()
         .w(px(360.0))
         .px(px(16.0))
@@ -278,8 +263,6 @@ fn welcome(view: &WindowView, cx: &mut Context<WindowView>) -> AnyElement {
         .into_any_element()
 }
 
-/// A registered library: opens on click; one that is gone says
-/// "Not found" and offers "Locate…" and "Remove from List".
 fn library_row(
     ix: usize,
     library: cerata_core::library::Library,
@@ -326,8 +309,6 @@ fn library_row(
         .into_any_element();
     }
     let (locate, remove) = (library.id.clone(), library.id.clone());
-    // The actions go under the text, which keeps the full width: beside it
-    // they left a long name or path about 100 px.
     let actions = div()
         .flex()
         .gap(px(8.0))
@@ -370,7 +351,6 @@ fn library_row(
         .into_any_element()
 }
 
-/// A new tab (`new-tab-page.tsx:9-35`).
 fn launcher(cx: &mut Context<WindowView>) -> AnyElement {
     let entry = |id: &'static str, label: &'static str, key: &str| {
         crate::a11y::button(selector(div().id(id), id), label)
@@ -416,7 +396,6 @@ fn launcher(cx: &mut Context<WindowView>) -> AnyElement {
         .into_any_element()
 }
 
-/// Tests find an element by its id.
 fn selector(element: gpui::Stateful<gpui::Div>, id: &'static str) -> gpui::Stateful<gpui::Div> {
     #[cfg(test)]
     let element = element.debug_selector(move || id.to_owned());
@@ -437,11 +416,8 @@ fn centered(text: &'static str) -> AnyElement {
         .into_any_element()
 }
 
-/// Widest a window notice grows before its text wraps.
 const NOTICE_MAX_WIDTH: f32 = 560.0;
 
-/// The window's notice, announced as a status and kept until dismissed
-/// (its close button, or a click on it), with its action buttons if any.
 pub fn notice(
     notice: Option<SharedString>,
     actions: Vec<super::libraries::NoticeAction>,
@@ -461,8 +437,6 @@ pub fn notice(
                 selector(div().id("window-notice"), "window-notice")
                     .role(gpui::Role::Status)
                     .aria_label(notice.clone())
-                    // A long notice (a store path) wraps inside the window
-                    // instead of pushing its buttons out of it.
                     .max_w(px(NOTICE_MAX_WIDTH))
                     .flex()
                     .items_center()

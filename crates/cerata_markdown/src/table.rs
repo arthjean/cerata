@@ -1,23 +1,12 @@
-//! GFM tables: the grid of source ranges that rendering, typing and
-//! commands share (ADR 0007), and the sizing rules of US-032, ported from
-//! `components/editor-area/table-decorations.ts` (the alignment parse,
-//! `:110-162`, and the sizing `tableTheme` asks the browser for, `:485-534`:
-//! cells capped at 48ch, columns never narrower than their longest word).
-
 use std::ops::Range;
 
 use crate::text::Text;
 use crate::tree::{Node, NodeKind};
 
-/// Ceiling on the width one column may demand, in `ch`.
 pub const CELL_MAX_WIDTH_CH: f32 = 48.0;
-/// Line height of a cell, relative to the font size.
 pub const CELL_LINE_HEIGHT: f32 = 1.4;
-/// Vertical padding of a cell (both sides together), in em.
 pub const CELL_VERTICAL_PADDING_EM: f32 = 1.0;
-/// Horizontal padding of a cell, per side, in em.
 pub const CELL_HORIZONTAL_PADDING_EM: f32 = 0.8;
-/// Padding above and below the table (both together), in em.
 pub const WIDGET_VERTICAL_PADDING_EM: f32 = 0.5;
 pub const BORDER_WIDTH: f32 = 1.0;
 
@@ -28,7 +17,6 @@ pub enum Align {
     Right,
 }
 
-/// Which line of the table a row is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum RowKind {
     Header,
@@ -36,37 +24,23 @@ pub enum RowKind {
     Body,
 }
 
-/// Where a cell stands against the header's width (GFM).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum CellKind {
-    /// One of the header's columns.
     InGrid,
-    /// A body row shorter than the header: the column has no source yet;
-    /// its slot and content are the insertion point at the row's end.
     Missing,
-    /// Past the header's width: not drawn, as in GFM.
     Extra,
 }
 
-/// One cell, in document offsets.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Cell {
-    /// Between its two `|` (or the row's edge when a pipe is left out).
     pub slot: Range<usize>,
-    /// The slot without its edge spaces. An empty cell's content is its
-    /// insertion point: after the first space following its opening `|`,
-    /// else right after that `|`.
     pub content: Range<usize>,
     pub kind: CellKind,
-    /// The `<br>` tags of the content (`<br/>` and `<br />` too, any
-    /// case), each drawn as a line break.
     pub breaks: Vec<Range<usize>>,
-    /// The escaped pipes (`\|`) of the content, drawn as `|`.
     pub escapes: Vec<Range<usize>>,
 }
 
 impl Cell {
-    /// The stretches of the content between its breaks, in order.
     pub fn segments(&self) -> Vec<Range<usize>> {
         let mut out = Vec::with_capacity(self.breaks.len() + 1);
         let mut start = self.content.start;
@@ -78,8 +52,6 @@ impl Cell {
         out
     }
 
-    /// The `<br>` tags and the escaped pipes, in order: units the caret
-    /// never splits.
     pub fn atoms(&self) -> Vec<Range<usize>> {
         let mut atoms: Vec<Range<usize>> =
             self.breaks.iter().chain(&self.escapes).cloned().collect();
@@ -87,8 +59,6 @@ impl Cell {
         atoms
     }
 
-    /// The caret positions of this cell: its content split around the
-    /// inside of each atom, bounds included.
     pub fn stretches(&self) -> Vec<Range<usize>> {
         let mut out = Vec::new();
         let mut start = self.content.start;
@@ -100,9 +70,6 @@ impl Cell {
         out
     }
 
-    /// `pos` is in this cell for an edit: in its content or in the spaces
-    /// after it (an edit may leave the caret after a typed space, which GFM
-    /// trims from the content), not inside a `<br>` or a `\|`.
     pub fn holds_edit(&self, pos: usize) -> bool {
         self.content.start <= pos
             && pos <= self.slot.end.max(self.content.end)
@@ -113,8 +80,6 @@ impl Cell {
                 .any(|b| b.start < pos && pos < b.end)
     }
 
-    /// `pos` is a caret position of this cell: in its content, bounds
-    /// included, and not inside a `<br>` or a `\|`.
     pub fn holds(&self, pos: usize) -> bool {
         self.content.start <= pos
             && pos <= self.content.end
@@ -129,24 +94,15 @@ impl Cell {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct GridRow {
     pub kind: RowKind,
-    /// The whole line, its container prefix included.
     pub line: Range<usize>,
-    /// Quote marks and list indentation before the row.
     pub prefix: Range<usize>,
-    /// The cells: the header's columns first, then missing or extra ones.
-    /// The delimiter row's cells hold its dashes.
     pub cells: Vec<Cell>,
 }
 
-/// A table's rows and cells, read from the tree's table node (ADR 0007,
-/// decision 3).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Grid {
-    /// The table node.
     pub range: Range<usize>,
-    /// One per column, from the delimiter row.
     pub alignments: Vec<Option<Align>>,
-    /// The header, the delimiter row, then the body rows.
     pub rows: Vec<GridRow>,
 }
 
@@ -154,7 +110,6 @@ fn is_ws(b: u8) -> bool {
     b == b' ' || b == b'\t'
 }
 
-/// Unescaped `|` in `range` of `text`.
 pub(crate) fn pipes_in(text: &str, range: Range<usize>) -> Vec<usize> {
     let mut out = Vec::new();
     let mut escaped = false;
@@ -167,8 +122,6 @@ pub(crate) fn pipes_in(text: &str, range: Range<usize>) -> Vec<usize> {
     out
 }
 
-/// The cells of a row from its pipes. A stretch before the first pipe or
-/// after the last one is a cell only when it holds text.
 pub(crate) fn row_cells(text: &str, row: Range<usize>, pipes: &[usize]) -> Vec<Cell> {
     let bytes = text.as_bytes();
     let blank = |r: &Range<usize>| bytes[r.clone()].iter().all(|b| is_ws(*b));
@@ -210,7 +163,6 @@ pub(crate) fn row_cells(text: &str, row: Range<usize>, pipes: &[usize]) -> Vec<C
         .collect()
 }
 
-/// The `\|` pairs of `range`.
 fn escaped_pipes(text: &str, range: Range<usize>) -> Vec<Range<usize>> {
     let bytes = text.as_bytes();
     let mut out = Vec::new();
@@ -224,12 +176,10 @@ fn escaped_pipes(text: &str, range: Range<usize>) -> Vec<Range<usize>> {
     out
 }
 
-/// The unescaped `|` of a line: what a cell edit must keep.
 pub fn pipe_count(line: &str) -> usize {
     pipes_in(line, 0..line.len()).len()
 }
 
-/// `<br>`, `<br/>` or `<br />`, any case.
 pub fn is_break_tag(tag: &str) -> bool {
     matches!(
         tag.to_ascii_lowercase().as_str(),
@@ -237,26 +187,18 @@ pub fn is_break_tag(tag: &str) -> bool {
     )
 }
 
-/// The tables whose grids were derived last.
 const GRID_CACHE: usize = 4;
 
 thread_local! {
-    /// The last grids derived, with their lines' start and text: a table's
-    /// grid is asked for many times per keystroke (decorations, the caret's
-    /// moves, the layout), and a 1 000-row one takes most of a millisecond
-    /// to derive (US-057).
     static GRIDS: std::cell::RefCell<Vec<(usize, String, Option<Grid>)>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
 impl Grid {
-    /// The grid of a `Table` node; `None` when its second line is not a
-    /// delimiter row.
     pub fn from_node(text: &Text, node: Node<'_>) -> Option<Grid> {
         if node.kind() != NodeKind::Table {
             return None;
         }
-        // A grid depends only on its lines' text and where they start.
         let lines = text.line_at(node.from()).from..text.line_at(node.to()).to;
         let source = text.slice(lines.clone());
         let hit = GRIDS.with_borrow(|grids| {
@@ -367,16 +309,12 @@ impl Grid {
         self.alignments.len()
     }
 
-    /// A body row has cells past the header's width. GFM does not draw
-    /// them, so the table is not edited in place: its source shows on
-    /// contact, as in Writer, and those cells stay in sight while editing.
     pub fn has_extra(&self) -> bool {
         self.rows
             .iter()
             .any(|r| r.cells.iter().any(|c| c.kind == CellKind::Extra))
     }
 
-    /// The header and the body rows, with their index in `rows`.
     pub fn text_rows(&self) -> impl Iterator<Item = (usize, &GridRow)> {
         self.rows
             .iter()
@@ -388,9 +326,6 @@ impl Grid {
         self.rows.get(row)?.cells.get(column)
     }
 
-    /// The row (its index in `rows`) and the column of the slot holding
-    /// `pos`, bounds included; `None` on the delimiter row, a pipe outside
-    /// any slot or a prefix.
     pub fn cell_at(&self, pos: usize) -> Option<(usize, usize)> {
         self.text_rows().find_map(|(r, row)| {
             if pos < row.line.start || pos > row.line.end {
@@ -405,7 +340,6 @@ impl Grid {
         })
     }
 
-    /// The drawn cell holding the caret position `pos` ([`Cell::holds`]).
     pub fn content_at(&self, pos: usize) -> Option<(usize, usize)> {
         self.text_rows().find_map(|(r, row)| {
             row.cells
@@ -415,7 +349,6 @@ impl Grid {
         })
     }
 
-    /// The drawn cell `pos` is in for an edit ([`Cell::holds_edit`]).
     pub fn cell_holding(&self, pos: usize) -> Option<(usize, usize)> {
         self.text_rows().find_map(|(r, row)| {
             row.cells
@@ -425,15 +358,12 @@ impl Grid {
         })
     }
 
-    /// From the first line's start to the last row's end: what the drawn
-    /// table covers.
     pub fn zone(&self) -> Range<usize> {
         let start = self.rows.first().map_or(self.range.start, |r| r.line.start);
         let end = self.rows.last().map_or(self.range.end, |r| r.line.end);
         start..end
     }
 
-    /// Every drawn cell in document order: `(row, column, cell)`.
     pub fn drawn_cells(&self) -> impl Iterator<Item = (usize, usize, &Cell)> {
         self.text_rows().flat_map(|(r, row)| {
             row.cells
@@ -460,11 +390,6 @@ fn is_delimiter(cell: &str) -> bool {
     !inner.is_empty() && inner.bytes().all(|b| b == b'-')
 }
 
-/// Column widths for an `auto` table layout: each column gets at least its
-/// longest word (`min`) and asks for its content capped at `cap`
-/// (`max`, never below `min`). When the asks fit in `available` they are
-/// granted; else the room above the minimums is shared in proportion to
-/// what each column asks beyond its minimum. Widths include padding.
 pub fn size_columns(min: &[f32], max: &[f32], available: f32, cap: f32) -> Vec<f32> {
     let asks: Vec<f32> = min
         .iter()
@@ -509,7 +434,6 @@ mod tests {
         Grid::from_node(&text, node)
     }
 
-    /// Source of each drawn cell's content, row by row (delimiter row out).
     fn contents<'a>(doc: &'a str, g: &Grid) -> Vec<Vec<&'a str>> {
         g.text_rows()
             .map(|(_, row)| {
@@ -545,12 +469,10 @@ mod tests {
         let doc = "| a |  | c |\n| - | - | - |\n||x|  |";
         let g = grid(doc);
         let header = &g.rows[0].cells;
-        // After the first space following its `|`.
         assert_eq!(header[1].content, 6..6);
         assert_eq!(&doc[header[1].slot.clone()], "  ");
         let body = &g.rows[2].cells;
         let row_start = g.rows[2].line.start;
-        // `||`: right after the opening pipe.
         assert_eq!(body[0].content, row_start + 1..row_start + 1);
         assert_eq!(&doc[body[1].content.clone()], "x");
         assert_eq!(body[2].content.start, row_start + 5);
@@ -590,9 +512,7 @@ mod tests {
             ]
         );
         let body = &g.rows[2].cells;
-        // `\|` stays in its cell.
         assert_eq!(&doc[body[0].content.clone()], "a \\| b");
-        // An unescaped `|` in a code span cuts it (GFM).
         assert_eq!(&doc[body[1].content.clone()], "`x");
         assert_eq!(&doc[body[2].content.clone()], "y`");
         assert_eq!(body[3].kind, CellKind::InGrid);
@@ -680,21 +600,17 @@ mod tests {
 
     #[test]
     fn columns_size_between_longest_word_and_capped_content() {
-        // Everything fits: each column gets its content.
         assert_eq!(
             size_columns(&[10.0, 20.0], &[30.0, 40.0], 100.0, 500.0),
             vec![30.0, 40.0]
         );
-        // A long prose column asks for at most the cap.
         assert_eq!(
             size_columns(&[10.0, 20.0], &[30.0, 900.0], 1000.0, 300.0),
             vec![30.0, 300.0]
         );
-        // Too narrow: the spare room is shared, nobody below its word.
         let w = size_columns(&[10.0, 20.0], &[110.0, 220.0], 130.0, 500.0);
         assert!(w[0] >= 10.0 && w[1] >= 20.0);
         assert!((w.iter().sum::<f32>() - 130.0).abs() < 1e-3);
-        // Narrower than the words: words win, no word is cut.
         assert_eq!(
             size_columns(&[50.0, 60.0], &[80.0, 90.0], 40.0, 500.0),
             vec![50.0, 60.0]

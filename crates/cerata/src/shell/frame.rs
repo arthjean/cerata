@@ -1,11 +1,3 @@
-//! The window frame where the compositor leaves decorations to the client
-//! (GNOME on Wayland offers no server-side ones). A transparent margin on
-//! every free edge, which GPUI's client inset keeps out of the window
-//! geometry, takes the resize edges and the shadow; inside it the surface
-//! has rounded corners and a 1 px border. Tiled edges lose their margin,
-//! their rounding and the shadow. A server-decorated window is its surface
-//! alone.
-
 use gpui::{
     AnyElement, Bounds, CursorStyle, Decorations, HitboxBehavior, InteractiveElement, IntoElement,
     MouseButton, ParentElement, Pixels, Point, ResizeEdge, Size, Stateful, Styled, Tiling, Window,
@@ -14,15 +6,10 @@ use gpui::{
 
 use crate::editor::theme;
 
-/// Width of the transparent margin around a free edge.
 pub const MARGIN: Pixels = px(10.0);
-/// Radius of the surface's free corners.
 const CORNER_RADIUS: Pixels = px(10.0);
-/// The surface's border, inside which panels round concentrically.
 const BORDER: Pixels = px(1.0);
 
-/// The free (untiled) edges of a client-decorated window. A
-/// server-decorated window has none: the compositor draws its frame.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Free {
     pub top: bool,
@@ -48,24 +35,19 @@ impl Free {
         }
     }
 
-    /// The margin left of the surface, in window pixels.
     pub fn left_margin(self) -> f32 {
         if self.left { f32::from(MARGIN) } else { 0.0 }
     }
 
-    /// The margins left and right of the surface, in window pixels.
     pub fn horizontal_margins(self) -> f32 {
         self.left_margin() + if self.right { f32::from(MARGIN) } else { 0.0 }
     }
 
-    /// A floating window: every edge free.
     fn floating(self) -> bool {
         self.top && self.bottom && self.left && self.right
     }
 }
 
-/// Rounds the left corners of a panel painted against the surface's left
-/// edge, so its fill follows the surface's free corners.
 pub fn round_left<E: Styled + gpui::prelude::FluentBuilder>(element: E, free: Free) -> E {
     let radius = CORNER_RADIUS - BORDER;
     element
@@ -73,8 +55,6 @@ pub fn round_left<E: Styled + gpui::prelude::FluentBuilder>(element: E, free: Fr
         .when(free.bottom && free.left, |e| e.rounded_bl(radius))
 }
 
-/// Wraps the window's root element (`surface`, which paints the window
-/// background) in the frame its decorations call for.
 pub fn frame(surface: Stateful<gpui::Div>, window: &mut Window) -> AnyElement {
     let Decorations::Client { tiling } = window.window_decorations() else {
         window.set_client_inset(px(0.0));
@@ -105,7 +85,6 @@ pub fn frame(surface: Stateful<gpui::Div>, window: &mut Window) -> AnyElement {
         .when(free.bottom, |d| d.pb(MARGIN))
         .when(free.left, |d| d.pl(MARGIN))
         .when(free.right, |d| d.pr(MARGIN))
-        // Repaint near an edge, so the cursor follows it.
         .on_mouse_move(move |event, window, _| {
             let window_size = window.window_bounds().get_bounds().size;
             if resize_edge(event.position, MARGIN * 2.0, window_size, tiling).is_some() {
@@ -156,8 +135,6 @@ pub fn frame(surface: Stateful<gpui::Div>, window: &mut Window) -> AnyElement {
         .into_any_element()
 }
 
-/// The edge a press at `pos` resizes: within `border` of a free edge, or
-/// within one and a half `border` of a free corner.
 fn resize_edge(
     pos: Point<Pixels>,
     border: Pixels,

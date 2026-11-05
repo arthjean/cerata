@@ -47,11 +47,9 @@ fn a_rectangle_projects_one_range_per_non_empty_cell() {
         "6",
         "the head cell is main"
     );
-    // From the header over the delimiter row.
     let g = grid(&s);
     assert!(s.select_cells(&g, (0, 0), (2, 0)));
     assert_eq!(selected(&s), vec!["a", "1"]);
-    // Any other selection ends it.
     s.select(Selection::cursor(0)).unwrap();
     assert!(s.table_selection().is_none());
 }
@@ -136,21 +134,17 @@ fn arrows_collapse_and_shift_arrows_extend() {
         DOC.find('6').unwrap() + 1,
         "last cell's end"
     );
-    // Shift+Right at the end of `2`: a rectangle of two cells.
     let mut s = state();
     s.select(Selection::cursor(DOC.find('2').unwrap() + 1))
         .unwrap();
     assert!(s.extend_cells(0, 1, false));
     assert_eq!(selected(&s), vec!["2", "3"]);
-    // Again: clamped at the last column; Shift+Down over two rows.
     assert!(s.extend_cells(0, 1, false));
     assert_eq!(s.table_selection().unwrap().head, (2, 2));
     assert!(s.extend_cells(1, 0, false));
     assert_eq!(selected(&s), vec!["2", "3", "6"]);
-    // Up from the first body row: the header, over the delimiter.
     assert!(s.extend_cells(-2, 0, false));
     assert_eq!(s.table_selection().unwrap().head, (0, 2));
-    // In the middle of a content, Shift+Left is a text selection.
     let mut s = state();
     s.select(Selection::cursor(DOC.find('2').unwrap() + 1))
         .unwrap();

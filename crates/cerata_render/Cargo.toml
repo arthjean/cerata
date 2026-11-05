@@ -10,13 +10,7 @@ authors.workspace = true
 [dependencies]
 cerata_markdown.workspace = true
 log.workspace = true
-# Diagrams (Pele) and formulas (MathJax) in an isolated QuickJS runtime
-# (docs/adr/0005-diagram-and-math-rendering.md). No feature: no `std`/`os`
-# module, no loader.
 rquickjs = "0.14.0"
-# Code highlighting: tree-sitter at the version the workspace already uses,
-# and the grammar crates that ship a highlight query (all MIT). A language is
-# one dependency plus one row in `src/highlight.rs`.
 tree-sitter = "0.27.1"
 tree-sitter-bash = "0.25.1"
 tree-sitter-c = "0.24.2"
@@ -57,10 +51,6 @@ tree-sitter-zig = "1.1.2"
 [lints]
 workspace = true
 
-# US-031 throwaway spike comparing the diagram and formula engines
-# (docs/adr/0005-diagram-and-math-rendering.md). Behind a feature so the
-# heavy candidates never reach `cargo test --workspace`:
-# `cargo run -p cerata_render --example render_spike --features spike --release`.
 [features]
 spike = ["dep:mermaid-svg", "dep:mitex", "dep:typst", "dep:typst-svg", "dep:typst-layout", "dep:typst-assets", "dep:resvg"]
 

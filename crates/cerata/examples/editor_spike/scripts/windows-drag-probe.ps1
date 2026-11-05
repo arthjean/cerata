@@ -1,10 +1,3 @@
-# US-002 Windows drag probe (throwaway). Drags with the real mouse from the
-# start of a paragraph with hidden `**` and link URL, across a block image,
-# into the line under it, and captures the window while pressed (hide
-# decisions frozen) and after release (nodes revealed). Window coordinates
-# assume a 1200x800 window at scale factor 1.
-#
-#   powershell -ExecutionPolicy Bypass -File windows-drag-probe.ps1 -exe TARGET_DIR\release\examples\editor_spike.exe -sp OUT_DIR
 param([string]$exe, [string]$sp)
 $ErrorActionPreference = 'Stop'
 & $exe --write-fixture $sp | Out-Null
@@ -33,8 +26,6 @@ function Shot($name) {
 }
 try {
   $r = New-Object D+RECT; [D]::GetWindowRect($h, [ref]$r) | Out-Null
-  # Focus click far below the text, then drag from the paragraph start to the
-  # middle of the line under the first figure.
   [D]::SetCursorPos($r.L + 600, $r.B - 40); [D]::mouse_event(2,0,0,0,[UIntPtr]::Zero); [D]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
   Start-Sleep -Milliseconds 400
   [D]::SetCursorPos($r.L + 249, $r.T + 161); Start-Sleep -Milliseconds 100

@@ -1,11 +1,3 @@
-//! The title bar. Cerata draws its own where there is no system one: on
-//! Windows, which hides it, and where the compositor leaves decorations to
-//! the client (GNOME on Wayland). The sidebar's top row carries the
-//! wordmark, the main column's top row carries the tabs (or the compact
-//! header) and the caption buttons. Empty space in either row drags the
-//! window; every control in them occludes so its clicks are not taken for a
-//! drag. Elsewhere the system title bar stays and the same rows sit below it.
-
 use std::borrow::Cow;
 use std::cell::Cell;
 
@@ -18,14 +10,10 @@ use gpui::{
 use crate::editor::theme;
 use crate::icons::{Icon, icon};
 
-/// Height of both top rows.
 pub const HEIGHT: f32 = 40.0;
 
-/// Windows hides its system title bar and takes drags and caption clicks
-/// from hit areas.
 const WINDOWS: bool = cfg!(target_os = "windows");
 
-/// Whether the window has no system title bar, so Cerata draws one.
 pub fn drawn(window: &Window) -> bool {
     WINDOWS || client_decorated(window)
 }
@@ -34,10 +22,8 @@ fn client_decorated(window: &Window) -> bool {
     matches!(window.window_decorations(), Decorations::Client { .. })
 }
 
-/// Family of the wordmark (SIL Open Font License, `assets/fonts/OFL.txt`).
 const WORDMARK_FONT: &str = "UnifrakturMaguntia";
 
-/// Registers the wordmark font.
 pub fn init(cx: &mut App) {
     let font = include_bytes!("../../assets/fonts/UnifrakturMaguntia-Book.ttf");
     if let Err(error) = cx.text_system().add_fonts(vec![Cow::Borrowed(font)]) {
@@ -52,7 +38,6 @@ pub fn options() -> Option<TitlebarOptions> {
     })
 }
 
-/// A top row: a window drag area where the title bar is drawn.
 pub fn row(id: &'static str) -> gpui::Stateful<gpui::Div> {
     let row = div().id(id).flex().flex_none().items_center().h(px(HEIGHT));
     if WINDOWS {
@@ -63,14 +48,9 @@ pub fn row(id: &'static str) -> gpui::Stateful<gpui::Div> {
 }
 
 thread_local! {
-    /// A press on a top row's empty space, which the next move while it
-    /// holds turns into a window move.
     static PRESSED: Cell<bool> = const { Cell::new(false) };
 }
 
-/// The compositor moves a client-decorated window only when asked. The move
-/// starts on the first motion after the press, so a click or a double click
-/// (maximize) stays a click.
 fn client_drag(row: gpui::Stateful<gpui::Div>) -> gpui::Stateful<gpui::Div> {
     row.on_mouse_down(MouseButton::Left, |_, window, _| {
         PRESSED.set(client_decorated(window));
@@ -94,16 +74,12 @@ fn client_drag(row: gpui::Stateful<gpui::Div>) -> gpui::Stateful<gpui::Div> {
     })
 }
 
-/// "Cerata" in blackletter, at the top of the sidebar.
 pub fn wordmark() -> impl IntoElement {
     row("sidebar-title-bar")
-        // As far from the sidebar's left edge as the glyphs' tops are from
-        // its top edge (the wordmark's side bearing adds about half a pixel).
         .px(px(10.0))
         .text_size(px(24.0))
         .font_family(WORDMARK_FONT)
         .text_color(theme::text())
-        // The face's ascent runs high: lower it onto the tabs' baseline.
         .child(div().relative().top(px(3.0)).child("Cerata"))
 }
 
@@ -115,9 +91,6 @@ enum Caption {
     Close,
 }
 
-/// Minimize, maximize (or restore) and close, at the right of the main
-/// row. Windows handles their clicks from the hit areas; a client-decorated
-/// window gets round buttons, as GNOME draws them, that handle their own.
 pub fn caption_buttons(window: &Window) -> Option<AnyElement> {
     if !drawn(window) || window.is_fullscreen() {
         return None;
@@ -150,7 +123,6 @@ pub fn caption_buttons(window: &Window) -> Option<AnyElement> {
             .flex()
             .flex_none()
             .h_full()
-            // Glyphs of Windows' own caption buttons (11, then 10).
             .font(gpui::Font {
                 fallbacks: Some(FontFallbacks::from_fonts(vec!["Segoe MDL2 Assets".into()])),
                 ..gpui::font("Segoe Fluent Icons")
@@ -192,7 +164,6 @@ fn caption_button(caption: Caption) -> impl IntoElement {
         Caption::Restore => ("caption-restore", "\u{e923}", WindowControlArea::Max),
         Caption::Close => ("caption-close", "\u{e8bb}", WindowControlArea::Close),
     };
-    // Windows 11's close hover.
     let close_red = Rgba {
         r: 196.0 / 255.0,
         g: 43.0 / 255.0,

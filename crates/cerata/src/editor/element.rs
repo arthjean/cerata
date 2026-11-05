@@ -1,8 +1,3 @@
-//! The virtualized editor element: lays out only the lines around the
-//! viewport, each at its own font size, then paints the chrome, the
-//! selection, the search results, the text, the block widgets, the carets
-//! and the scrollbars.
-
 use std::ops::Range;
 
 use gpui::{
@@ -36,20 +31,14 @@ impl IntoElement for EditorElement {
     }
 }
 
-/// What a frame drew, for the interaction tests: each code line's
-/// horizontal offset, the selection rects and the carets.
 #[cfg(test)]
 #[derive(Clone, Debug, Default)]
 pub struct FrameRecord {
     pub code_scroll: Vec<(usize, f32)>,
     pub selections: Vec<Bounds<Pixels>>,
-    /// Search result rects, and whether each is the current one.
     pub matches: Vec<(Bounds<Pixels>, bool)>,
     pub carets: Vec<Bounds<Pixels>>,
-    /// The rings of the images selected as objects.
     pub rings: Vec<Bounds<Pixels>>,
-    /// Window bounds of each drawn table cell, named `table-cell-{row}-{column}`
-    /// (row 0 is the header).
     pub cells: Vec<(String, Bounds<Pixels>)>,
 }
 
@@ -58,12 +47,10 @@ struct Painted {
     top: Pixels,
 }
 
-/// A block element waiting for its layout.
 struct PendingBlock {
     element: AnyElement,
     origin: Point<Pixels>,
     size: gpui::Size<Pixels>,
-    /// The rich block it draws, whose height is measured.
     rich: Option<cerata_markdown::Widget>,
 }
 
@@ -77,23 +64,18 @@ pub struct PrepaintState {
     column_width: f32,
     scrollbar: Option<Bounds<Pixels>>,
     marks: Vec<(Bounds<Pixels>, bool)>,
-    /// The rings of the block images selected as objects (ADR 0008).
     rings: Vec<Bounds<Pixels>>,
     focused: bool,
     hitbox: Hitbox,
 }
 
-/// The ring of an image selected as an object: this far outside its
-/// edges, this wide (ADR 0008).
 const RING_OFFSET: f32 = 4.0;
 const RING_WIDTH: f32 = 2.0;
 
-/// A selection range is exactly the block image's node `range`.
 fn is_object(ranges: &[Range<usize>], range: &Range<usize>) -> bool {
     !range.is_empty() && ranges.iter().any(|r| r == range)
 }
 
-/// Column-relative x and row of display offset `display` in `line`.
 fn x_in_line(line: &LaidLine, display: usize) -> Option<Point<Pixels>> {
     let wrapped = line.wrapped.as_ref()?;
     let position = wrapped.position_for_index(display, px(line.metrics.row_height))?;
@@ -101,7 +83,6 @@ fn x_in_line(line: &LaidLine, display: usize) -> Option<Point<Pixels>> {
     Some(point(px(line.text_left - scroll) + position.x, position.y))
 }
 
-/// The caret at buffer offset `pos` of `line`, whose top is at `top`.
 pub fn caret_rect(
     line: &LaidLine,
     top: Pixels,
@@ -128,9 +109,6 @@ pub fn caret_rect(
     ))
 }
 
-/// Selection rectangles over the text of one line: each row from the first
-/// to the last selected glyph, never past the text (a selected line break
-/// adds a narrow mark).
 pub fn range_rects(
     line: &LaidLine,
     top: Pixels,
@@ -183,8 +161,6 @@ pub fn range_rects(
     rects
 }
 
-/// The left and right edges of a code line's padded box, where its text
-/// is clipped when it scrolls.
 fn code_box(line: &LaidLine, column_left: Pixels, column_width: f32) -> Option<(Pixels, Pixels)> {
     line.code.as_ref().map(|_| {
         (
@@ -194,8 +170,6 @@ fn code_box(line: &LaidLine, column_left: Pixels, column_width: f32) -> Option<(
     })
 }
 
-/// `rects` of a code line cut to its box; a rect wholly outside it is
-/// dropped.
 fn clip_to_code(
     line: &LaidLine,
     column_left: Pixels,
@@ -270,7 +244,6 @@ impl Element for EditorElement {
             if editor.scroll_top() > max {
                 editor.set_scroll_top(max);
             }
-            // Normalize the anchor into the line it points in.
             let top = editor.scroll_top();
             editor.set_scroll_top(top);
 
@@ -285,9 +258,6 @@ impl Element for EditorElement {
             let inputs = editor.frame_inputs(range);
             let mut jobs = Vec::new();
 
-            // From the anchor down to the bottom plus margin, then up to
-            // the margin above: corrections above the anchor do not
-            // move it on screen.
             let count = editor.state.text().line_count();
             let budget = offset + height + LAYOUT_MARGIN;
             let mut below = Vec::new();
@@ -311,8 +281,6 @@ impl Element for EditorElement {
             above.reverse();
             above.extend(below);
             editor.code_scroll.clamp_measured();
-            // Lines were laid out with the offsets of the last frame: a
-            // block that got narrower paints at its bounded offset now.
             for line in &mut above {
                 if let Some(code) = &mut line.code {
                     let first = editor.state.text().line_at(code.block_start).number;
@@ -359,12 +327,10 @@ impl Element for EditorElement {
             let mut carets = Vec::new();
             let mut rings = Vec::new();
             for painted in &lines {
-                // A drawn table: selection and carets in its cells' lines.
                 if let Some(block) = &painted.line.block
                     && let BlockKind::Table(table) = &block.kind
                 {
                     let top = painted.top + px(block.top);
-                    // A scrolled table shows inside the text column only.
                     let right = column_left + px(viewport.column_width);
                     let clip = |r: Bounds<Pixels>| {
                         let left = r.left().max(column_left);
@@ -373,7 +339,6 @@ impl Element for EditorElement {
                             Bounds::new(point(left, r.top()), size(end - left, r.size.height))
                         })
                     };
-                    // A rectangle of cells: their backgrounds (US-054).
                     let rect = editor
                         .state
                         .table_selection()
@@ -421,8 +386,6 @@ impl Element for EditorElement {
                     continue;
                 }
                 let line_range = painted.line.start..painted.line.end();
-                // A block image selected as an object: a ring, no
-                // highlight, no caret (ADR 0008).
                 let object = painted.line.block.as_ref().filter(|b| {
                     b.replaces
                         && matches!(b.kind, BlockKind::Image { .. })
@@ -458,8 +421,6 @@ impl Element for EditorElement {
                     }
                 }
                 for r in editor.state.selection().ranges() {
-                    // After a diagram: on its right edge. Its hidden source
-                    // lines draw no caret.
                     if let Some(block) = &painted.line.block
                         && block.atomic_end == Some(r.head)
                         && r.is_empty()
@@ -488,10 +449,6 @@ impl Element for EditorElement {
                             && let Some(caret) =
                                 caret_rect(&painted.line, painted.top, column_left, r.head)
                         {
-                            // A caret is kept whole while it overlaps the
-                            // box or touches its right edge: at the largest
-                            // (rounded) offset, the end of the widest line
-                            // sits on that edge.
                             let in_box =
                                 code_box(&painted.line, column_left, viewport.column_width)
                                     .is_none_or(|(left, right)| {
@@ -506,7 +463,6 @@ impl Element for EditorElement {
                 }
             }
 
-            // Search results on screen, and their marks on the bar.
             let mut matches = Vec::new();
             let mut marks = Vec::new();
             if let Some(search) = editor.search.clone() {
@@ -516,7 +472,6 @@ impl Element for EditorElement {
                 for (i, m) in search.matches_in(visible) {
                     let current = search.current() == Some(i);
                     for painted in &lines {
-                        // In a drawn table: over its cells' lines (US-056).
                         if let Some(block) = &painted.line.block
                             && let BlockKind::Table(table) = &block.kind
                         {
@@ -570,8 +525,6 @@ impl Element for EditorElement {
                 editor.mark_hits.clear();
             }
 
-            // Code block scrollbars, on the last laid-out line of each
-            // overflowing block; a wide table's inside its last row.
             let mut thumbs = Vec::new();
             for painted in &lines {
                 if let Some(block) = &painted.line.block
@@ -669,8 +622,6 @@ impl Element for EditorElement {
             }
 
             let mut blocks = Vec::new();
-            // The block loop below draws the toolbar, if one shows, and
-            // lists the image frames it draws.
             editor.toolbar.drawn = None;
             let mut framed = Vec::new();
             let style = editor.block_style(window);
@@ -692,7 +643,6 @@ impl Element for EditorElement {
                     };
                     match &formula.state {
                         MathState::Ready(svg) => {
-                            // On the text's baseline, centered in its spaces.
                             let baseline =
                                 row_top + px(row_height / 2.0 + line.metrics.font_size * 0.3);
                             let top = baseline + px(svg.descent - svg.height);
@@ -712,8 +662,6 @@ impl Element for EditorElement {
                             });
                         }
                         MathState::Error(message) => {
-                            // A box over the red source holds the error's
-                            // tooltip; clicks go through to the text.
                             let width = if span > 0.0 { span } else { 200.0 };
                             let message = gpui::SharedString::from(message.to_string());
                             let tip = gpui::div()
@@ -753,9 +701,6 @@ impl Element for EditorElement {
                         let resizing = editor
                             .image_preview()
                             .is_some_and(|(start, _)| start == range.start);
-                        // Handles on a drawn, measured image, unless a text
-                        // drag or a file drag is on (US-067); the toolbar
-                        // on a drawn image, out of any drag (US-070).
                         let drawn = block.replaces
                             && !editor.source_only
                             && editor.drop_bar.is_none()
@@ -794,7 +739,6 @@ impl Element for EditorElement {
                                 .relative()
                                 .w(px(block.width))
                                 .h(px(block.height))
-                                // Keys (Escape) do not end the hover.
                                 .hover_listener_mode(
                                     gpui::HoverListenerMode::InputModalityIndependent,
                                 )
@@ -840,7 +784,6 @@ impl Element for EditorElement {
                     BlockKind::Rule | BlockKind::Table(_) => {}
                 }
             }
-            // A hover held by an image that went shows the next frame.
             if editor.toolbar.prune(&framed) {
                 cx.notify();
             }
@@ -861,9 +804,6 @@ impl Element for EditorElement {
         let mut elements = Vec::new();
         let mut remeasured = false;
         for mut block in blocks {
-            // A rich block takes its natural height: when it differs from
-            // the height its line reserved, the next frame lays the line
-            // out again at the measured height.
             let height = if block.rich.is_some() {
                 AvailableSpace::MinContent
             } else {
@@ -886,8 +826,6 @@ impl Element for EditorElement {
             elements.push(block.element);
         }
         if remeasured {
-            // A notify while drawing is dropped (`invalidate_view` outside
-            // `DrawPhase::None`): ask again once this frame is done.
             let editor = self.editor.clone();
             window.on_next_frame(move |_, cx| editor.update(cx, |_, cx| cx.notify()));
         }
@@ -939,7 +877,6 @@ impl Element for EditorElement {
             });
         }
         window.set_cursor_style(CursorStyle::IBeam, &prepaint.hitbox);
-        // A resize keeps its cursor wherever the pointer goes (US-067).
         let resizing = self.editor.read(cx).image_preview().is_some();
         if resizing {
             window.capture_pointer(prepaint.hitbox.id);
@@ -970,7 +907,6 @@ impl Element for EditorElement {
             for ring in prepaint.rings.drain(..) {
                 window.paint_quad(quad(
                     ring,
-                    // Concentric with the image's 4 px corners.
                     px(4.0 + RING_OFFSET),
                     gpui::transparent_black(),
                     px(RING_WIDTH),
@@ -999,14 +935,12 @@ impl Element for EditorElement {
                 window.paint_quad(fill(mark, color));
             }
         });
-        // Last, over the handles' and the text's own cursors.
         if resizing {
             window.set_window_cursor_style(CursorStyle::ResizeLeftRight);
         }
     }
 }
 
-/// Code background, quote bars, rules and list markers of one line.
 fn paint_chrome(painted: &Painted, left: Pixels, width: Pixels, window: &mut Window) {
     let line = &painted.line;
     let top = painted.top;
@@ -1134,7 +1068,6 @@ fn paint_text(painted: &Painted, left: Pixels, width: Pixels, window: &mut Windo
         }
     };
     if line.code.is_some() {
-        // Code scrolls inside its padded box.
         let clip = Bounds::new(
             point(left + px(CODE_PADDING), painted.top),
             size(width - px(CODE_PADDING * 2.0), px(line.height)),
@@ -1147,8 +1080,6 @@ fn paint_text(painted: &Painted, left: Pixels, width: Pixels, window: &mut Windo
     }
 }
 
-/// The text column over a table block: a wide table scrolls under it
-/// (US-056). A pixel of slack keeps the outer border's antialiasing.
 fn table_clip(left: Pixels, width: Pixels, top: Pixels, height: f32) -> Bounds<Pixels> {
     Bounds::new(
         point(left - px(1.0), top),

@@ -31,7 +31,6 @@ fn a_rectangle_copies_as_a_gfm_table_and_a_grid() {
         block.alignments,
         vec![Some(Align::Left), Some(Align::Right)]
     );
-    // The first selected row becomes the header.
     assert_eq!(block.to_gfm(), "| 1 | 2 |\n| :-- | --: |\n| 3 | x\\|y |");
     assert_eq!(parse_gfm(&block.to_gfm()), Some(block));
     assert!(at(DOC, "1").copied_cells().is_none(), "no rectangle");
@@ -70,12 +69,10 @@ fn a_grid_fills_cells_from_the_caret_and_grows_the_table() {
     let g = grid(&s);
     assert_eq!(g.columns(), 3);
     assert!(g.rows.iter().all(|r| r.cells.len() == 3));
-    // The caret at the end of the last cell filled.
     let head = s.selection().main().head;
     assert_eq!(&s.doc()[head - 1..head], "u");
     assert!(s.undo(), "one step");
     assert_eq!(s.doc(), DOC);
-    // From a rectangle: its top-left cell.
     let mut s = at(DOC, "1");
     let g = grid(&s);
     s.select_cells(&g, (3, 1), (2, 1));
@@ -85,7 +82,6 @@ fn a_grid_fills_cells_from_the_caret_and_grows_the_table() {
     };
     assert_eq!(s.paste_cells(&one), PasteCells::Pasted);
     assert!(s.doc().contains("| 1 | z |"), "{:?}", s.doc());
-    // Outside a table: pasted as text by the host.
     assert_eq!(at(DOC, "end").paste_cells(&one), PasteCells::Outside);
 }
 
@@ -133,8 +129,6 @@ fn only_a_whole_table_parses_as_one() {
     assert!(parse_gfm("plain").is_none());
 }
 
-/// Review of EP-007: the limit counts the rectangle a paste fills, so a
-/// ragged grid or empty rows cannot grow the table past it.
 #[test]
 fn the_limit_counts_the_rectangle_filled() {
     let mut rows = vec![vec!["x".to_owned(); 200]];
@@ -149,8 +143,6 @@ fn the_limit_counts_the_rectangle_filled() {
     assert_eq!(s.doc(), DOC);
 }
 
-/// Review of EP-007: a spreadsheet quotes a cell holding a line break, a
-/// tab or a quote; the cell stays one, its break as `<br>`.
 #[test]
 fn quoted_spreadsheet_cells_stay_one_cell() {
     let block = parse_tsv("\"l1\nl2\"\tx\r\n\"say \"\"hi\"\"\"\t\"a\tb\"\r\n").unwrap();
@@ -161,7 +153,6 @@ fn quoted_spreadsheet_cells_stay_one_cell() {
             vec!["say \"hi\"".to_owned(), "a\tb".to_owned()],
         ]
     );
-    // An open quote is text: the plain split.
     let block = parse_tsv("\"open\tx\ny\tz").unwrap();
     assert_eq!(block.rows[0], vec!["\"open".to_owned(), "x".to_owned()]);
 }

@@ -1,7 +1,3 @@
-//! Process-wide state: the core services, the open windows, and the entry
-//! points every open request goes through (first launch, second launch,
-//! drops, the welcome screen and the palette).
-
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -26,7 +22,6 @@ pub struct Cerata {
 
 impl Global for Cerata {}
 
-/// Installs the services and starts routing workspace events to windows.
 pub fn init(cx: &mut App, core: CoreApp) {
     let (events, receiver) = std::sync::mpsc::channel::<WatchEnvelope>();
     let (inbox, mut wakeups) = Inbox::new();
@@ -54,8 +49,6 @@ pub fn init(cx: &mut App, core: CoreApp) {
         }
     })
     .detach();
-    // Quitting skips `on_window_should_close`: every window writes its
-    // pending edits and session here, before the windows are dropped.
     cx.on_app_quit(|cx| {
         for handle in windows(cx) {
             let _ = handle.update(cx, |view, _, cx| view.before_close(cx));
@@ -94,7 +87,6 @@ fn forget_window(cx: &mut App, window_id: WindowId) {
     }
 }
 
-/// Hands the queued workspace events to the windows they belong to.
 pub fn pump_events(cx: &mut App) {
     let envelopes = cx.global::<Cerata>().inbox.take();
     for envelope in envelopes {
@@ -123,16 +115,12 @@ impl Hosts for Registry<'_> {
     }
 }
 
-/// The window showing (or about to show) library `root`.
 pub fn workspace_window(cx: &App, root: &Path) -> Option<WindowHandle<WindowView>> {
     let state = cx.global::<Cerata>();
     let id = state.core.windows.find_by_workspace(root)?;
     state.windows.get(&id).copied()
 }
 
-/// Opens a new window on `target` (the core startup call: settings,
-/// session, first file), then `file` in it. The window is created once
-/// everything its first frame shows is read, so it never flashes empty.
 pub fn open_window(
     cx: &mut App,
     target: Option<OpenTarget>,
@@ -159,9 +147,6 @@ pub fn open_window(
     Ok(handle)
 }
 
-/// A launch, first or forwarded: every argument is opened in order. A
-/// missing one shows "X not found" in the frontmost window and opens
-/// nothing; no argument brings the first window forward.
 pub fn handle_launch(cx: &mut App, request: LaunchRequest) {
     if request.args.is_empty() {
         match windows(cx).first() {
@@ -187,7 +172,6 @@ pub fn handle_launch(cx: &mut App, request: LaunchRequest) {
     }
 }
 
-/// The notice for a target that cannot open.
 pub fn refusal(arg: &str, path: &Path, error: &OpenTargetError) -> String {
     let name = path
         .file_name()
@@ -213,8 +197,6 @@ fn notify_frontmost(cx: &mut App, notice: String) {
     }
 }
 
-/// Routes `request` from `origin` (the window it came from, if any) and
-/// carries the route out.
 pub fn open(cx: &mut App, request: OpenRequest, origin: Option<WindowHandle<WindowView>>) {
     let core = core(cx);
     let origin_state = origin.and_then(|handle| {

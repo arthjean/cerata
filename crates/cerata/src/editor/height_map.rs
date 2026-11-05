@@ -1,12 +1,3 @@
-//! Height map: one height per document line, in a two-level sum tree.
-//!
-//! Leaves are chunks of at most [`CHUNK`] line heights; a Fenwick tree over
-//! the chunk sums and another over the chunk line counts give `prefix`,
-//! `find` and `set` in O(log n + CHUNK). A splice that adds or removes lines
-//! rewrites only the chunks it touches, then rebuilds the two Fenwick trees
-//! over the chunks, O(n / CHUNK): 230 chunks for the 14 442 lines of the 1 MB
-//! fixture.
-
 const CHUNK: usize = 64;
 
 #[derive(Clone, Debug)]
@@ -47,7 +38,6 @@ impl HeightMap {
         self.len
     }
 
-    /// The chunk holding line `ix` and the index in it.
     fn locate(&self, ix: usize) -> (usize, usize) {
         let (chunk, before) = self.counts.find_count(ix);
         (chunk.min(self.chunks.len() - 1), ix - before)
@@ -73,7 +63,6 @@ impl HeightMap {
         }
     }
 
-    /// Top of line `ix`: the sum of the heights of lines `0..ix`.
     pub fn prefix(&self, ix: usize) -> f64 {
         if ix >= self.len {
             return self.total();
@@ -86,8 +75,6 @@ impl HeightMap {
         self.sums.prefix(self.chunks.len())
     }
 
-    /// The line containing `y` and the offset of `y` inside it. `y` past the
-    /// end lands in the last line; negative `y` at the top of the first.
     pub fn find(&self, y: f64) -> (usize, f64) {
         if self.len == 0 {
             return (0, 0.0);
@@ -110,7 +97,6 @@ impl HeightMap {
         (last, y - self.prefix(last))
     }
 
-    /// Replaces lines `start..start + old` by `new_heights`.
     pub fn splice(&mut self, start: usize, old: usize, new_heights: Vec<f64>) {
         let start = start.min(self.len);
         let old = old.min(self.len - start);
@@ -146,7 +132,6 @@ fn chunked(items: Vec<f64>) -> Vec<Vec<f64>> {
     items.chunks(CHUNK).map(<[f64]>::to_vec).collect()
 }
 
-/// A Fenwick tree (binary indexed tree) of partial sums.
 #[derive(Clone, Debug)]
 struct Fenwick<T> {
     tree: Vec<T>,
@@ -178,7 +163,6 @@ where
         }
     }
 
-    /// Sum of items `0..i`.
     fn prefix(&self, i: usize) -> T {
         let mut node = i.min(self.tree.len() - 1);
         let mut sum = T::default();
@@ -189,8 +173,6 @@ where
         sum
     }
 
-    /// The first item at which the running sum exceeds `target`, and the
-    /// sum before it (`len` when the total does not exceed it).
     fn search(&self, target: T) -> (usize, T) {
         let n = self.tree.len() - 1;
         let mut pos = 0;
@@ -265,7 +247,6 @@ mod tests {
         map.set(3, 100.0);
         heights[3] = 100.0;
         check(&map, &heights);
-        // Inserted, removed and replaced lines, inside and across chunks.
         for (start, old, new) in [
             (10usize, 0usize, vec![1.0, 2.0, 3.0]),
             (60, 10, vec![7.0]),

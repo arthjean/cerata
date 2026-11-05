@@ -1,25 +1,11 @@
-//! Conflict copies of sync services (US-093), recognized by name next to
-//! their original note:
-//!
-//! - Syncthing: `<stem>.sync-conflict-<YYYYMMDD>-<HHMMSS>-<device>.<ext>`
-//!   (docs.syncthing.net/users/syncing.html, "Conflicting Changes");
-//! - Dropbox: `<stem> (<editor>'s conflicted copy <YYYY-MM-DD>).<ext>`, the
-//!   editor's name and any later suffix optional
-//!   (help.dropbox.com/organize/conflicted-copy).
-//!
-//! OneDrive's pattern is not recognized until verified (PRD, Open
-//! Questions).
-
 use std::path::{Path, PathBuf};
 
-/// Which service made a copy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Service {
     Syncthing,
     Dropbox,
 }
 
-/// The original's file name of a conflict copy named `name`.
 pub fn original_name(name: &str) -> Option<(String, Service)> {
     syncthing(name)
         .map(|original| (original, Service::Syncthing))
@@ -34,7 +20,6 @@ fn syncthing(name: &str) -> Option<String> {
     const MARK: &str = ".sync-conflict-";
     let at = name.find(MARK)?;
     let (stem, rest) = (&name[..at], &name[at + MARK.len()..]);
-    // `<date>-<time>-<device>` then the extension, if any.
     let (stamp, ext) = match rest.find('.') {
         Some(dot) => (&rest[..dot], &rest[dot..]),
         None => (rest, ""),
@@ -53,8 +38,6 @@ fn dropbox(name: &str) -> Option<String> {
         _ => (name, ""),
     };
     let body = body.strip_suffix(')')?;
-    // The last ` (` opening the copy's mark: a stem may hold parentheses,
-    // and a later `(1)` may follow the date.
     let open = body
         .match_indices(" (")
         .map(|(at, _)| at)
@@ -63,7 +46,6 @@ fn dropbox(name: &str) -> Option<String> {
     let (stem, inside) = (&body[..open], &body[open + 2..]);
     let at = inside.find(MARK)?;
     let before = &inside[..at];
-    // Nothing, or `<editor>'s ` (straight or curly apostrophe).
     let editor_ok = before.is_empty() || before.ends_with("'s ") || before.ends_with("\u{2019}s ");
     let date = inside[at + MARK.len()..].get(..10)?;
     let date_ok = date.len() == 10
@@ -75,8 +57,6 @@ fn dropbox(name: &str) -> Option<String> {
     (!stem.is_empty() && editor_ok && date_ok).then(|| format!("{stem}{ext}"))
 }
 
-/// The original note of the conflict copy at `path`, when it exists in the
-/// same folder.
 pub fn original_of(path: &Path) -> Option<PathBuf> {
     let name = path.file_name()?.to_str()?;
     let (original, _) = original_name(name)?;

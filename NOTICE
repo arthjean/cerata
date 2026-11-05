@@ -18,10 +18,130 @@ Cerata is a Rust and GPUI adaptation of Writer Computer
     Licensed under the GNU General Public License, version 3.
 
 Every Cerata source file that ports or adapts Writer Computer code is a
-modified version of that work. Such files name their Writer Computer origin in
-their module documentation ("Ported from ..."), and the modifications date from
-2026-10-31 onward. Writer Computer's name, logo and website content are not
-reused.
+modified version of that work, and the modifications date from 2026-10-31
+onward. Writer Computer's name, logo and website content are not reused.
+Cerata source files carry no comments, so the table below is the record of
+which Cerata file adapts which Writer Computer source (paths under
+apps/desktop, in Writer's TypeScript frontend or its Rust backend):
+
+crates/cerata
+  src/documents.rs                    editor-store.ts, lib/save.ts
+  src/tabs.rs                         editor-store.ts
+  src/routing.rs                      use-open-drop.ts, lib.rs
+  src/single_instance.rs              lib.rs (single-instance handling)
+  src/palette.rs                      command-palette/index.tsx, use-fuzzy-search.ts
+  src/settings_panel.rs               settings-panel/index.tsx
+  src/theme.rs                        lib/theme.ts, App.css, shared/themes
+  src/zoom.rs                         lib/zoom.ts
+  src/shell/compact.rs                compact-file-layout.tsx
+  src/shell/status_bar.rs             document-footer.tsx, document-stats.ts
+  src/shell/tab_bar.rs                editor-tabs.tsx
+  src/sidebar/mod.rs                  sidebar-navigator.tsx, file-tree.tsx,
+                                      use-sidebar-files.ts, workspace-store.ts
+  src/sidebar/tree.rs                 sidebar-sort.ts, use-file-tree-label.ts,
+                                      flatten-tree.ts, file-tree.tsx
+  src/sidebar/render.rs               file-tree-node.tsx, sidebar-section.tsx
+  src/sidebar/ops.rs                  file-context-menu.ts, folder-context-menu.ts,
+                                      bulk-context-menu.ts,
+                                      sidebar-surface-context-menu.ts,
+                                      use-tree-drag.ts, tree-move.ts
+  src/editor/actions.rs               docs/keyboard-shortcuts.md
+  src/editor/code_scroll.rs           codeFenceScroll.ts
+  src/editor/complete.rs              wiki-link-extension.ts, lib/wiki-links.ts
+  src/editor/config.rs                prosemark-theme.css
+  src/editor/frontmatter.rs           frontmatter-panel.tsx,
+                                      use-frontmatter-entries.ts
+  src/editor/html.rs                  html-block-decorations.ts
+  src/editor/images.rs                prosemark-core fold/image.ts,
+                                      image-src-resolver.ts, lib/paths.ts,
+                                      editor-clipboard.ts, commands/images.rs
+  src/editor/links.rs                 link-navigation.ts, wiki-link-extension.ts
+  src/editor/math.rs                  math-decorations.ts, math-widget.css
+  src/editor/menu.rs                  editor-context-menu.ts, editor-body-menu.ts
+  src/editor/mermaid.rs               mermaid-canvas.ts, mermaid-fullscreen.ts,
+                                      mermaid-canvas.css
+  src/editor/mouse.rs                 prosemark-core fold/core.ts, list/index.ts,
+                                      drag-selection-gate.ts
+  src/editor/rail.rs                  section-rail.tsx, use-active-headings.ts,
+                                      section-rail.css
+  src/editor/search.rs                editor-search-store.ts,
+                                      editor-search-overlay.tsx,
+                                      editor-search-overview.tsx,
+                                      editor-search-extensions.ts
+  src/editor/table.rs                 table-decorations.ts
+  src/editor/theme.rs                 prosemark-theme.css (light defaults)
+  examples/editor_spike/markup.rs     prosemark-core hide/core.ts, hide/index.ts,
+                                      utils.ts
+
+crates/cerata_core
+  src/cli.rs                          writer_cli.rs
+  src/epoch.rs                        state.rs
+  src/workspace.rs                    state.rs, commands/workspace.rs
+  src/fs/mod.rs                       commands/fs.rs, sidebar/duplicate-file.ts
+  src/fs/atomic.rs                    commands/fs.rs (write_file_impl)
+  src/fs/titles.rs                    commands/fs.rs (extract_title)
+  src/markdown.rs                     commands/fs.rs (Markdown filters)
+  src/ignore.rs                       ignore.rs
+  src/index.rs                        commands/search.rs
+  src/links.rs                        lib/paths.ts
+  src/open_target.rs                  open_target.rs
+  src/pins.rs                         workspace-store.ts
+  src/recents.rs                      commands/recents.rs, commands/workspace.rs
+  src/save.rs                         lib/save.ts
+  src/self_writes.rs                  watcher.rs
+  src/session.rs                      commands/workspace.rs, lib/session.ts
+  src/settings/mod.rs                 config.rs, stores/settings-store.ts
+  src/settings/atomic.rs              config.rs
+  src/settings/format.rs              config.rs
+  src/settings/schema.rs              config.rs, shared/settings.schema.json
+  src/settings/store.rs               config.rs, commands/settings.rs,
+                                      stores/settings-store.ts
+  src/settings/tests.rs               config.rs, commands/settings.rs,
+                                      tests/settings-write-order.test.ts
+  src/startup.rs                      commands/startup.rs, commands/workspace.rs
+  src/terminal.rs                     commands/workspace.rs
+  src/watcher.rs                      watcher.rs
+  assets/settings.schema.json         shared/settings.schema.json
+
+crates/cerata_markdown (prosemark-core under MIT, see below; the other
+editor extensions under GPL-3.0-or-later)
+  src/lib.rs                          prosemark-core and editor extensions
+  src/atomic.rs                       mermaid-decorations.ts
+  src/basic.rs                        docs/keyboard-shortcuts.md, basicSetup.ts
+  src/code.rs                         codeFenceScroll.ts, codeFenceExtension.ts
+  src/commands.rs                     markdown-formatting.ts
+  src/commands/tests.rs               tests/editor-formatting.test.ts,
+                                      tests/editor-commands.test.ts
+  src/decorate.rs                     prosemark-core hide/core.ts, hide/index.ts,
+                                      fold/core.ts, fold/image.ts,
+                                      fold/horizontalRule.ts, fold/dashes.ts,
+                                      fold/emoji.ts, utils.ts,
+                                      heading-decorations.ts
+  src/editing.rs                      prosemark-core list and quote handlers
+  src/frontmatter.rs                  prosemark-core markdown/frontmatter.ts,
+                                      lib/frontmatter.ts
+  src/headings.rs                     lib/heading-slug.ts,
+                                      hooks/use-document-headings.ts
+  src/html.rs                         html-block-decorations.ts
+  src/list.rs                         prosemark-core list/index.ts
+  src/list/tests.rs                   tests/list-extension.test.ts
+  src/motion.rs                       revealBlockOnArrow.ts
+  src/preview.rs                      table-decorations.ts
+  src/table.rs                        table-decorations.ts
+  src/tree/blocks.rs                  prosemark-core markdown/frontmatter.ts,
+                                      markdown/setextDashUnderline.ts
+  src/tree/inline.rs                  prosemark-core markdown/*.ts,
+                                      hide/index.ts, fold/dashes.ts,
+                                      fold/emoji.ts
+  src/wiki.rs                         lib/wiki-links.ts
+  src/yaml_entries.rs                 lib/yaml-entries.ts
+  examples/parser_spike/corpus.rs     prosemark-core rules and tests
+  examples/parser_spike/probes.rs     prosemark-core tests
+
+crates/cerata_render
+  src/highlight.rs                    syntaxHighlighting.ts
+  src/js.rs                           math-renderer.ts, mermaid-renderer.ts
+  examples/render_spike/corpus.rs     tests/mermaid.test.ts
 
 Third-party notice: prosemark-core
 ----------------------------------

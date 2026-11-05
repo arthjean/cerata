@@ -1,15 +1,8 @@
-//! Where an open request lands: Writer's `handleOpenPayload`
-//! (`use-open-drop.ts:23-62`) and its Rust side (`lib.rs:101-180`,
-//! `:461-490`) as one pure decision, so every case is testable without a
-//! window.
-
 use std::path::{Path, PathBuf};
 
 use cerata_core::markdown::is_markdown_path;
 use cerata_core::open_target::{self, OpenTarget};
 
-/// What to open: a workspace, optionally with a file in it, or a file on its
-/// own (Writer's `{workspace, file}` payload).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum OpenRequest {
     Workspace {
@@ -20,8 +13,6 @@ pub enum OpenRequest {
 }
 
 impl OpenRequest {
-    /// A launch target (argv, CLI, second instance): a folder is a
-    /// workspace, a Markdown file opens on its own (`lib.rs:461-490`).
     pub fn from_launch(target: OpenTarget) -> Self {
         match target {
             OpenTarget::Workspace(root) => Self::Workspace { root, file: None },
@@ -29,9 +20,6 @@ impl OpenRequest {
         }
     }
 
-    /// A path dropped on a window: a folder is a workspace, a Markdown file
-    /// opens in its folder's workspace (`open-flow.md:22-31`). `None` for
-    /// anything else.
     pub fn from_drop(path: &Path) -> Option<Self> {
         match open_target::resolve(path)? {
             OpenTarget::Workspace(root) => Some(Self::Workspace { root, file: None }),
@@ -47,16 +35,12 @@ impl OpenRequest {
     }
 }
 
-/// The window chrome (`compact-mode.ts`): a workspace window with tabs and
-/// sidebar, or a compact window on one file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Chrome {
     Workspace,
     Compact,
 }
 
-/// The window a request comes from, when it has one (drops do, launches
-/// do not).
 #[derive(Clone, Copy, Debug)]
 pub struct Origin<'a> {
     pub id: u64,
@@ -64,7 +48,6 @@ pub struct Origin<'a> {
     pub chrome: Chrome,
 }
 
-/// The other windows, looked up by what they show.
 pub trait Hosts {
     fn workspace_window(&self, root: &Path) -> Option<u64>;
     fn file_window(&self, file: &Path) -> Option<u64>;
@@ -72,19 +55,15 @@ pub trait Hosts {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Route {
-    /// Bring window `id` forward and open `file` in it, if any.
     Reveal {
         id: u64,
         file: Option<PathBuf>,
     },
-    /// Open the workspace (and file) in the origin window.
     WorkspaceHere {
         root: PathBuf,
         file: Option<PathBuf>,
     },
-    /// Open the file in the origin window, which already shows its workspace.
     FileHere(PathBuf),
-    /// Turn the origin window into a compact window on the file.
     CompactHere(PathBuf),
     NewWorkspaceWindow {
         root: PathBuf,

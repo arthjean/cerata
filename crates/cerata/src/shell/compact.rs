@@ -1,8 +1,3 @@
-//! The compact window's header (`compact-file-layout.tsx:26-561`): back
-//! and forward, and the file's title, which opens a picker of the global
-//! recent files (30, the active one excluded, each removable). A press
-//! outside it or Escape closes it.
-
 use std::path::{Path, PathBuf};
 
 use gpui::{
@@ -15,13 +10,9 @@ use crate::editor::theme;
 use crate::icons::{Icon, icon};
 use crate::routing::OpenRequest;
 
-/// Tallest the picker grows before it scrolls (`compact-file-layout.tsx:31`).
 pub const PICKER_MAX_HEIGHT: f32 = 420.0;
 
 impl WindowView {
-    /// The header's label: the file's title, else "Choose file". Drawn
-    /// every frame: the title comes from the open document's text, never
-    /// from a read of the file (US-083).
     pub fn compact_title(&self) -> String {
         match self.tabs.active_path() {
             Some(path) => self
@@ -31,8 +22,6 @@ impl WindowView {
         }
     }
 
-    /// The picker takes the focus while it is open, as a dialog does; it
-    /// goes back to the note on close.
     pub fn toggle_recents_picker(&mut self, window: &mut gpui::Window, cx: &mut Context<Self>) {
         if self.recents_picker.is_some() {
             self.close_recents_picker(window, cx);
@@ -53,7 +42,6 @@ impl WindowView {
         }
     }
 
-    /// "Remove from recents": the entry leaves the global list.
     pub fn remove_recent(&mut self, path: &Path, cx: &mut Context<Self>) {
         let core = crate::app::core(cx);
         if let Err(error) = core.recents.remove_file(&path.to_string_lossy()) {
@@ -141,8 +129,6 @@ pub fn render(view: &WindowView, cx: &mut Context<WindowView>) -> AnyElement {
     header.into_any_element()
 }
 
-/// The open picker, over the whole window: a press outside the card
-/// (the title included) closes it.
 pub fn overlay(view: &WindowView, cx: &mut Context<WindowView>) -> Option<AnyElement> {
     let entries = view.recents_picker.as_ref()?;
     Some(picker(entries, &view.picker_focus, cx))
@@ -277,9 +263,6 @@ fn picker(
         .into_any_element()
 }
 
-/// A recent file's folder as the picker shows it: the home folder as `~`
-/// and, past 44 characters, only its last components after `…`, so files
-/// with the same title stay apart (their common prefix is what gets cut).
 pub fn short_folder(folder: &Path) -> String {
     let text = folder.to_string_lossy();
     let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" });

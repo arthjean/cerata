@@ -1,10 +1,3 @@
-//! Height map: one item per buffer line, prefix sums in a Fenwick tree.
-//!
-//! The real engine will use a `sum_tree` (PLAN.md section 3.4) so structural
-//! edits are O(log n) too. Here a structural edit (a line added or removed)
-//! rebuilds the tree in O(n), which is fine at 1 MB and is measured by the
-//! benchmark whenever it happens.
-
 pub struct HeightMap {
     heights: Vec<f64>,
     tree: Vec<f64>,
@@ -51,7 +44,6 @@ impl HeightMap {
         }
     }
 
-    /// Sum of the heights of items `0..ix`, the top of item `ix`.
     pub fn prefix(&self, ix: usize) -> f64 {
         let mut node = ix.min(self.heights.len());
         let mut sum = 0.0;
@@ -66,8 +58,6 @@ impl HeightMap {
         self.prefix(self.heights.len())
     }
 
-    /// The item containing `y` and the offset of `y` inside it. `y` past the
-    /// end lands in the last item; negative `y` in the first.
     pub fn find(&self, y: f64) -> (usize, f64) {
         let n = self.heights.len();
         if n == 0 {
@@ -92,7 +82,6 @@ impl HeightMap {
         }
     }
 
-    /// Replaces items `start..start + old_count` by `new_heights`.
     pub fn splice(&mut self, start: usize, old_count: usize, new_heights: Vec<f64>) {
         if old_count == new_heights.len() {
             for (ix, height) in new_heights.into_iter().enumerate() {

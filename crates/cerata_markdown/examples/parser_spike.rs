@@ -1,11 +1,3 @@
-//! US-003 throwaway spike: tree-sitter-md 0.5.4 vs pulldown-cmark 0.13.6.
-//! Decision and numbers: `docs/adr/0002-markdown-parser.md`.
-//!
-//! `cargo run --release -p cerata_markdown --example parser_spike -- <mode>`
-//! with mode `trees <fixture>..`, `coverage`, `bench` or `all` (default).
-//! `cargo test -p cerata_markdown --example parser_spike` pins the coverage
-//! matrix, the marker inventory and incremental correctness.
-
 #[path = "parser_spike/bench.rs"]
 mod bench;
 #[path = "parser_spike/corpus.rs"]
@@ -64,8 +56,6 @@ fn print_trees(id: &str, text: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Native outcome of one case: tree-sitter on the raw buffer, tree-sitter
-/// with the virtual trailing newline, pulldown-cmark.
 struct Outcome {
     ts_raw: bool,
     ts: bool,
@@ -194,7 +184,6 @@ mod tests {
         }
     }
 
-    /// Pins the matrix the ADR reports.
     #[test]
     fn native_coverage_matches_the_recorded_matrix() {
         for case in CASES {
@@ -209,7 +198,6 @@ mod tests {
         }
     }
 
-    /// Without the virtual newline, tree-sitter-md misses EOF line ends.
     #[test]
     fn raw_tree_sitter_misses_eof_line_ends() {
         for id in [
@@ -236,8 +224,6 @@ mod tests {
         }
     }
 
-    /// Range-scoped incremental reparse must equal a fresh parse after every
-    /// edit, including edits that change block structure.
     #[test]
     fn incremental_reparse_equals_fresh_parse() {
         let mut text = load("markers").unwrap();

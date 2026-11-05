@@ -1,30 +1,14 @@
-//! `MarkdownTree`: the syntax tree every live-preview rule reads.
-//!
-//! The tree has the shape of the Lezer tree Writer's rules were written
-//! against (same node names, same ranges, marker nodes included), so the
-//! rules port one to one and the tree is checked node for node against
-//! Writer's own parser (`scripts/oracle`). Block structure comes from
-//! pulldown-cmark (ADR 0002); inline content is parsed by a port of Lezer's
-//! inline parser with Writer's extensions, which are written against it.
-//!
-//! The tree is rebuilt from the whole document after every edit, so it is
-//! always complete: no rule ever sees an unparsed region.
-
 mod blocks;
 mod incremental;
 mod inline;
 
 use std::ops::Range;
 
-/// Node types, named as in Lezer's Markdown grammar plus Writer's
-/// extensions (`prosemark-core/markdown/*.ts`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum NodeKind {
     Document,
     Paragraph,
-    /// `#` to `######`: level 1 to 6.
     AtxHeading(u8),
-    /// `===` (1) or `---` (2) underline.
     SetextHeading(u8),
     HeaderMark,
     Blockquote,
@@ -79,14 +63,10 @@ pub enum NodeKind {
     Emoji,
     EmojiMark,
     Dash,
-    /// `[[target]]`, `[[target|alias]]` or `![[embed]]`, from Writer's
-    /// regex (`wiki-link-extension.ts:41-50`). Not a Lezer node: it wraps
-    /// the `Link` or `Image` Lezer builds for the same brackets.
     WikiLink,
 }
 
 impl NodeKind {
-    /// The Lezer node name.
     pub fn name(self) -> &'static str {
         use NodeKind::*;
         match self {
@@ -157,7 +137,6 @@ impl NodeKind {
         }
     }
 
-    /// Heading level of an ATX or setext heading node.
     pub fn heading_level(self) -> Option<u8> {
         match self {
             NodeKind::AtxHeading(level) | NodeKind::SetextHeading(level) => Some(level),
@@ -165,8 +144,6 @@ impl NodeKind {
         }
     }
 
-    /// Nodes whose content is code: never decorated as Markdown
-    /// (`codeFenceScroll.ts:56-62` treats frontmatter as code too).
     pub fn is_code(self) -> bool {
         matches!(
             self,
@@ -180,15 +157,12 @@ impl NodeKind {
     }
 }
 
-/// An element under construction, before it is flattened into the arena.
 #[derive(Clone, Debug)]
 pub(crate) struct Elt {
     pub kind: NodeKind,
     pub from: usize,
     pub to: usize,
     pub children: Vec<Elt>,
-    /// A bullet list made by Writer's single-dash setext guard, which the
-    /// following items of the same list join.
     pub dash_guard: bool,
 }
 
@@ -220,7 +194,6 @@ struct NodeData {
     from: usize,
     to: usize,
     parent: u32,
-    /// Index one past the last node of this node's subtree (preorder).
     end: u32,
     next_sibling: u32,
     prev_sibling: u32,
@@ -228,23 +201,19 @@ struct NodeData {
 
 const NONE: u32 = u32::MAX;
 
-/// A wiki link found by Writer's pattern, outside code.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WikiLinkSpan {
     pub range: Range<usize>,
     pub embed: bool,
-    /// The text between the brackets.
     pub inner: Range<usize>,
 }
 
 #[derive(Clone, Debug)]
 pub struct MarkdownTree {
-    /// Nodes in preorder; index 0 is the document.
     nodes: Vec<NodeData>,
 }
 
 impl MarkdownTree {
-    /// Parses the whole document. Never panics, whatever the input.
     pub fn parse(text: &str) -> Self {
         let root = blocks::parse_document(text);
         fn count(elt: &Elt) -> usize {
@@ -286,12 +255,10 @@ impl MarkdownTree {
         Node { tree: self, id: 0 }
     }
 
-    /// Every node in document order (preorder), the document first.
     pub fn iter(&self) -> impl Iterator<Item = Node<'_>> + '_ {
         (0..self.nodes.len() as u32).map(move |id| Node { tree: self, id })
     }
 
-    /// Nodes whose range touches `range` (inclusive), in preorder.
     pub fn iter_range(&self, range: Range<usize>) -> impl Iterator<Item = Node<'_>> + '_ {
         let mut id = 0u32;
         std::iter::from_fn(move || {
@@ -309,9 +276,6 @@ impl MarkdownTree {
         })
     }
 
-    /// The innermost node containing `pos`, entering nodes that start or end
-    /// exactly at it when `side` asks for it: `-1` prefers nodes ending at
-    /// `pos`, `1` nodes starting at it, `0` either (Lezer's `resolveInner`).
     pub fn resolve(&self, pos: usize, side: i8) -> Node<'_> {
         let mut current = self.root();
         'descend: loop {
@@ -330,7 +294,6 @@ impl MarkdownTree {
         }
     }
 
-    /// Lezer-style dump, one `Name from..to` line per node, indented by depth.
     pub fn dump(&self) -> String {
         let mut out = String::new();
         self.dump_node(self.root(), 0, &mut out);
@@ -345,7 +308,6 @@ impl MarkdownTree {
         }
     }
 
-    /// Wiki links of the document, in order.
     pub fn wiki_links(&self) -> Vec<WikiLinkSpan> {
         self.iter()
             .filter(|n| n.kind() == NodeKind::WikiLink)
@@ -362,7 +324,6 @@ impl MarkdownTree {
     }
 }
 
-/// A node of a `MarkdownTree`.
 #[derive(Clone, Copy)]
 pub struct Node<'t> {
     tree: &'t MarkdownTree,
@@ -452,18 +413,15 @@ impl<'t> Node<'t> {
         })
     }
 
-    /// First direct child of `kind`.
     pub fn child(&self, kind: NodeKind) -> Option<Node<'t>> {
         self.children().find(|c| c.kind() == kind)
     }
 
-    /// This node and every node below it, in preorder.
     pub fn descendants(&self) -> impl Iterator<Item = Node<'t>> + 't {
         let tree = self.tree;
         (self.id..self.data().end).map(move |id| Node { tree, id })
     }
 
-    /// Ancestors from the parent up to the document.
     pub fn ancestors(&self) -> impl Iterator<Item = Node<'t>> + 't {
         let mut next = self.parent();
         std::iter::from_fn(move || {
@@ -473,7 +431,6 @@ impl<'t> Node<'t> {
         })
     }
 
-    /// Writer's lineage path, `Document/…/Name` (`fold/core.ts:56-64`).
     pub fn path(&self) -> String {
         let mut names: Vec<&str> = self.ancestors().map(|n| n.name()).collect();
         names.reverse();

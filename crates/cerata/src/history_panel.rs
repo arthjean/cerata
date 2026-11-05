@@ -1,13 +1,3 @@
-//! The history panel (US-091): a note's versions grouped by day, a
-//! read-only preview, the line changes against the current text, and the
-//! actions on a version (Restore, Copy, Pin). Its other view lists the
-//! deleted notes that still have versions. The purges of US-090 start
-//! from its footer.
-//!
-//! Every store read runs on the background executor; the panel only
-//! renders what came back. The list is virtualized (`uniform_list`), so a
-//! note of a thousand versions opens as fast as one of ten.
-
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -30,29 +20,14 @@ pub const NO_DELETED: &str = "No deleted notes with history.";
 const ROW_HEIGHT: f32 = 44.0;
 const LIST_WIDTH: f32 = 300.0;
 
-/// What the panel asks the window to do.
 #[derive(Clone, Debug, PartialEq)]
 pub enum HistoryEvent {
     Close,
-    /// Replace the note's text with this version's bytes.
-    Restore {
-        path: PathBuf,
-        bytes: Vec<u8>,
-    },
-    /// Recreate a deleted note from its last version.
-    RestoreDeleted {
-        note: DeletedNote,
-        bytes: Vec<u8>,
-    },
+    Restore { path: PathBuf, bytes: Vec<u8> },
+    RestoreDeleted { note: DeletedNote, bytes: Vec<u8> },
     Copy(String),
-    /// "Delete History of This Note", after its confirmation.
-    PurgeNote {
-        note: i64,
-    },
-    /// "Delete History Before…" a Unix time, every note.
-    PurgeBefore {
-        ts: i64,
-    },
+    PurgeNote { note: i64 },
+    PurgeBefore { ts: i64 },
     Notice(String),
 }
 
@@ -72,28 +47,22 @@ enum Row {
 pub struct HistoryPanel {
     pub focus_handle: FocusHandle,
     store: Option<Store>,
-    /// Why there is no store, shown instead of any action.
     pub unavailable: Option<String>,
     pub view: View,
-    /// The note shown, absolute, and its title.
     pub path: Option<PathBuf>,
     relative: Option<String>,
     title: String,
-    /// The note's text now (the buffer), for "Show Changes".
     current: String,
     pub note: Option<i64>,
     pub versions: Vec<VersionInfo>,
     pub deleted: Vec<DeletedNote>,
     rows: Vec<Row>,
-    /// Index into `versions` (Note) or `deleted` (Deleted).
     pub selected: Option<usize>,
-    /// The selected version's text, or why it could not be read.
     pub preview: Option<Result<String, String>>,
     preview_of: Option<ContentHash>,
     preview_bytes: Option<Vec<u8>>,
     pub show_changes: bool,
     pub loading: bool,
-    /// When the panel asked for its list, and how long it took.
     opened_at: Instant,
     pub load_time: Option<std::time::Duration>,
     pub date_field: Option<Entity<TextField>>,
@@ -111,7 +80,6 @@ impl Focusable for HistoryPanel {
     }
 }
 
-/// Local day and time of a Unix time.
 fn local(ts: i64) -> Option<chrono::DateTime<chrono::Local>> {
     chrono::Local.timestamp_opt(ts, 0).single()
 }
@@ -122,7 +90,6 @@ pub fn day_label(ts: i64) -> String {
     })
 }
 
-/// `Nov 4, 2026`: short enough for a list row of 300 px.
 pub fn short_day_label(ts: i64) -> String {
     local(ts).map_or_else(String::new, |time| time.format("%b %-d, %Y").to_string())
 }
@@ -131,7 +98,6 @@ pub fn time_label(ts: i64) -> String {
     local(ts).map_or_else(String::new, |time| time.format("%H:%M").to_string())
 }
 
-/// Local midnight of `YYYY-MM-DD`, as a Unix time.
 pub fn parse_day(text: &str) -> Option<i64> {
     let date = chrono::NaiveDate::parse_from_str(text.trim(), "%Y-%m-%d").ok()?;
     let midnight = date.and_hms_opt(0, 0, 0)?;
@@ -188,13 +154,11 @@ impl HistoryPanel {
         self.unavailable.is_none() && self.store.is_some()
     }
 
-    /// The note's text changed (a restore, an edit): the diff follows.
     pub fn set_current(&mut self, current: String, cx: &mut Context<Self>) {
         self.current = current;
         cx.notify();
     }
 
-    /// Reads the list again (after a restore, a pin, a purge).
     pub fn reload(&mut self, cx: &mut Context<Self>) {
         let Some(store) = self.store.clone().filter(|_| self.unavailable.is_none()) else {
             self.loading = false;
@@ -239,7 +203,6 @@ impl HistoryPanel {
                     }
                 }
                 this.rebuild_rows();
-                // The selection follows its version: new ones come first.
                 let keep = match this.view {
                     View::Note => {
                         kept_seq.and_then(|seq| this.versions.iter().position(|v| v.seq == seq))
@@ -289,7 +252,6 @@ impl HistoryPanel {
         })
     }
 
-    /// Switches between the note's versions and the deleted notes.
     pub fn set_view(&mut self, view: View, cx: &mut Context<Self>) {
         if self.view != view {
             self.view = view;
@@ -303,7 +265,6 @@ impl HistoryPanel {
         }
     }
 
-    /// Selects an entry and reads its preview.
     pub fn select(&mut self, selected: Option<usize>, cx: &mut Context<Self>) {
         self.selected = selected;
         if let Some(row) = selected.and_then(|s| self.row_of(s)) {
@@ -375,7 +336,6 @@ impl HistoryPanel {
         }
     }
 
-    /// "Restore": the window replaces the note's text (one undo step).
     pub fn restore(&mut self, cx: &mut Context<Self>) {
         let Some(bytes) = self.preview_bytes.clone() else {
             return;
@@ -400,7 +360,6 @@ impl HistoryPanel {
         }
     }
 
-    /// "Pin Version" or "Unpin".
     pub fn toggle_pin(&mut self, cx: &mut Context<Self>) {
         let (Some(version), Some(store)) = (self.selected_version().cloned(), self.store.clone())
         else {
@@ -426,14 +385,12 @@ impl HistoryPanel {
         self._tasks.push(task);
     }
 
-    /// "Delete History of This Note": the window confirms first.
     pub fn purge_note(&mut self, cx: &mut Context<Self>) {
         if let Some(note) = self.note.filter(|_| self.view == View::Note) {
             cx.emit(HistoryEvent::PurgeNote { note });
         }
     }
 
-    /// "Delete History Before…": shows the date field.
     pub fn ask_date(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let field = self.date_field.get_or_insert_with(|| {
             cx.new(|cx| TextField::new("YYYY-MM-DD", cx).labeled("Delete history before this date"))
@@ -471,7 +428,6 @@ impl HistoryPanel {
         cx.notify();
     }
 
-    /// The date field closes once its purge is decided.
     pub fn close_date(&mut self, cx: &mut Context<Self>) {
         self.date_field = None;
         self.date_error = None;
@@ -527,8 +483,6 @@ fn button(
         .into_any_element()
 }
 
-/// A message in place of the list; it takes the body's height, so the
-/// footer stays at the bottom.
 fn message(text: impl Into<SharedString>) -> AnyElement {
     div()
         .flex_1()
@@ -541,7 +495,6 @@ fn message(text: impl Into<SharedString>) -> AnyElement {
 }
 
 fn diff_view(lines: Vec<DiffLine>) -> AnyElement {
-    // Added and removed lines differ by a sign, not by color alone.
     div()
         .flex()
         .flex_col()
@@ -730,7 +683,6 @@ impl Render for HistoryPanel {
                                 .px(px(16.0))
                                 .py(px(8.0))
                                 .children(deleted_path.map(|path| {
-                                    // The list row may cut a long path.
                                     div()
                                         .pb(px(8.0))
                                         .text_size(px(12.0))

@@ -1,30 +1,12 @@
-//! Atomic file replacement: write a temporary file in the same directory,
-//! fsync it, then rename it over the target.
-//!
-//! Fixes Writer `fs.rs:347` (`write_file_impl`): no fsync, symlinks replaced
-//! by regular files, permissions lost, and a failed rename left the
-//! temporary file behind.
-
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-/// Pauses between rename attempts when another process holds the target
-/// (Windows antivirus, indexer, sync client): three attempts over 300 ms.
 pub const RENAME_RETRY_DELAYS: [Duration; 2] =
     [Duration::from_millis(100), Duration::from_millis(200)];
 
-/// Atomically replaces `path` with `bytes`.
-///
-/// - A symbolic link is written through: its final target is replaced and
-///   the link itself stays a link.
-/// - The permissions of an existing file are kept.
-/// - A read-only file is refused with `PermissionDenied` instead of being
-///   silently replaced (a rename would bypass the read-only bit on Unix).
-/// - On any failure the original file is untouched and no temporary file
-///   remains.
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
     atomic_write_with(path, bytes, |file, bytes| file.write_all(bytes))
 }
@@ -55,8 +37,6 @@ pub(crate) fn atomic_write_with(
         .open(&temp)?;
 
     let result = (|| {
-        // Permissions first: the content must never sit in a temp file more
-        // readable than the original.
         if let Some(meta) = &existing {
             file.set_permissions(meta.permissions())?;
         }
@@ -73,12 +53,6 @@ pub(crate) fn atomic_write_with(
     result
 }
 
-/// Atomically creates `path` holding `bytes`, failing with `AlreadyExists`
-/// instead of replacing anything there: the bytes go to a synced temporary
-/// file that is hard-linked to `path` (a link never replaces its target).
-/// Where hard links are unsupported (FAT, some network shares), falls back
-/// to an exclusive create followed by the write. Either way no temporary
-/// file remains.
 pub fn atomic_create(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let dir = path
         .parent()
@@ -123,7 +97,6 @@ pub fn atomic_create(path: &Path, bytes: &[u8]) -> io::Result<()> {
     }
 }
 
-/// The file actually written: the final target of a symlink chain, or `path`.
 fn resolve_write_target(path: &Path) -> io::Result<PathBuf> {
     match fs::symlink_metadata(path) {
         Ok(meta) if meta.file_type().is_symlink() => dunce::canonicalize(path),
@@ -138,8 +111,6 @@ fn temp_path(dir: &Path, target: &Path) -> PathBuf {
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_default();
     let unique = COUNTER.fetch_add(1, Ordering::Relaxed);
-    // A leading dot keeps the temporary file out of every listing and out of
-    // the watcher (hidden rule of `WorkspaceIgnore`).
     dir.join(format!(
         ".{name}.{}-{unique}.cerata-tmp",
         std::process::id()
@@ -160,17 +131,13 @@ fn rename_with_retry(from: &Path, to: &Path) -> io::Result<()> {
     }
 }
 
-/// Errors raised on Windows while another process holds the target open.
 fn is_transient_lock(error: &io::Error) -> bool {
     if !cfg!(windows) {
         return false;
     }
-    // ERROR_ACCESS_DENIED, ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION
     matches!(error.raw_os_error(), Some(5 | 32 | 33))
 }
 
-/// Persists the rename itself. Best effort: not every platform or file
-/// system supports syncing a directory handle.
 fn sync_dir(dir: &Path) {
     #[cfg(unix)]
     if let Ok(handle) = File::open(dir) {
@@ -276,7 +243,6 @@ mod tests {
         let target = dir.path().join("real.md");
         fs::write(&target, "old").unwrap();
         let link = dir.path().join("link.md");
-        // Creating symlinks needs Developer Mode or elevation on Windows.
         if std::os::windows::fs::symlink_file(&target, &link).is_err() {
             eprintln!("skipped: this account cannot create symlinks");
             return;

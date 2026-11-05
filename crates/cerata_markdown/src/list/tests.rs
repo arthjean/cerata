@@ -1,8 +1,3 @@
-//! Ported from Writer `tests/list-extension.test.ts:88-1080`. `|` marks the
-//! caret, two `|` a selection (anchor first).
-
-// Expected values are written as lists of ranges; float fields are
-// compared in guards.
 #![allow(clippy::single_range_in_vec_init, clippy::redundant_guards)]
 
 use super::*;
@@ -26,7 +21,6 @@ fn marked_doc(state: &EditorState) -> String {
     format!("{}|{}", &doc[..head], &doc[head..])
 }
 
-/// Runs `command` on `doc`: the marked result, or `None` when it passed.
 fn run(command: fn(&mut EditorState) -> bool, doc: &str) -> Option<String> {
     let mut s = marked(doc);
     command(&mut s).then(|| marked_doc(&s))
@@ -57,12 +51,10 @@ fn list_line_at_is_gated_by_the_tree() {
     let doc = "```\n- item\n```\n";
     let s = EditorState::new(doc);
     assert!(list_line_at(s.tree(), s.text(), doc.find("item").unwrap()).is_none());
-    // The caret guard leaves carets alone inside a fence.
     let between = doc.find("- item").unwrap() + 1;
     let mut s = EditorState::new(doc);
     s.select(Selection::cursor(between)).unwrap();
     assert_eq!(s.selection().main().head, between);
-    // Backspace there is not a list operation.
     let mut s = state(doc, doc.find("item").unwrap(), doc.find("item").unwrap());
     assert!(!s.list_backspace());
 }
@@ -106,7 +98,6 @@ fn parses_bullet_and_task_prefixes() {
         })
     );
     assert_eq!(parse_bullet_task_line(0, "1. item"), None);
-    // US-013: `-text` without a space is not a list line.
     assert_eq!(parse_bullet_task_line(0, "-text"), None);
     let s = EditorState::new("-text");
     assert!(s.list_decorations().all.is_empty());
@@ -129,13 +120,11 @@ fn clamps_carets_inside_the_prefix() {
         clamp_collapsed_list_prefix_range(s.tree(), s.text(), range),
         range
     );
-    // An indented code block that looks like a bullet.
     let code = EditorState::new("    - item");
     assert_eq!(
         clamp_collapsed_list_prefix_range(code.tree(), code.text(), SelectionRange::cursor(2)).head,
         2
     );
-    // Wired as the editor's selection filter.
     let mut s = EditorState::new(NESTED);
     s.select(Selection::cursor(L2 + 2)).unwrap();
     assert_eq!(s.selection().main().head, L2 + 4);
@@ -154,7 +143,6 @@ fn arrows_cross_only_the_allowed_prefix_boundaries() {
     assert_eq!(moved(NESTED, L2 + 4, true), Some(L2 + 6));
     assert_eq!(moved("- item", 0, false), None);
     assert_eq!(moved("- item", 0, true), Some(2));
-    // Shift extends.
     let mut s = state(NESTED, L2 + 6, L2 + 6);
     assert!(s.list_arrow(false, true));
     assert_eq!(s.selection().main(), SelectionRange::new(L2 + 6, L2 + 4));
@@ -194,7 +182,6 @@ fn enter_continues_items_with_the_same_marker() {
     assert_eq!(run(enter, "- foo|").as_deref(), Some("- foo\n- |"));
     assert_eq!(text_after(enter, "+ foo|"), "+ foo\n+ ");
     assert_eq!(text_after(enter, "* foo|"), "* foo\n* ");
-    // A new task is always unchecked.
     assert_eq!(text_after(enter, "- [x] done|"), "- [x] done\n- [ ] ");
     assert_eq!(text_after(enter, "- a\n  - b|"), "- a\n  - b\n  - ");
     assert_eq!(
@@ -251,7 +238,6 @@ fn enter_on_an_empty_item_ends_or_steps_out() {
         run(enter, "- a\n\t- b\n\t  - |").as_deref(),
         Some("- a\n\t- b\n\t- |")
     );
-    // Text typed after ending the list is not a list line.
     let mut s = marked("- a\n- |");
     assert!(s.list_enter());
     s.apply(Transaction::new().change(Change::insert(s.doc().len(), "What")))
@@ -272,7 +258,6 @@ fn enter_defers_outside_its_cases() {
     assert_eq!(run(enter, "|- foo"), None);
     assert_eq!(run(enter, "hello|"), None);
     assert_eq!(run(enter, "-| f|oo"), None);
-    // Nothing happens in a fence.
     assert_eq!(run(enter, "```\n- |\n```"), None);
 }
 
@@ -336,7 +321,6 @@ fn backspace_at_the_marker_removes_one_level() {
 
 #[test]
 fn backspace_on_an_empty_deep_item_leaves_no_line_of_spaces() {
-    // `TODOS.md:95`: Writer turned `    - ` into `  `.
     let back = EditorState::list_backspace;
     assert_eq!(
         run(back, "- a\n  - b\n    - |").as_deref(),
@@ -346,7 +330,6 @@ fn backspace_on_an_empty_deep_item_leaves_no_line_of_spaces() {
         run(back, "- a\n  - b\n    - [ ] |").as_deref(),
         Some("- a\n  - b\n  - [ ] |")
     );
-    // One level deep there is no whitespace to leave.
     assert_eq!(run(back, "- a\n  - |").as_deref(), Some("- a\n|"));
 }
 
@@ -356,7 +339,6 @@ fn tab_nests_under_the_previous_item() {
     assert_eq!(run(tab, "- a\n- b|").as_deref(), Some("- a\n  - b|"));
     assert_eq!(text_after(tab, "- a\n- [ ] b|"), "- a\n  - [ ] b");
     assert_eq!(text_after(tab, "- a\n  - b\n  - c|"), "- a\n  - b\n    - c");
-    // No parent: consumed, unchanged.
     assert_eq!(run(tab, "- a|").as_deref(), Some("- a|"));
     assert_eq!(run(tab, "- a\n  - b|").as_deref(), Some("- a\n  - b|"));
     assert_eq!(run(tab, "hello|"), None);
@@ -528,7 +510,6 @@ fn checkbox_toggles_on_click_release_only() {
     );
     assert_eq!(checkbox_toggle_from_line(&text("  - nested"), 0), None);
     assert_eq!(checkbox_toggle(&text("- foo"), 0), None);
-    // Through the editor: a drag across the box selects, a click toggles.
     let mut s = EditorState::new("- [ ] task");
     assert!(!s.checkbox_click(1, true));
     assert_eq!(s.doc(), "- [ ] task");
@@ -562,7 +543,6 @@ fn prefixes_render_as_source_backed_marks() {
         "a bare `-` is text"
     );
     assert_eq!(EditorState::new("- ").list_decorations().marker, [0..2]);
-    // Three markers plus one and two indent steps.
     assert_eq!(
         EditorState::new("- a\n  - b\n    - c")
             .list_decorations()
@@ -584,7 +564,6 @@ fn prefixes_render_as_source_backed_marks() {
         prefixes("- a\n  - [x] nested")[1],
         (4..12, PrefixKind::Task { checked: true }, 6, 3)
     );
-    // `- - w`: two one-step prefixes side by side, one hanging indent.
     assert_eq!(
         prefixes("- - w"),
         [
@@ -606,7 +585,6 @@ fn prefixes_render_as_source_backed_marks() {
         })
         .collect();
     assert_eq!(hanging, [(6.0, 6.0)]);
-    // Nesting geometry after Tab.
     let mut s = marked("1. a\n- b|");
     assert!(s.list_indent());
     assert_eq!(
@@ -627,7 +605,6 @@ fn prefixes_render_as_source_backed_marks() {
     );
 }
 
-/// Continuation lines (padding without hanging) and collapsed indents.
 fn continuation(doc: &str) -> (Vec<(usize, f32)>, Vec<Range<usize>>) {
     let s = EditorState::new(doc);
     let mut lines = Vec::new();
@@ -639,7 +616,6 @@ fn continuation(doc: &str) -> (Vec<(usize, f32)>, Vec<Range<usize>>) {
                 padding_ch,
                 hanging_ch,
             } if hanging_ch == 0.0 => {
-                // One-based, as in Writer's tests.
                 lines.push((s.text().line_at(line_start).number + 1, padding_ch));
             }
             ListDecoration::CollapsedIndent { range } => hidden.push(range),
@@ -679,8 +655,6 @@ fn continuation_lines_sit_at_the_body_column() {
 
 #[test]
 fn nested_ordered_items_hide_their_source_indent() {
-    // `TODOS.md:96`: the leading spaces of `   1. x` are drawn as one
-    // indent level and the line hangs at depth 1, like a nested bullet.
     let d = EditorState::new("1. a\n   1. x").list_decorations();
     assert!(d.all.contains(&ListDecoration::IndentVisual {
         range: 5..8,
@@ -714,8 +688,6 @@ fn enter_on_the_3000_item_list_stays_under_a_frame() {
     assert!(s.list_enter());
     let elapsed = start.elapsed();
     assert!(s.doc()[pos..].starts_with("\n  - \n"));
-    // Release builds measure the budget (`examples/tree_bench.rs`); a debug
-    // build only guards against a pathological regression.
     let budget = if cfg!(debug_assertions) { 200 } else { 16 };
     assert!(elapsed.as_millis() < budget, "{elapsed:?}");
 }

@@ -1,17 +1,3 @@
-//! Diagrams (Pele) and formulas (MathJax) rendered to SVG in an isolated
-//! QuickJS runtime on a thread of its own (`docs/adr/0005`).
-//!
-//! The contexts hold the ECMAScript intrinsics only: rquickjs ships no
-//! `std` or `os` module, no `fetch` and no `require`, and no module loader
-//! is installed, so a script reaches neither the network nor the disk. Its
-//! one input is the global `__src` string, its one output an SVG string.
-//! A render running past [`DEADLINE`] is interrupted and reported as an
-//! error (US-036); the engine it ran in is then rebuilt.
-//!
-//! Results, errors included, are kept in two LRU caches shared by every
-//! editor: 200 formulas (`math-renderer.ts`) and 50 diagrams
-//! (`mermaid-renderer.ts:22`).
-
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -25,38 +11,28 @@ const PELE: &str = include_str!("../assets/js/pele.global.js");
 const MATHJAX: &str = include_str!("../assets/js/mathjax-tex-svg-full.js");
 const MATHJAX_LITE_DOM: &str = include_str!("../assets/js/mathjax-liteDOM.js");
 
-/// A render past this is abandoned (US-036).
 pub const DEADLINE: Duration = Duration::from_millis(500);
 pub const MATH_CACHE: usize = 200;
 pub const DIAGRAM_CACHE: usize = 50;
 
-/// A rendered SVG and its size in pixels.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Svg {
     pub data: Arc<str>,
     pub width: f32,
     pub height: f32,
-    /// How far below the text baseline the image's bottom sits (MathJax's
-    /// `vertical-align`), in pixels; 0 for diagrams.
     pub descent: f32,
 }
 
-/// A render: its SVG, or the engine's error message.
 pub type Rendered = Result<Arc<Svg>, Arc<str>>;
 
-/// A formula to render.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct MathRequest {
     pub tex: String,
     pub display: bool,
-    /// The body font size: MathJax sizes in `ex`, half of it.
     pub font_px: u32,
-    /// The text color, `#rrggbb`.
     pub color: String,
 }
 
-/// The theme a diagram is drawn in: Pele's CSS variables
-/// (`mermaid-canvas.css:22-53`), each `(name without --pele-, #rrggbb)`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct DiagramTheme {
     pub vars: Vec<(String, String)>,
@@ -66,7 +42,6 @@ pub struct DiagramTheme {
 pub struct DiagramRequest {
     pub source: String,
     pub theme: DiagramTheme,
-    /// CSS font lists for labels and code spans; empty leaves Pele's.
     pub font: String,
     pub mono: String,
 }
@@ -84,7 +59,6 @@ struct Job {
     reply: Reply,
 }
 
-/// A small LRU: the least recently used entry goes first.
 struct Lru {
     capacity: usize,
     tick: u64,
@@ -139,14 +113,12 @@ impl Caches {
     }
 }
 
-/// The renderer every editor shares.
 pub struct Renderer {
     jobs: Mutex<Sender<Job>>,
     caches: Arc<Mutex<Caches>>,
 }
 
 impl Renderer {
-    /// The process-wide renderer; its thread starts at the first call.
     pub fn global() -> &'static Renderer {
         static RENDERER: OnceLock<Renderer> = OnceLock::new();
         RENDERER.get_or_init(Renderer::spawn)
@@ -161,7 +133,6 @@ impl Renderer {
         let thread_caches = caches.clone();
         let spawned = std::thread::Builder::new()
             .name("cerata-js".into())
-            // MathJax recurses deeply; QuickJS's own limit is 4 MB.
             .stack_size(16 << 20)
             .spawn(move || run(rx, thread_caches));
         if let Err(error) = spawned {
@@ -200,8 +171,6 @@ impl Renderer {
         }
     }
 
-    /// Renders `request` off the calling thread; `reply` runs on the
-    /// renderer's thread (or at once on a cache hit).
     pub fn math(&self, request: MathRequest, reply: impl FnOnce(Rendered) + Send + 'static) {
         self.request(Key::Math(request), Box::new(reply));
     }
@@ -210,7 +179,6 @@ impl Renderer {
         self.request(Key::Diagram(request), Box::new(reply));
     }
 
-    /// [`Self::math`], waiting for the result.
     pub fn math_blocking(&self, request: MathRequest) -> Rendered {
         let (tx, rx) = mpsc::channel();
         self.math(request, move |r| {
@@ -220,7 +188,6 @@ impl Renderer {
             .unwrap_or_else(|_| Err("The renderer stopped".into()))
     }
 
-    /// [`Self::diagram`], waiting for the result.
     pub fn diagram_blocking(&self, request: DiagramRequest) -> Rendered {
         let (tx, rx) = mpsc::channel();
         self.diagram(request, move |r| {
@@ -231,10 +198,6 @@ impl Renderer {
     }
 }
 
-// --- The renderer's thread ---------------------------------------------------
-
-/// The runtime both engines share, and the deadline its interrupt handler
-/// enforces (nanoseconds since `epoch`, 0 for none).
 struct Engines {
     runtime: Runtime,
     epoch: Instant,
@@ -255,7 +218,6 @@ fn run(rx: Receiver<Job>, caches: Arc<Mutex<Caches>>) {
         }
     };
     for job in rx {
-        // Asked twice before the first answer: the cache has it now.
         let cached = caches
             .lock()
             .ok()
@@ -298,7 +260,6 @@ impl Engines {
     fn context(&self, scripts: &[&str]) -> Result<Context, String> {
         let context = Context::full(&self.runtime).map_err(|e| e.to_string())?;
         context.with(|ctx| -> Result<(), String> {
-            // Timers some bundles reach for: run on the next job drain.
             ctx.eval::<(), _>(
                 "globalThis.setTimeout = (f, _ms, ...a) => { Promise.resolve().then(() => f(...a)); return 0; };\
                  globalThis.clearTimeout = () => {};",
@@ -322,10 +283,6 @@ impl Engines {
             .ok_or_else(|| "Pele is not loaded".to_owned())
     }
 
-    /// MathJax 3.2.2's `tex-svg-full` on its lite DOM adaptor (its Node
-    /// setup), no browser globals. SRE, its speech engine, asks Node's
-    /// `require` for an XML DOM when it loads: inert stubs, deleted once
-    /// loaded. Invalid TeX throws instead of rendering in red.
     fn mathjax(&mut self) -> Result<&Context, String> {
         if self.mathjax.is_none() {
             let config = "globalThis.process = { env: {} };\
@@ -343,8 +300,6 @@ impl Engines {
             .ok_or_else(|| "MathJax is not loaded".to_owned())
     }
 
-    /// Evaluates `call` with `__src = source` before the deadline.
-    /// Evaluates `call` with each `(name, value)` set as a string global.
     fn call(
         &self,
         context: &Context,
@@ -377,7 +332,6 @@ impl Engines {
             Key::Diagram(request) => self.render_diagram(request),
         };
         if result.as_ref().is_err_and(|e| e == TIMED_OUT) {
-            // An interrupted engine may be left half-way: built again.
             match key {
                 Key::Math(_) => self.mathjax = None,
                 Key::Diagram(_) => self.pele = None,
@@ -410,9 +364,6 @@ impl Engines {
     fn render_diagram(&mut self, request: &DiagramRequest) -> Result<Svg, String> {
         let context = self.pele()?.clone();
         let id = format!("pele-{:x}", hash_of(&request.source) as u32);
-        // `images: false`: an `<image href>` would be read by GPUI's SVG
-        // renderer from any path, outside the workspace too. A throw that
-        // is not Pele's own error is a renderer bug (`mermaid-renderer.ts`).
         let svg = self.call(
             &context,
             "(() => { try { return pele.render(__src, { responsive: false, links: false, images: false,              outputLimit: 1000000, idPrefix: __id,              fontFamily: __font || undefined, fontFamilyMono: __mono || undefined }).svg; }              catch (e) { if (e instanceof pele.PeleError) throw e;              throw new Error('Unexpected error: ' + (e instanceof Error ? e.message : String(e))); } })()",
@@ -443,10 +394,6 @@ impl Engines {
 const TIMED_OUT: &str = "The render took longer than 500 ms";
 const UNEXPECTED: &str = "Unexpected error: ";
 
-/// Pele's color variables (`--pele-*` without the prefix) its diagrams
-/// read: a theme sets each, or that part keeps Pele's light default
-/// (`mermaid.test.ts:243-275`). Fonts, weights, radius and the error color
-/// are left to Pele.
 pub const PELE_COLOR_VARS: &[&str] = &[
     "bg",
     "fg",
@@ -467,11 +414,6 @@ pub const PELE_COLOR_VARS: &[&str] = &[
     "series-8",
 ];
 
-/// An engine's SVG goes to GPUI (resvg) only when nothing in it can act or
-/// reach outside it: no script, no `foreignObject`, no event handler, no
-/// `javascript:`, and every `href` a fragment or an inline raster image
-/// (`mermaid.test.ts:215`, DOMPurify's role in Writer). Pele and MathJax
-/// emit none; a change in a bundle that did would show an error, not run.
 pub fn inert(svg: &str) -> Result<(), String> {
     const REFUSED: &str = "The diagram holds content Cerata does not draw";
     let lower = svg.to_ascii_lowercase();
@@ -542,9 +484,6 @@ fn js_error(ctx: &Ctx<'_>, error: rquickjs::Error) -> String {
     error.to_string()
 }
 
-// --- SVG post-processing -------------------------------------------------------
-
-/// The value of attribute `name` in the `<svg ...>` head.
 fn root_attr<'a>(svg: &'a str, name: &str) -> Option<&'a str> {
     let head = &svg[..svg.find('>')?];
     let needle = format!(" {name}=\"");
@@ -553,9 +492,6 @@ fn root_attr<'a>(svg: &'a str, name: &str) -> Option<&'a str> {
     Some(&head[start..start + len])
 }
 
-/// Pele sets the labels' face in the root's `style`, beside custom
-/// properties and the `font` shorthand, which resvg does not apply: the
-/// face is repeated as a presentation attribute the labels inherit.
 fn root_font(svg: &str, font: &str) -> String {
     match svg.strip_prefix("<svg") {
         Some(rest) if !font.is_empty() => {
@@ -577,8 +513,6 @@ fn root_size(svg: &str) -> Option<(f32, f32)> {
     ))
 }
 
-/// MathJax sizes in `ex` and paints in `currentColor`: pixels and the text
-/// color, which resvg understands.
 fn math_svg(svg: &str, ex: f32, color: &str) -> Svg {
     let ex_value = |v: Option<&str>| {
         v.and_then(|v| v.trim_end_matches("ex").parse::<f32>().ok())
@@ -614,9 +548,6 @@ fn replace_attr(head: &str, name: &str, value: &str) -> String {
     format!("{}{value}{}", &head[..start], &head[start + len..])
 }
 
-/// Pele paints with CSS variables, which resvg does not resolve: the theme's
-/// `--pele-*` values are declared on the root, then every `var()` is
-/// replaced by its value (or its fallback).
 pub fn theme_svg(svg: &str, theme: &DiagramTheme) -> String {
     let declared: String = theme
         .vars
@@ -641,8 +572,6 @@ pub fn theme_svg(svg: &str, theme: &DiagramTheme) -> String {
     svg
 }
 
-/// `--name:value` declarations; the first one of a name wins (the theme's,
-/// declared first).
 fn declarations(svg: &str) -> HashMap<String, String> {
     let mut vars = HashMap::new();
     let mut rest = svg;
@@ -664,8 +593,6 @@ fn declarations(svg: &str) -> HashMap<String, String> {
     vars
 }
 
-/// The end of a declared value: its `;` or the attribute's `"`, outside
-/// parentheses.
 fn value_end(text: &str) -> usize {
     let mut depth = 0usize;
     for (i, c) in text.char_indices() {
@@ -679,7 +606,6 @@ fn value_end(text: &str) -> usize {
     text.len()
 }
 
-/// One pass replacing each `var(--name[, fallback])` by its value.
 fn substitute(svg: &str, vars: &HashMap<String, String>) -> String {
     let mut out = String::with_capacity(svg.len());
     let mut rest = svg;
@@ -722,7 +648,6 @@ fn substitute(svg: &str, vars: &HashMap<String, String>) -> String {
     out
 }
 
-/// A stable hash, for callers that key their own state by a request.
 pub fn hash_of(value: &impl Hash) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     value.hash(&mut hasher);
@@ -751,12 +676,9 @@ mod tests {
         assert!(svg.data.contains("#112233") && !svg.data.contains("currentColor"));
         let error = renderer.math_blocking(math("\\frac{a")).unwrap_err();
         assert!(error.contains("Missing close brace"), "{error}");
-        // Both are cached.
         assert!(renderer.cached_math(&math("\\frac{a")).is_some());
     }
 
-    /// `math.test.ts:86`: one formula inline and as a block are two renders,
-    /// each kept in the cache.
     #[test]
     fn inline_and_display_renders_are_cached_apart() {
         let renderer = Renderer::global();
@@ -812,9 +734,6 @@ mod tests {
         assert!(!error.is_empty());
     }
 
-    /// A diagram never names a file or a URL for GPUI's SVG renderer to
-    /// load: usvg's default resolver reads any `href`, outside the
-    /// workspace and on network shares too.
     #[test]
     fn diagram_images_are_never_emitted() {
         let renderer = Renderer::global();
@@ -842,7 +761,6 @@ mod tests {
         let out = engines.call(&context, "while (true) {}", &[]);
         assert_eq!(out, Err(TIMED_OUT.to_owned()));
         assert!(started.elapsed() < DEADLINE * 3);
-        // The runtime still serves the next render.
         assert_eq!(
             engines.call(&context, "__src + '!'", &[("__src", "ok")]),
             Ok("ok!".into())
@@ -850,8 +768,6 @@ mod tests {
         let _ = &mut engines.pele;
     }
 
-    /// `mermaid.test.ts:21-44`: one sample per diagram type Writer's notes
-    /// hold, keyed by the class Pele puts on the root.
     const DIAGRAMS: &[(&str, &str)] = &[
         (
             "flowchart",
@@ -933,8 +849,6 @@ mod tests {
         &svg[..svg.find('>').unwrap()]
     }
 
-    /// `mermaid.test.ts:72-85`: every type renders through Pele to a fixed
-    /// size SVG the canvas scales, and passes the inert check.
     #[test]
     fn every_diagram_type_renders_at_a_fixed_size() {
         for (kind, source) in DIAGRAMS {
@@ -967,8 +881,6 @@ mod tests {
         }
     }
 
-    /// `mermaid.test.ts:87-92` and `:139-148`: a source is rendered once;
-    /// its diagram or its error is then served from the cache.
     #[test]
     fn diagrams_and_errors_are_cached() {
         let renderer = Renderer::global();
@@ -987,7 +899,6 @@ mod tests {
         }
     }
 
-    /// `mermaid.test.ts:94-104`: another UI font is another render, in it.
     #[test]
     fn a_new_font_renders_again_in_that_font() {
         let renderer = Renderer::global();
@@ -1006,7 +917,6 @@ mod tests {
         assert!(head(&georgia.data).contains("font-family=\"Georgia, serif\""));
     }
 
-    /// `mermaid.test.ts:106-118` and `:150-153`: Pele's own messages.
     #[test]
     fn pele_errors_name_the_problem() {
         let error = diagram("flowchart TD\n  A --> B -->\n  C[[[ broken").unwrap_err();
@@ -1021,8 +931,6 @@ mod tests {
         assert!(error.contains("limit"), "{error}");
     }
 
-    /// `mermaid.test.ts:120-137`: a throw that is not Pele's error is a
-    /// renderer bug, reported as unexpected with its message or value.
     #[test]
     fn a_renderer_bug_is_reported_as_unexpected() {
         for (throw, message) in [
@@ -1049,8 +957,6 @@ mod tests {
         }
     }
 
-    /// `mermaid.test.ts:155-185`: links stay inert text, HTML never reaches
-    /// a label, and two diagrams never share an `id`.
     #[test]
     fn diagram_links_html_and_ids_are_inert() {
         let svg = diagram(
@@ -1078,8 +984,6 @@ mod tests {
         assert!(a.iter().all(|id| !b.contains(id)), "{a:?} {b:?}");
     }
 
-    /// `mermaid.test.ts:215-226`: scripts, event handlers, `javascript:`,
-    /// `foreignObject` and outside references never reach the renderer.
     #[test]
     fn only_inert_svg_is_drawn() {
         assert!(
@@ -1102,8 +1006,6 @@ mod tests {
         }
     }
 
-    /// `mermaid.test.ts:243-275`: every color variable Pele's diagrams read
-    /// is in [`PELE_COLOR_VARS`], which the app's theme sets.
     #[test]
     fn every_color_variable_pele_reads_is_listed() {
         const UNMAPPED: &[&str] = &[

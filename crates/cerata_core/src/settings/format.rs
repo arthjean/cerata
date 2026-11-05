@@ -1,28 +1,14 @@
-//! The Ghostty-style `key = value` config format: schema-typed parsing with
-//! line-numbered warnings, and single-key text edits that keep comments,
-//! unknown lines and order.
-//!
-//! Ported from Writer `config.rs` (`parse_value`, `parse_config_with_defaults`,
-//! `serialize_config`, `remove_key_from_config`). Changes from Writer: values
-//! are parsed by schema type instead of guessed, invalid values are dropped
-//! with a warning instead of stored as strings, and a write edits one key in
-//! the file text instead of re-serializing a `HashMap`, so a new key lands in
-//! schema order rather than in hash order.
-
 use std::collections::HashMap;
 use std::path::Path;
 
 use super::schema::{Schema, SettingDef, ValueType};
 use super::{ConfigValue, ConfigWarning, Layer, SettingsError, WarningKind};
 
-/// Values and warnings read from one config file.
 pub(crate) struct ParsedLayer {
     pub(crate) values: HashMap<String, ConfigValue>,
     pub(crate) warnings: Vec<ConfigWarning>,
 }
 
-/// Key of a `key = value` line, or `None` for blank, comment and malformed
-/// lines.
 fn line_key(line: &str) -> Option<&str> {
     let trimmed = line.trim();
     if trimmed.is_empty() || trimmed.starts_with('#') {
@@ -33,15 +19,6 @@ fn line_key(line: &str) -> Option<&str> {
     (!key.is_empty()).then_some(key)
 }
 
-/// Parses `raw` against the schema. Lines are 1-based in warnings.
-///
-/// - Blank lines and `#` comments are skipped.
-/// - A list key accumulates its repeated lines; an empty value marks the
-///   list as present but empty.
-/// - A repeated scalar key keeps its last valid value and warns.
-/// - Unknown keys, malformed lines, invalid values and, in a workspace file,
-///   global-only keys are skipped with a warning, so the key falls back to
-///   the next layer. Out-of-range numbers are clamped with a warning.
 pub(crate) fn parse(raw: &str, path: &Path, schema: &Schema, layer: Layer) -> ParsedLayer {
     let mut values = HashMap::new();
     let mut lists: HashMap<String, Vec<String>> = HashMap::new();
@@ -120,7 +97,6 @@ pub(crate) fn parse(raw: &str, path: &Path, schema: &Schema, layer: Layer) -> Pa
     ParsedLayer { values, warnings }
 }
 
-/// Parses a non-list value. The flag is true when a range value was clamped.
 fn parse_scalar(definition: &SettingDef, raw: &str) -> Option<(ConfigValue, bool)> {
     match definition.value_type {
         ValueType::Boolean => {
@@ -153,10 +129,6 @@ fn parse_number(raw: &str) -> Option<f64> {
     raw.parse::<f64>().ok().filter(|number| number.is_finite())
 }
 
-/// Checks a value written by the app against its schema entry and returns
-/// its canonical form: strings and list items trimmed (the line format cannot
-/// carry surrounding whitespace), empty list items dropped, range numbers
-/// clamped to their bounds.
 pub(crate) fn validate(
     definition: &SettingDef,
     value: ConfigValue,
@@ -170,7 +142,6 @@ pub(crate) fn validate(
         if text.contains(['\n', '\r']) {
             return Err(invalid("contains a line break"));
         }
-        // Every string is trimmed, which also covers `normalize: trim`.
         Ok(text.trim().to_string())
     };
     match (definition.value_type, value) {
@@ -217,7 +188,6 @@ pub(crate) fn validate(
     }
 }
 
-/// The lines that represent `key = value`.
 fn value_lines(key: &str, value: &ConfigValue) -> Vec<String> {
     let line = |text: &str| {
         if text.is_empty() {
@@ -235,15 +205,6 @@ fn value_lines(key: &str, value: &ConfigValue) -> Vec<String> {
     }
 }
 
-/// Rewrites `raw` with `key` set to `value`, or removed when `value` is
-/// `None`. Every other line is kept byte for byte, as is the file's line
-/// ending (`\r\n` when the file already uses it).
-///
-/// An existing key is rewritten at its first line and its later duplicates
-/// are dropped. A new key is inserted in schema order: right after the last
-/// line of the closest preceding schema key in the file; failing that, before
-/// the comment block above the first following schema key; failing that, at
-/// the end.
 pub(crate) fn edit(raw: &str, key: &str, value: Option<&ConfigValue>, schema: &Schema) -> String {
     let newline = if raw.contains("\r\n") { "\r\n" } else { "\n" };
     let mut lines: Vec<String> = Vec::new();

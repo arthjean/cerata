@@ -1,9 +1,3 @@
-//! Block structure: pulldown-cmark finds the blocks (ADR 0002), and each
-//! block is rebuilt with the children and ranges Lezer gives it
-//! (`@lezer/markdown` 1.6.3 `DefaultBlockParsers`), plus Writer's block
-//! rules: frontmatter at offset 0 and the single-dash setext guard
-//! (`markdown/setextDashUnderline.ts`).
-
 use super::inline::{self, inject_marks};
 use super::{Elt, NodeKind};
 use crate::frontmatter::{self, lines};
@@ -78,16 +72,10 @@ fn opens_details(block: &str) -> bool {
             .is_none_or(|b| b.is_ascii_whitespace() || *b == b'>')
 }
 
-/// Whether `text` may hold a `<details>` block, which a window reparse
-/// cannot see whole.
 pub(crate) fn has_details(text: &str) -> bool {
     contains_ignore_case(text, "<details")
 }
 
-/// `html-block-decorations.ts:312-332` (`detailsBlockParser`): a top-level
-/// HTML block opening `<details>` runs to the block that closes it, blank
-/// lines and Markdown between included. An unclosed one stays as
-/// CommonMark reads it.
 fn merge_details(text: &str, blocks: &mut Vec<Elt>) {
     let mut i = 0;
     while i < blocks.len() {
@@ -106,16 +94,10 @@ fn merge_details(text: &str, blocks: &mut Vec<Elt>) {
     }
 }
 
-/// Blocks of `text[from..to]`, parsed as a document of their own, with the
-/// positions of `text` (the windowed reparse of `MarkdownTree::reparse`).
 pub(crate) fn parse_window(text: &str, from: usize, to: usize) -> Vec<Elt> {
     Blocks { text }.parse(from, to)
 }
 
-/// A `$$` that opens a line of a top-level paragraph and is never closed:
-/// like an unclosed fence, it runs to the end of the document (PRD US-010).
-/// Writer leaves it as text; `$$` closed later, or inside a line, keep
-/// Writer's inline rule.
 fn unclosed_display_math(text: &str, body: usize, blocks: &[Elt]) -> Option<usize> {
     let pos = body + text.get(body..)?.rfind("$$")?;
     let line_start = line_start_of(text, pos);
@@ -144,7 +126,6 @@ fn line_end_of(text: &str, pos: usize) -> usize {
     memchr::memchr2(b'\n', b'\r', &text.as_bytes()[pos..]).map_or(text.len(), |i| pos + i)
 }
 
-/// End of a block: its range without trailing line breaks and blank lines.
 fn trim_end(text: &str, from: usize, to: usize) -> usize {
     let bytes = text.as_bytes();
     let mut end = to.min(text.len());
@@ -171,12 +152,8 @@ enum Container {
     Item { content_col: usize },
 }
 
-/// The prefix of one line inside containers.
 struct Prefix {
-    /// Quote marks found, one per quote container reached, in order, with
-    /// the index of the container that owns each.
     marks: Vec<(usize, Range<usize>)>,
-    /// Position and column where the content starts.
     base_pos: usize,
     base_col: usize,
 }
@@ -242,7 +219,6 @@ fn walk_prefix(text: &str, line_start: usize, containers: &[Container]) -> Prefi
     }
 }
 
-/// Column of `pos` on its line.
 fn column(text: &str, pos: usize) -> usize {
     let start = line_start_of(text, pos);
     text.as_bytes()[start..pos]
@@ -250,7 +226,6 @@ fn column(text: &str, pos: usize) -> usize {
         .fold(0, |col, b| next_col(col, *b))
 }
 
-/// Position of column `target` on the line starting at `line_start`.
 fn find_column(text: &str, line_start: usize, target: usize) -> usize {
     let bytes = text.as_bytes();
     let end = line_end_of(text, line_start);
@@ -312,9 +287,6 @@ fn is_inline_tag(tag: &Tag<'_>) -> bool {
 impl<'a> Blocks<'a> {
     fn push_child(stack: &mut [Frame], elt: Elt) {
         let Some(top) = stack.last_mut() else { return };
-        // Writer's single-dash guard leaves a one-item bullet list that the
-        // next items of the same marker continue (pulldown made a heading of
-        // it, then started a new list).
         if elt.kind == NodeKind::BulletList
             && let Some(previous) = top.elt.children.last_mut()
             && previous.kind == NodeKind::BulletList
@@ -338,7 +310,6 @@ impl<'a> Blocks<'a> {
             elt: Elt::new(NodeKind::Document, from, to),
             container: None,
         }];
-        // Containers (quotes, list items) of the open frames, outermost first.
         let mut open: Vec<Container> = Vec::new();
         let mut skip = 0usize;
         let mut run: Option<Range<usize>> = None;
@@ -348,7 +319,6 @@ impl<'a> Blocks<'a> {
                 event,
                 Event::Start(Tag::BlockQuote(_) | Tag::List(_) | Tag::Item)
             ) {
-                // A nested list's range can start on the previous line break.
                 r.start += text[r.start..r.end]
                     .bytes()
                     .take_while(|b| b.is_ascii_whitespace())
@@ -470,8 +440,6 @@ impl<'a> Blocks<'a> {
                     {
                         let mut elt = frame.elt;
                         if elt.kind == NodeKind::ListItem && elt.children.len() == 1 {
-                            // An empty item: Lezer ends it at its line end,
-                            // with an empty paragraph there.
                             let line_end = line_end_of(text, elt.from);
                             elt.to = line_end;
                             elt.children
@@ -526,7 +494,6 @@ impl<'a> Blocks<'a> {
         root.children
     }
 
-    /// A tight list item's text has no paragraph event: Lezer still has one.
     fn flush_run(
         &self,
         stack: &mut [Frame],
@@ -544,15 +511,12 @@ impl<'a> Blocks<'a> {
         Self::push_child(stack, elt);
     }
 
-    /// Leaf content with the container marks of its continuation lines
-    /// blanked, parsed inline.
     fn inline(&self, from: usize, to: usize, containers: &[Container]) -> Vec<Elt> {
         let text = self.text;
         let Some(slice) = text.get(from..to) else {
             return Vec::new();
         };
         let mut scrubbed: Option<Vec<u8>> = None;
-        // Only quote marks are scrubbed; list indentation is spaces already.
         if containers.iter().any(|c| matches!(c, Container::Quote)) {
             let bytes = slice.as_bytes();
             let starts = (0..bytes.len()).filter(|&i| {
@@ -638,7 +602,6 @@ impl<'a> Blocks<'a> {
                 children,
             )];
         }
-        // Setext: text lines, then the underline line.
         let end = trim_end(text, r.start, r.end);
         let underline_line = line_start_of(text, end);
         let prefix = walk_prefix(text, underline_line, containers);
@@ -656,8 +619,6 @@ impl<'a> Blocks<'a> {
         let content_end = trim_end(text, r.start, underline_line);
         let rest_blank = text[mark_to..end].bytes().all(is_ws);
         if ch == b'-' && mark_to == mark_from + 1 && rest_blank {
-            // Writer: a single `-` under a line does not make an H2; the
-            // `-` starts an empty bullet item.
             let paragraph = self.paragraph(stack, r.start, content_end, containers);
             let item = Elt::with(
                 NodeKind::ListItem,
@@ -683,7 +644,6 @@ impl<'a> Blocks<'a> {
         )]
     }
 
-    /// The marker of the item starting at `pos` and its content column.
     fn list_mark(&self, pos: usize) -> (Range<usize>, usize) {
         let text = self.text;
         let bytes = text.as_bytes();
@@ -705,8 +665,6 @@ impl<'a> Blocks<'a> {
         (pos..end, content_col)
     }
 
-    /// `end` is the trimmed block end, `raw_end` pulldown's: an unclosed
-    /// fence keeps its trailing blank lines, as Lezer's does.
     fn fenced_code(&self, start: usize, raw_end: usize, containers: &[Container]) -> Elt {
         let end = trim_end(self.text, start, raw_end);
         let text = self.text;
@@ -882,7 +840,6 @@ impl<'a> Blocks<'a> {
         Elt::with(NodeKind::Table, from, end, rows)
     }
 
-    /// Lezer's `parseRow` (GFM, dist/index.js:2052-2078).
     fn table_row(&self, from: usize, to: usize) -> Vec<Elt> {
         let bytes = self.text.as_bytes();
         let mut elts = Vec::new();
@@ -905,7 +862,6 @@ impl<'a> Blocks<'a> {
                     cell_start = Some(i);
                 }
                 cell_end = i + 1;
-                // Keep cells on character boundaries.
                 while cell_end < to && !self.text.is_char_boundary(cell_end) {
                     cell_end += 1;
                 }
@@ -918,7 +874,6 @@ impl<'a> Blocks<'a> {
         elts
     }
 
-    /// Lezer's `LinkReference` from `[label]:` to the destination or title.
     fn link_reference(&self, start: usize) -> Option<Elt> {
         let text = self.text;
         let bytes = text.as_bytes();
@@ -952,9 +907,6 @@ impl<'a> Blocks<'a> {
         Some(Elt::with(NodeKind::LinkReference, from, to, children))
     }
 
-    /// Puts every quote mark of `quote` (the innermost container in
-    /// `containers`) where Lezer has it: inside the leaf of a continuation
-    /// line, or as a child of the deepest block holding it.
     fn distribute_quote_marks(&self, quote: &mut Elt, containers: &[Container]) {
         let text = self.text;
         let own = containers.len() - 1;
@@ -1038,13 +990,6 @@ fn place_mark(elt: &mut Elt, mark: Elt) {
     elt.children.insert(at, mark);
 }
 
-/// Inserts a block (a link reference definition) into the deepest
-/// container holding it, in position order.
-/// pulldown-cmark keeps one definition per label (the first) and consumes
-/// later duplicates without an event; Lezer has a `LinkReference` for each,
-/// and the tree must not depend on text outside a block (windowed reparse).
-/// Every definition holds a `]:`: when one lies outside the known spans,
-/// blank the known definitions and parse again, until no new one surfaces.
 fn with_duplicate_definitions(slice: &str, mut spans: Vec<Range<usize>>) -> Vec<Range<usize>> {
     let unexplained = |spans: &[Range<usize>]| {
         memchr::memmem::find_iter(slice.as_bytes(), b"]:")
@@ -1059,9 +1004,6 @@ fn with_duplicate_definitions(slice: &str, mut spans: Vec<Range<usize>>) -> Vec<
                 }
             }
         }
-        // Only ASCII bytes outside line breaks were replaced by spaces, so
-        // the text is still UTF-8 (a multi-byte character lies wholly inside
-        // or outside a span, spans being on character boundaries).
         let Ok(blanked) = String::from_utf8(blanked) else {
             break;
         };
@@ -1084,7 +1026,6 @@ fn with_duplicate_definitions(slice: &str, mut spans: Vec<Range<usize>>) -> Vec<
     spans
 }
 
-/// `span` intersects a block other than a container.
 fn overlaps_leaf(parent: &Elt, span: &Range<usize>) -> bool {
     parent.children.iter().any(|c| {
         if c.from >= span.end || span.start >= c.to {
@@ -1122,14 +1063,10 @@ fn insert_block(parent: &mut Elt, block: Elt) {
     parent.children.insert(at, block);
 }
 
-/// Writer's wiki-link pattern `(!?)\[\[([^\]]+)\]\]` outside code
-/// (`wiki-link-extension.ts:41-62`): wraps the Lezer nodes it covers.
 fn wrap_wiki_links(text: &str, document: &mut Elt) {
     wrap_wiki_links_in(text, document, 0..text.len());
 }
 
-/// The scan always runs over the whole text, so its matches are those of
-/// Writer's global regex; only the matches inside `window` are wrapped.
 pub(crate) fn wrap_wiki_links_in(text: &str, document: &mut Elt, window: Range<usize>) {
     let bytes = text.as_bytes();
     let mut pos = 0;
@@ -1158,7 +1095,6 @@ pub(crate) fn wrap_wiki_links_in(text: &str, document: &mut Elt, window: Range<u
     }
 }
 
-/// Children that may touch `pos` (children are sorted and disjoint).
 fn children_near(elt: &Elt, pos: usize) -> &[Elt] {
     let first = elt.children.partition_point(|c| c.to < pos);
     let last = elt.children.partition_point(|c| c.from <= pos);
@@ -1204,7 +1140,6 @@ fn wrap(elt: &mut Elt, from: usize, to: usize) {
             .position(|c| c.from >= to)
             .unwrap_or(elt.children.len())
     });
-    // Sorted, disjoint and none straddling: the children inside are one run.
     let wrapped: Vec<Elt> = match (inside.first(), inside.last()) {
         (Some(&first), Some(&last)) => elt.children.drain(first..=last).collect(),
         _ => Vec::new(),
@@ -1214,7 +1149,6 @@ fn wrap(elt: &mut Elt, from: usize, to: usize) {
 }
 
 impl NodeKind {
-    /// Blocks a wiki link sits inside, even when it spans the whole block.
     fn is_block(self) -> bool {
         matches!(
             self,
@@ -1233,7 +1167,6 @@ impl NodeKind {
         )
     }
 
-    /// Marker-like nodes never contain a quote mark.
     fn is_mark_like(self) -> bool {
         matches!(
             self,

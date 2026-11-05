@@ -1,13 +1,3 @@
-//! The `cerata` command-line launcher.
-//!
-//! Ported from Writer `writer_cli.rs` (hand-rolled argv parsing, launcher
-//! trait, exit codes 0, 2 and 3) with Writer defect 10 fixed: Writer chose
-//! CLI mode when `argv[0]` matched `writer` case-insensitively, so the app
-//! binary `Writer` and the CLI `writer` were indistinguishable on
-//! case-insensitive file systems. Cerata enters CLI mode only through an
-//! exact, case-sensitive binary name ([`CLI_BINARY`]) or an explicit
-//! subcommand ([`CLI_SUBCOMMAND`]).
-
 use crate::open_target::{self, OpenTarget};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -16,11 +6,8 @@ pub const EXIT_SUCCESS: u8 = 0;
 pub const EXIT_USAGE: u8 = 2;
 pub const EXIT_RUNTIME: u8 = 3;
 
-/// File stem of a binary (or link) that always runs the CLI.
 pub const CLI_BINARY: &str = "cerata-cli";
-/// First argument of the app binary that runs the CLI: `cerata cli PATH`.
 pub const CLI_SUBCOMMAND: &str = "cli";
-/// Overrides the app binary the CLI launches.
 pub const APP_PATH_ENV: &str = "CERATA_APP_PATH";
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -43,9 +30,6 @@ Environment:
   CERATA_APP_PATH   Path of the Cerata app binary to launch.
 ";
 
-/// The CLI arguments (program name first) when this invocation is a CLI
-/// call, `None` when it should start the app. Matching is exact and
-/// case-sensitive.
 pub fn cli_args(argv: &[OsString]) -> Option<Vec<OsString>> {
     let program = argv.first()?;
     let stem = Path::new(program)
@@ -96,8 +80,6 @@ fn parse_args(argv: &[OsString]) -> Result<ParsedArgs, ParseError> {
     Ok(ParsedArgs::Open { path: positional })
 }
 
-/// Relative paths resolve against the calling process's directory, so the
-/// app receives an absolute path whatever its own working directory is.
 fn resolve_input_path(input: &Path, cwd: &Path) -> PathBuf {
     if input.is_absolute() {
         input.to_path_buf()
@@ -106,7 +88,6 @@ fn resolve_input_path(input: &Path, cwd: &Path) -> PathBuf {
     }
 }
 
-/// Starts the app; abstracted so tests observe the target without spawning.
 pub trait Launcher {
     fn launch(&self, target: Option<&Path>) -> Result<(), LaunchError>;
 }
@@ -119,8 +100,6 @@ pub enum LaunchError {
     Io(#[from] std::io::Error),
 }
 
-/// Spawns the Cerata app binary (this executable, or `CERATA_APP_PATH`)
-/// with the target as its only argument and does not wait for it.
 pub struct SystemLauncher;
 
 impl Launcher for SystemLauncher {
@@ -146,9 +125,6 @@ impl Launcher for SystemLauncher {
     }
 }
 
-/// Runs the CLI. Returns the process exit code: 0 on success, 2 for a usage
-/// error, 3 for a runtime error (missing or unsupported path, launch
-/// failure), as in Writer.
 pub fn run<L: Launcher>(argv: &[OsString], cwd: &Path, launcher: &L) -> u8 {
     match parse_args(argv) {
         Ok(ParsedArgs::Help) => {
@@ -233,8 +209,6 @@ mod tests {
             .map(OsString::from)
             .collect()
     }
-
-    // Ported from Writer `writer_cli.rs` tests.
 
     #[test]
     fn parse_help_flags() {
@@ -361,8 +335,6 @@ mod tests {
         assert_eq!(resolve_input_path(&absolute, cwd), absolute);
     }
 
-    // Cerata addition: CLI detection is exact and case-sensitive.
-
     #[test]
     fn cli_mode_needs_the_exact_binary_name_or_subcommand() {
         let os = |parts: &[&str]| parts.iter().map(OsString::from).collect::<Vec<_>>();
@@ -374,7 +346,6 @@ mod tests {
             cli_args(&os(&["C:\\Apps\\cerata.exe", "cli", "notes"])),
             Some(os(&["C:\\Apps\\cerata.exe", "notes"]))
         );
-        // The app binary itself, whatever its case, opens the app.
         assert_eq!(
             cli_args(&os(&["/Applications/Cerata.app/Contents/MacOS/Cerata"])),
             None

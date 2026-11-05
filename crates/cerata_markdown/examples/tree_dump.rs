@@ -1,4 +1,3 @@
-//! Prints the MarkdownTree of a file (debug aid).
 fn main() {
     let Some(path) = std::env::args().nth(1) else {
         return;

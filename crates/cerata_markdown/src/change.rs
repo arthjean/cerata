@@ -1,9 +1,6 @@
-//! Document changes and position mapping.
-
 use crate::text::Text;
 use std::ops::Range;
 
-/// One replacement, in the coordinates of the document it applies to.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Change {
     pub from: usize,
@@ -29,13 +26,10 @@ impl Change {
     }
 }
 
-/// Which side a position sticks to when text is inserted exactly at it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Bias {
-    /// Stays before the inserted text.
     #[default]
     Left,
-    /// Moves after the inserted text.
     Right,
 }
 
@@ -49,8 +43,6 @@ pub enum ChangeError {
     Overlap { at: usize },
 }
 
-/// A set of non-overlapping changes, all in the coordinates of the same
-/// (start) document, sorted by position.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ChangeSet {
     changes: Vec<Change>,
@@ -61,9 +53,6 @@ impl ChangeSet {
         Self::default()
     }
 
-    /// Validates `changes` against `text`: inside the document, on character
-    /// boundaries, and not overlapping. They are sorted by position; two
-    /// insertions at the same position keep their given order.
     pub fn new(text: &Text, mut changes: Vec<Change>) -> Result<Self, ChangeError> {
         changes.retain(|c| !(c.from == c.to && c.insert.is_empty()));
         changes.sort_by_key(|c| (c.from, c.to));
@@ -93,16 +82,12 @@ impl ChangeSet {
         &self.changes
     }
 
-    /// Applies the changes to `text` (the start document).
     pub(crate) fn apply(&self, text: &mut Text) {
-        // Back to front, so earlier offsets stay valid.
         for change in self.changes.iter().rev() {
             text.replace(change.from..change.to, &change.insert);
         }
     }
 
-    /// The changes that undo this set, in the coordinates of the document
-    /// this set produces. `text` is the start document.
     pub fn invert(&self, text: &Text) -> ChangeSet {
         let mut shift: isize = 0;
         let changes = self
@@ -121,9 +106,6 @@ impl ChangeSet {
         ChangeSet { changes }
     }
 
-    /// Maps a position of the start document into the new document. A
-    /// position inside a replaced range lands at its start (`Left`) or end
-    /// (`Right`); one at the start of a replaced range stays at its start.
     pub fn map_pos(&self, pos: usize, bias: Bias) -> usize {
         let mut shift: isize = 0;
         for change in &self.changes {
@@ -148,12 +130,10 @@ impl ChangeSet {
         (pos as isize + shift) as usize
     }
 
-    /// Ranges touched by the changes in the start document.
     pub fn ranges_before(&self) -> impl Iterator<Item = Range<usize>> + '_ {
         self.changes.iter().map(|c| c.from..c.to)
     }
 
-    /// Ranges touched by the changes in the new document.
     pub fn ranges_after(&self) -> Vec<Range<usize>> {
         let mut shift: isize = 0;
         self.changes
@@ -166,10 +146,6 @@ impl ChangeSet {
             .collect()
     }
 
-    /// `self` then `next` (whose coordinates are those of the document
-    /// `self` produces), as one set in the coordinates of `self`'s start
-    /// document `text`. The result is a single change spanning everything
-    /// either set touched: history only needs it to undo and redo exactly.
     pub fn compose(&self, text: &Text, next: &ChangeSet) -> ChangeSet {
         let (Some(first), Some(last)) = (self.changes.first(), self.changes.last()) else {
             return next.clone();
@@ -183,8 +159,6 @@ impl ChangeSet {
         let grown = end.len() as isize - text.len() as isize;
         next.apply(&mut end);
         let total = end.len() as isize - text.len() as isize;
-        // Left of `self`'s first change the middle document equals the start
-        // document; right of its last change it is shifted by `grown`.
         let from = first.from.min(next_first.from);
         let to = (last.to as isize).max(next_last.to as isize - grown) as usize;
         let end_to = (to as isize + total) as usize;

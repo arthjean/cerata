@@ -7,8 +7,6 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::mpsc::{self, Receiver};
 use tempfile::TempDir;
 
-/// Reads through the disk and counts every open; files named in
-/// `offline` are cloud placeholders.
 #[derive(Default)]
 struct CountingFiles {
     opened: AtomicUsize,
@@ -83,7 +81,6 @@ impl Lib {
         }
     }
 
-    /// A library whose first pass already ran, events drained.
     fn indexed(setup: impl FnOnce(&Path)) -> Self {
         let mut lib = Self::new(setup);
         lib.age_all();
@@ -140,7 +137,6 @@ impl Lib {
     }
 }
 
-/// Moves a file's modified time an hour back, past the settle window.
 fn age(path: &Path) {
     let file = fs::File::options().write(true).open(path).unwrap();
     let modified = file.metadata().unwrap().modified().unwrap();
@@ -178,12 +174,9 @@ fn the_first_pass_publishes_the_walk_then_fills_titles_hashes_and_the_store() {
         lib.ctx.index.lock().find_by_name("PIC.png"),
         Some(lib.path("docs/pic.png"))
     );
-    // The walk listed every file: embeds use the table, not a walk.
     assert!(lib.ctx.index.lock().names_complete());
 }
 
-/// US-086: once an outside edit replaced Cerata's last write, a return to
-/// those bytes (an undo, a checkout) is a change, not an echo.
 #[test]
 fn an_outside_return_to_our_last_write_is_not_taken_for_its_echo() {
     let mut lib = Lib::indexed(|root| fs::write(root.join("a.md"), "# Ours\n").unwrap());
@@ -282,13 +275,11 @@ fn changes_the_watcher_missed_are_caught_and_reported_like_its_own() {
 #[test]
 fn a_file_modified_within_the_settle_window_is_checked_again_next_pass() {
     let mut lib = Lib::indexed(|root| fs::write(root.join("a.md"), "# One\n").unwrap());
-    // Rewritten now: its time is too recent to trust.
     let path = lib.path("a.md");
     fs::write(&path, "# Two\n").unwrap();
     let modified = fs::metadata(&path).unwrap().modified().unwrap();
     lib.pass().unwrap();
     assert_eq!(lib.title("a.md").as_deref(), Some("Two"));
-    // Same size, same modified time: only the recheck finds it.
     fs::write(&path, "# Six\n").unwrap();
     fs::File::options()
         .write(true)
@@ -304,7 +295,6 @@ fn a_file_modified_within_the_settle_window_is_checked_again_next_pass() {
         path: path.clone(),
         change: FileChange::Modified
     }));
-    // Settled now (old time): no longer read.
     age(&path);
     lib.pass().unwrap();
     let opened = lib.files.opened();
@@ -331,7 +321,6 @@ fn an_offline_file_is_never_opened_and_keeps_its_known_title() {
             .record
             .offline
     );
-    // The other file goes offline after its title was read, then changes.
     lib.files.offline.lock().insert("cloud.md".into());
     lib.write("cloud.md", "# Changed while offline, longer\n");
     let opened = lib.files.opened();
@@ -392,7 +381,6 @@ fn a_stale_epoch_cancels_the_pass_and_applies_nothing() {
 
 #[test]
 fn a_focus_after_missed_events_brings_the_change() {
-    // No watcher at all: the backend that emits nothing.
     let lib = Lib::indexed(|root| fs::write(root.join("a.md"), "# Before\n").unwrap());
     let reconciler = Reconciler::new();
     let runner = reconciler.clone();
@@ -418,7 +406,6 @@ fn a_focus_after_missed_events_brings_the_change() {
         path: lib.path("a.md"),
         change: FileChange::Modified
     }));
-    // A second focus within 30 s brings nothing.
     assert!(!reconciler.request(ReconcileTrigger::Focus));
     assert!(reconciler.request(ReconcileTrigger::WatchError));
     assert!(reconciler.wait_for_passes(3, Duration::from_secs(10)));
@@ -577,7 +564,6 @@ fn similarity_comparisons_stop_at_the_cap() {
     let matches = match_renames(&gone, &appeared, &sketches);
     assert_eq!(matches.comparisons, MAX_COMPARISONS);
     assert!(matches.pairs.is_empty());
-    // Candidates of another extension are never compared.
     let images: Vec<Appeared> = appeared
         .iter()
         .map(|a| Appeared {

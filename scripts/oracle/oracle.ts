@@ -1,21 +1,3 @@
-// Differential oracle for cerata_markdown: runs writer-computer's own
-// prosemark-core (CodeMirror 6 + Lezer, the versions pinned in Writer's
-// pnpm-lock.yaml at commit 79b744c) headless under Bun and records what it
-// produces, so the Rust port is checked against the reference, not against a
-// reading of it.
-//
-//   bun install
-//   bun oracle.ts tree <file.md>                  Lezer tree of a file
-//   bun oracle.ts snapshots <out> <fixtures>...   decorate() snapshots
-//   bun oracle.ts trees <out> <fixtures>...       Lezer trees of fixtures
-//   bun oracle.ts emoji <out.tsv>                 node-emoji shortcode table
-//
-// Every position written is a UTF-8 byte offset, as in cerata_markdown.
-//
-// WRITER_DIR overrides the reference checkout (default C:/dev/writer-computer).
-// The sources are copied into `.writer/` so their bare imports resolve against
-// this folder's node_modules; nothing is written to the reference checkout.
-
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 
@@ -42,7 +24,6 @@ const core = await import("./.writer/lib/prosemark-core/main");
 
 const parserExtensions = () => markdown({ extensions: [GFM, core.prosemarkMarkdownSyntaxExtensions] });
 
-/** Parse the whole document and commit the tree (Writer's `withFullParse`). */
 function fullParse(state: InstanceType<typeof EditorState>) {
   ensureSyntaxTree(state, state.doc.length, 5000);
   return state.update({}).state;
@@ -54,8 +35,6 @@ function makeState(doc: string, ranges: Array<[number, number]>) {
       doc,
       selection: EditorSelection.create(ranges.map(([a, h]) => EditorSelection.range(a, h))),
       extensions: [
-        // Writer runs single-selection; Cerata keeps every range, so the
-        // snapshots exercise the contact rule on all of them.
         EditorState.allowMultipleSelections.of(true),
         parserExtensions(),
         core.defaultHideExtensions,
@@ -65,7 +44,6 @@ function makeState(doc: string, ranges: Array<[number, number]>) {
   );
 }
 
-/** Maps UTF-16 offsets (CodeMirror) to UTF-8 byte offsets (Cerata). */
 function byteOffsets(doc: string): (pos: number) => number {
   const table = new Array<number>(doc.length + 1);
   let bytes = 0;
@@ -94,7 +72,6 @@ function dumpTree(doc: string): string[] {
     enter(node) {
       lines.push(`${"  ".repeat(depth)}${node.name} ${b(node.from)}..${b(node.to)}`);
       depth++;
-      // The YAML inside frontmatter is a nested language, not Markdown.
       if (node.name === "FrontmatterContent") {
         depth--;
         return false;
@@ -107,7 +84,6 @@ function dumpTree(doc: string): string[] {
   return lines;
 }
 
-/** Normalizes a CodeMirror decoration into Cerata's vocabulary. */
 function describe(from: number, to: number, deco: any): string {
   const spec = deco.spec ?? {};
   const widget = spec.widget;
@@ -138,8 +114,6 @@ function decorations(state: InstanceType<typeof EditorState>, b: (pos: number) =
       out.push(describe(b(from), b(to), deco));
     });
   }
-  // CodeMirror keeps duplicates (a nested quote's mark is hidden by both
-  // quotes); they render the same as one, so the snapshot is a set.
   return [...new Set(out)].sort(compareDescriptions);
 }
 
@@ -155,8 +129,6 @@ function compareDescriptions(a: string, b: string): number {
   return af - bf || at - bt || (a < b ? -1 : a > b ? 1 : 0);
 }
 
-/** Caret positions per fixture: document bounds, every line start and end,
- *  and every marker boundary the tree exposes (deduplicated, capped). */
 function caretPositions(doc: string): number[] {
   const state = fullParse(EditorState.create({ doc, extensions: [parserExtensions()] }));
   const positions = new Set<number>([0, doc.length]);
@@ -185,7 +157,6 @@ function snapshots(out: string, fixtureDirs: string[]) {
     const doc = readFileSync(path, "utf8");
     const b = byteOffsets(doc);
     const cases: Array<{ selection: Array<[number, number]>; decorations: string[] }> = [];
-    // Selections are built in UTF-16 (CodeMirror) and recorded in bytes.
     const push = (selection: Array<[number, number]>) =>
       cases.push({
         selection: selection.map(([a, h]) => [b(a), b(h)]),
@@ -193,13 +164,11 @@ function snapshots(out: string, fixtureDirs: string[]) {
       });
     const positions = caretPositions(doc);
     for (const pos of positions) push([[pos, pos]]);
-    // Two carets at once (multi-cursor), and short range selections.
     const n = positions.length;
     for (let i = 0; i < Math.min(8, Math.floor(n / 2)); i++) {
       push([[positions[i]!, positions[i]!], [positions[n - 1 - i]!, positions[n - 1 - i]!]]);
     }
     for (let i = 0; i + 1 < n && i < 8; i += 2) push([[positions[i]!, positions[i + 1]!]]);
-    // One range selection over the whole document reveals everything.
     push([[0, doc.length]]);
     const target = join(out, `${basename(file, ".md")}.json`);
     writeFileSync(target, `${JSON.stringify({ fixture: file, cases }, null, 1)}\n`);
@@ -244,6 +213,15 @@ switch (command) {
     await emojiTable(args[0]!);
     break;
   default:
-    console.error("usage: bun oracle.ts tree <file.md> | trees <out> <fixtures>... | snapshots <out> <fixtures>... | emoji <out.tsv>");
+    console.error(
+      [
+        "usage (after `bun install`):",
+        "  bun oracle.ts tree <file.md>",
+        "  bun oracle.ts trees <out> <fixtures>...",
+        "  bun oracle.ts snapshots <out> <fixtures>...",
+        "  bun oracle.ts emoji <out.tsv>",
+        `WRITER_DIR selects the reference checkout (now ${WRITER_DIR}); offsets are UTF-8 bytes.`,
+      ].join("\n"),
+    );
     process.exit(2);
 }

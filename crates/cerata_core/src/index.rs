@@ -1,18 +1,3 @@
-//! Workspace file index, fuzzy file search and lookup by file name.
-//!
-//! Ported from Writer `commands/search.rs` with these fixes:
-//! - one ignore model: the walk builds and filters with the same
-//!   [`WorkspaceIgnore`] the sidebar and watcher use (Writer defect 3);
-//! - one Markdown predicate, `.md` and `.markdown` in any case (defect 2);
-//! - indexing runs off the calling thread and is canceled by epoch (the
-//!   reconciliation of `crate::reconcile`), never synchronously on the UI
-//!   thread (defect 4);
-//! - relative paths are normalized to `/`, so the filename bonus works with
-//!   Windows separators (Writer `search.rs:112` used `rfind('/')`, defect 5);
-//! - an unreadable directory is skipped with a warning instead of silently;
-//! - every file's name is kept, so an embed resolves by name without a walk
-//!   ([`LiveIndex::find_by_name`], US-087).
-
 use crate::epoch::EpochToken;
 use crate::ignore::{GitignoreChain, IgnoreBuilder, WorkspaceIgnore, global_gitignore_path};
 use crate::markdown::is_markdown_path;
@@ -26,26 +11,19 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::UNIX_EPOCH;
 
-/// One Markdown file of the workspace.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct IndexedFile {
     pub path: PathBuf,
-    /// Path relative to the workspace root, always `/`-separated.
     pub relative_path: String,
     pub name: String,
-    /// Seconds since the Unix epoch, 0 when unknown.
     pub modified_at: u64,
     pub size: u64,
-    /// Nanoseconds since the Unix epoch, 0 when unknown.
     pub modified_ns: u64,
-    /// BLAKE3 hash of the last content seen, `None` until read.
     pub hash: Option<ContentHash>,
-    /// Title of the last content seen, `None` until read or without one.
     pub title: Option<String>,
 }
 
 impl IndexedFile {
-    /// Entry for `path` with its size and times, content not read.
     pub fn new(root: &Path, path: &Path, metadata: Option<&Metadata>) -> Self {
         let modified_ns = metadata.map_or(0, modified_ns);
         Self {
@@ -64,7 +42,6 @@ impl IndexedFile {
     }
 }
 
-/// Modification time of `metadata` in nanoseconds since the Unix epoch.
 pub fn modified_ns(metadata: &Metadata) -> u64 {
     metadata
         .modified()
@@ -75,38 +52,30 @@ pub fn modified_ns(metadata: &Metadata) -> u64 {
         })
 }
 
-/// A directory the walk could not read. Indexing continues without it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WalkWarning {
     pub path: PathBuf,
     pub message: String,
 }
 
-/// Result of a complete index walk.
 #[derive(Debug, Clone)]
 pub struct WorkspaceIndex {
     pub root: PathBuf,
     pub files: Vec<IndexedFile>,
-    /// Every other non-ignored file (images, attachments), for names.
     pub other_files: Vec<PathBuf>,
-    /// The root and every ancestor directory of an indexed file.
     pub dirs_with_markdown: HashSet<PathBuf>,
-    /// The matcher the walk filtered with, to share with sidebar and watcher.
     pub ignore: Arc<WorkspaceIgnore>,
     pub warnings: Vec<WalkWarning>,
 }
 
-/// The walk stopped because its epoch went stale.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[error("indexing canceled: the workspace changed")]
 pub struct Canceled;
 
-/// Indexes the Markdown files of `root`, honoring the user's global gitignore.
 pub fn index_workspace(root: &Path, token: &EpochToken) -> Result<WorkspaceIndex, Canceled> {
     index_workspace_with_global(root, global_gitignore_path().as_deref(), token)
 }
 
-/// [`index_workspace`] with an explicit global gitignore file.
 pub fn index_workspace_with_global(
     root: &Path,
     global_gitignore: Option<&Path>,
@@ -139,7 +108,6 @@ pub fn index_workspace_with_global(
     })
 }
 
-/// The root and every directory between it and an indexed file.
 pub fn dirs_with_markdown(files: &[IndexedFile], root: &Path) -> HashSet<PathBuf> {
     let mut dirs = HashSet::with_capacity(files.len());
     for file in files {
@@ -154,7 +122,6 @@ pub fn dirs_with_markdown(files: &[IndexedFile], root: &Path) -> HashSet<PathBuf
     dirs
 }
 
-/// `path` relative to `root`, joined with `/` whatever the OS separator.
 pub fn relative_slash_path(root: &Path, path: &Path) -> String {
     let relative = path.strip_prefix(root).unwrap_or(path);
     let parts: Vec<String> = relative
@@ -164,22 +131,13 @@ pub fn relative_slash_path(root: &Path, path: &Path) -> String {
     parts.join("/")
 }
 
-/// The index kept up to date by the watcher. Every update costs the depth
-/// of the changed path, never a copy of the whole index (Writer
-/// `watcher.rs:327-374` cloned the full index on each event).
 #[derive(Debug, Clone)]
 pub struct LiveIndex {
     root: PathBuf,
-    /// Sorted by path, so a folder's files form one contiguous range.
     files: std::collections::BTreeMap<PathBuf, IndexedFile>,
-    /// Number of indexed files below each directory (root included).
     dir_counts: HashMap<PathBuf, usize>,
-    /// Non-Markdown files, sorted by path.
     other_files: BTreeSet<PathBuf>,
-    /// Lowercase file name to the paths of every file with that name.
     names: HashMap<String, BTreeSet<PathBuf>>,
-    /// Set once a walk listed every file: before that, a name not found
-    /// may just not be known yet.
     names_complete: bool,
 }
 
@@ -207,8 +165,6 @@ impl LiveIndex {
         live
     }
 
-    /// `true` once a walk listed every file ([`Self::find_by_name`] is
-    /// then an answer, not a guess).
     pub fn names_complete(&self) -> bool {
         self.names_complete
     }
@@ -221,9 +177,6 @@ impl LiveIndex {
         self.files.get_mut(path)
     }
 
-    /// The notes directly in `dir` whose content was read, by file name,
-    /// with their title: one ordered scan of `dir`'s range, no lookup per
-    /// note (a sidebar listing of 50,000 notes, US-083).
     pub fn titles_in(&self, dir: &Path) -> HashMap<String, Option<String>> {
         let prefix = match relative_slash_path(&self.root, dir) {
             relative if relative.is_empty() || dir == self.root => String::new(),
@@ -238,19 +191,16 @@ impl LiveIndex {
             .collect()
     }
 
-    /// The last title seen for `path`, if it has one.
     pub fn title(&self, path: &Path) -> Option<&str> {
         self.files.get(path).and_then(|file| file.title.as_deref())
     }
 
-    /// Records a non-Markdown file, for lookups by name.
     pub fn add_other(&mut self, path: &Path) {
         if self.other_files.insert(path.to_path_buf()) {
             self.add_name(path);
         }
     }
 
-    /// Replaces the non-Markdown files with `paths`, from a full walk.
     pub fn set_other_files(&mut self, paths: impl IntoIterator<Item = PathBuf>) {
         for path in std::mem::take(&mut self.other_files) {
             self.remove_name(&path);
@@ -261,9 +211,6 @@ impl LiveIndex {
         self.names_complete = true;
     }
 
-    /// The file named `file_name` (any case), or `None`. On duplicates the
-    /// shortest path wins: fewest components, then lexicographic order, as
-    /// [`find_file_by_name`] decides.
     pub fn find_by_name(&self, file_name: &str) -> Option<PathBuf> {
         self.names
             .get(&file_name.to_lowercase())?
@@ -317,7 +264,6 @@ impl LiveIndex {
         self.files.values()
     }
 
-    /// Inserts or updates one file. Returns `true` if it was not indexed.
     pub fn upsert(&mut self, file: IndexedFile) -> bool {
         let path = file.path.clone();
         let depth = folder_depth(&file.relative_path);
@@ -329,8 +275,6 @@ impl LiveIndex {
         added
     }
 
-    /// An index of `files` built at once: much faster than one upsert per
-    /// file for a whole library (US-083, the index read from the store).
     pub fn from_files(root: &Path, files: Vec<IndexedFile>) -> Self {
         let mut live = Self::new(root);
         let mut counted = Vec::with_capacity(files.len());
@@ -359,8 +303,6 @@ impl LiveIndex {
         }
     }
 
-    /// Removes `path` and, if it is a folder, every file below it. Returns
-    /// the removed Markdown files; other files leave the name table too.
     pub fn remove_subtree(&mut self, path: &Path) -> Vec<IndexedFile> {
         let others: Vec<PathBuf> = self
             .other_files
@@ -398,18 +340,11 @@ impl LiveIndex {
         removed
     }
 
-    /// Search over the live index (see [`fuzzy_search`]).
     pub fn search(&self, query: &str, limit: usize) -> Vec<SearchResult> {
         let files: Vec<IndexedFile> = self.files.values().cloned().collect();
         fuzzy_search(query, &files, limit)
     }
 
-    /// The sidebar's Recents: one page of the indexed files, newest
-    /// modification first then by relative path, keeping only Markdown
-    /// files that still exist (Writer `read_recent_files`, `fs.rs:407-440`).
-    /// `limit` is clamped to 1..=100. Sorted on each call from the live
-    /// index, so an mtime update reorders the next page (Writer kept a
-    /// cache it invalidated on mtime changes).
     pub fn recent(&self, limit: usize, offset: usize) -> Vec<IndexedFile> {
         let mut files: Vec<&IndexedFile> = self.files.values().collect();
         files.sort_by(|a, b| {
@@ -426,7 +361,6 @@ impl LiveIndex {
             .collect()
     }
 
-    /// Records a new modification time for an indexed file.
     pub fn touch(&mut self, path: &Path, modified_at: u64) {
         if let Some(file) = self.files.get_mut(path) {
             file.modified_at = modified_at;
@@ -434,9 +368,7 @@ impl LiveIndex {
     }
 }
 
-/// Folder visibility source for sidebar listings once indexing is done.
 pub trait MarkdownDirs {
-    /// `true` if `dir` holds a Markdown file somewhere below it.
     fn holds_markdown(&self, dir: &Path) -> bool;
 }
 
@@ -452,15 +384,10 @@ impl MarkdownDirs for LiveIndex {
     }
 }
 
-/// Folders from a file's own up to the root, from its relative path:
-/// `a/b/c.md` is in three (`a/b`, `a` and the root).
 fn folder_depth(relative_path: &str) -> usize {
     relative_path.matches('/').count() + 1
 }
 
-/// Files below `dir`, filtered by `ignore`, for a folder that appeared
-/// after the initial walk (created or moved in): its Markdown files, and
-/// the paths of the others.
 pub fn index_subtree(
     root: &Path,
     dir: &Path,
@@ -497,29 +424,21 @@ pub fn index_subtree(
     (found, others)
 }
 
-/// Index entry for one existing file, content not read.
 pub fn indexed_file(root: &Path, path: &Path) -> IndexedFile {
     IndexedFile::new(root, path, std::fs::metadata(path).ok().as_ref())
 }
 
-/// A search hit, ranked by `score` (higher first).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SearchResult {
     pub path: PathBuf,
     pub filename: String,
     pub relative_path: String,
     pub score: u32,
-    /// Character indices of the match in `relative_path`.
     pub match_indices: Vec<u32>,
 }
 
-/// Default number of results, as in Writer.
 pub const DEFAULT_SEARCH_LIMIT: usize = 50;
 
-/// Substring search over relative paths with Writer's scoring: a match in the
-/// file name beats a match in a parent directory, an earlier match beats a
-/// later one, a shorter path breaks ties. The query also matches with spaces
-/// and hyphens swapped, and `\` is read as `/`.
 pub fn fuzzy_search(query: &str, index: &[IndexedFile], limit: usize) -> Vec<SearchResult> {
     if query.is_empty() {
         return Vec::new();
@@ -552,8 +471,6 @@ fn score_file(file: &IndexedFile, needles: &[String]) -> Option<SearchResult> {
         .filter_map(|needle| haystack.find(needle.as_str()).map(|start| (start, needle)))
         .min_by_key(|(start, _)| *start)?;
 
-    // Lowercasing can change byte lengths, so locate the file name in the
-    // lowercased haystack rather than in the original path.
     let filename_start = haystack.rfind('/').map(|slash| slash + 1).unwrap_or(0);
     let in_filename = byte_start >= filename_start;
 
@@ -580,15 +497,10 @@ fn score_file(file: &IndexedFile, needles: &[String]) -> Option<SearchResult> {
     })
 }
 
-/// Finds a file of any type under `root` by case-insensitive name, for
-/// Obsidian-style embeds (`![[image.png]]`). Uses the workspace ignore
-/// model. On duplicates the shortest path wins (fewest components, then
-/// lexicographic order), as in Obsidian.
 pub fn find_file_by_name(root: &Path, file_name: &str) -> Option<PathBuf> {
     find_file_by_name_with_global(root, file_name, global_gitignore_path().as_deref())
 }
 
-/// [`find_file_by_name`] with an explicit global gitignore file.
 pub fn find_file_by_name_with_global(
     root: &Path,
     file_name: &str,
@@ -620,14 +532,10 @@ pub fn find_file_by_name_with_global(
     matches.into_iter().next()
 }
 
-// Parallel walk -----------------------------------------------------------
-
-/// A non-excluded file or symlink seen by the walk.
 pub(crate) struct WalkEntry {
     pub(crate) path: PathBuf,
     pub(crate) name: OsString,
     pub(crate) file_type: FileType,
-    /// From the directory listing: on Windows no file is opened for it.
     pub(crate) metadata: Option<Metadata>,
 }
 
@@ -646,9 +554,6 @@ struct Queue {
     active: usize,
 }
 
-/// Walks `root` top-down on several threads, pruning excluded directories
-/// with the rules discovered so far, and calls `visit` for every
-/// non-excluded non-directory entry. Returns the complete ignore matcher.
 pub(crate) fn walk(
     root: &Path,
     global_gitignore: Option<&Path>,
@@ -801,8 +706,6 @@ mod tests {
         dir
     }
 
-    // Ported from Writer `commands/search.rs` tests.
-
     #[test]
     fn index_counts_md_files() {
         let dir = setup_workspace();
@@ -895,8 +798,6 @@ mod tests {
         assert!(find_file_by_name_with_global(dir.path(), "hidden.png", None).is_none());
     }
 
-    // Cerata additions (fixed defects).
-
     #[test]
     fn index_accepts_both_extensions_in_any_case() {
         let dir = TempDir::new().unwrap();
@@ -972,7 +873,6 @@ mod tests {
                 .iter()
                 .any(|f| f.relative_path == "plans/deep/roadmap.md")
         );
-        // A filename match beats a directory match, with `/` or `\` queries.
         let results = fuzzy_search("plans", &index.files, 50);
         assert_eq!(results[0].relative_path, "plans.md");
         let results = fuzzy_search("deep\\road", &index.files, 50);
@@ -988,7 +888,7 @@ mod tests {
         fs::create_dir(&locked).unwrap();
         fs::write(locked.join("inside.md"), "x").unwrap();
         fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
-        let readable = fs::read_dir(&locked).is_ok(); // root ignores permissions
+        let readable = fs::read_dir(&locked).is_ok();
         let index = index(dir.path());
         fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
         if readable {
@@ -1013,8 +913,6 @@ mod tests {
             .output()
             .unwrap();
         assert!(deny.status.success(), "{deny:?}");
-        // Accounts with backup privileges (CI runners run as administrators)
-        // still read the folder; the test needs a denial that holds.
         let readable = fs::read_dir(&locked).is_ok();
         let index = index(dir.path());
         let restore = std::process::Command::new("icacls")
@@ -1080,15 +978,12 @@ mod tests {
         assert_eq!(removed.len(), 1);
         assert!(!live.holds_markdown(&root.join("a").join("b")));
         assert!(live.holds_markdown(&root.join("a")));
-        // A sibling whose name extends the removed folder's is untouched.
         live.upsert(file("ab/three.md"));
         live.remove_subtree(&root.join("a"));
         assert_eq!(live.len(), 1);
         assert!(live.contains(&root.join("ab").join("three.md")));
     }
 
-    // Writer `watcher.rs` add_subtree tests: a folder that appears is walked
-    // for Markdown only, and walking it again adds nothing.
     #[test]
     fn subtree_walk_indexes_markdown_only_and_is_idempotent() {
         let dir = TempDir::new().unwrap();
@@ -1137,8 +1032,6 @@ mod tests {
         for i in 0..50_000 {
             live.upsert(make(i));
         }
-        // 2,000 single-path updates. Copying a 50,000-entry index per event,
-        // as Writer did, would take seconds even in release.
         let started = Instant::now();
         for i in 0..1_000 {
             live.remove_subtree(&make(i).path);
@@ -1151,8 +1044,6 @@ mod tests {
             started.elapsed()
         );
     }
-
-    // Ported from Writer `commands/fs.rs`, attached to US-026.
 
     fn indexed(root: &Path, name: &str, modified_at: u64) -> IndexedFile {
         let path = root.join(name);

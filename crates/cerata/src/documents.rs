@@ -1,13 +1,3 @@
-//! The open documents of a window, keyed by path: loading, autosave and
-//! the disk state each one is compared with when the file changes outside
-//! Cerata.
-//!
-//! Ported from Writer `editor-store.ts` (document half: `openFiles`,
-//! `ensureFileLoaded` with merged reads, the 40 ms grace before a spinner,
-//! pruning of unreferenced clean files) and `lib/save.ts`, whose throttle
-//! lives in [`cerata_core::save::AutoSaver`]. Every tab showing a file
-//! shares its editor.
-
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -22,38 +12,25 @@ use parking_lot::Mutex;
 use crate::editor::Editor;
 use crate::inbox::{Inbox, Wakeups};
 
-/// A read shorter than this shows no spinner (`OPEN_FILE_GRACE_MS`).
 pub const LOAD_GRACE: Duration = Duration::from_millis(40);
 
-/// Why a document waits for the user before any reload or save.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Conflict {
-    /// The file changed on disk while the editor had unsaved changes.
     Modified { disk: String },
-    /// The file was deleted while the editor had unsaved changes.
     Deleted,
 }
 
 pub struct Doc {
     pub editor: Entity<Editor>,
-    /// The text last read from or written to disk.
     pub disk_text: String,
     pub format: TextFormat,
     pub modified_at: u64,
-    /// Set while the first read is in flight.
     pub loading_since: Option<Instant>,
     pub save_error: Option<String>,
     pub conflict: Option<Conflict>,
-    /// The three-way merge of a `Conflict::Modified` whose changes overlap,
-    /// shown by "Review Changes" (US-092).
     pub merge: Option<cerata_core::merge::Merge>,
-    /// The editor revision last seen, to notice edits.
     pub seen_revision: u64,
-    /// A disk change arrived while a save was in flight: decided once the
-    /// save completes.
     pub change_pending: bool,
-    /// The text found on disk was offered to the history before the first
-    /// edit (kept only for a note without versions, US-089).
     pub first_version_offered: bool,
 }
 
@@ -74,14 +51,12 @@ impl Doc {
         }
     }
 
-    /// The spinner shows only once a read outlasts [`LOAD_GRACE`].
     pub fn shows_spinner(&self, now: Instant) -> bool {
         self.loading_since
             .is_some_and(|since| now.duration_since(since) >= LOAD_GRACE)
     }
 }
 
-/// A save result, sent from the save threads to the window.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SaveResult {
     Saved {
@@ -95,12 +70,13 @@ pub enum SaveResult {
         revision: u64,
         error: String,
     },
-    /// The disk changed before the watcher said so; nothing was written.
-    Conflicted { path: PathBuf, revision: u64 },
+    Conflicted {
+        path: PathBuf,
+        revision: u64,
+    },
 }
 
 impl SaveResult {
-    /// The result for a file at or under `old`, now at `new`.
     pub fn moved(mut self, old: &Path, new: &Path) -> Self {
         let path = match &mut self {
             Self::Saved { path, .. }
@@ -118,13 +94,8 @@ impl SaveResult {
     }
 }
 
-/// The [`SaveTarget`] of a window: the dirty texts, copied in on every
-/// edit, and the results queued for the window.
 pub struct SaveBridge {
     dirty: Mutex<HashMap<PathBuf, SaveSnapshot>>,
-    /// The text each open file holds on disk as far as the window knows,
-    /// kept here so a write that just finished counts before the window
-    /// hears of it.
     disk: Mutex<HashMap<PathBuf, String>>,
     results: Arc<Inbox<SaveResult>>,
     in_flight: Mutex<HashMap<PathBuf, usize>>,
@@ -142,7 +113,6 @@ impl SaveBridge {
         (bridge, wakeups)
     }
 
-    /// The results since the last call, oldest first.
     pub fn take_results(&self) -> Vec<SaveResult> {
         self.results.take()
     }
@@ -151,18 +121,14 @@ impl SaveBridge {
         self.results.push(result);
     }
 
-    /// The text of `path` to write next.
     pub fn set_dirty(&self, path: &Path, snapshot: SaveSnapshot) {
         self.dirty.lock().insert(path.to_path_buf(), snapshot);
     }
 
-    /// `path` has nothing to write any more (clean, conflicted, closed).
     pub fn clear(&self, path: &Path) {
         self.dirty.lock().remove(path);
     }
 
-    /// What `path` holds on disk, just read or chosen in a conflict;
-    /// `None` lets the next write go unchecked (Recreate).
     pub fn set_disk(&self, path: &Path, text: Option<String>) {
         let mut disk = self.disk.lock();
         match text {
@@ -171,7 +137,6 @@ impl SaveBridge {
         };
     }
 
-    /// `path` is no longer open.
     pub fn forget(&self, path: &Path) {
         self.dirty.lock().remove(path);
         self.disk.lock().remove(path);
@@ -188,8 +153,6 @@ impl SaveBridge {
         }
     }
 
-    /// `true` from the moment a write of `path` reads its text until its
-    /// result is sent.
     pub fn is_writing(&self, path: &Path) -> bool {
         self.in_flight.lock().get(path).is_some_and(|n| *n > 0)
     }
@@ -253,7 +216,6 @@ impl SaveTarget for SaveBridge {
     }
 }
 
-/// The open documents.
 #[derive(Default)]
 pub struct Documents {
     docs: HashMap<PathBuf, Doc>,
@@ -288,7 +250,6 @@ impl Documents {
         self.docs.iter()
     }
 
-    /// Re-keys documents at `old` or under it.
     pub fn rewrite_prefix(&mut self, old: &Path, new: &Path) -> Vec<(PathBuf, PathBuf)> {
         let moved: Vec<PathBuf> = self
             .docs
@@ -314,8 +275,6 @@ impl Documents {
         renames
     }
 
-    /// Paths of documents to drop: no tab references them and `keep`
-    /// (dirty, conflicted) does not hold them (Writer's pruning).
     pub fn unreferenced(
         &self,
         referenced: impl Fn(&Path) -> bool,

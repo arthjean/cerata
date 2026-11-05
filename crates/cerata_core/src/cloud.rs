@@ -1,17 +1,8 @@
-//! Best-effort detection of a folder synced by a cloud service (US-078),
-//! for the warning under a library's location. Nothing is blocked on it.
-//!
-//! Recognized: an ancestor under `%OneDrive%`, `%OneDriveConsumer%`,
-//! `%OneDriveCommercial%` or `%USERPROFILE%\iCloudDrive`; under
-//! `~/Library/Mobile Documents` or `~/Library/CloudStorage/*`; or an
-//! ancestor holding `.stfolder` (Syncthing) or `.dropbox` (Dropbox).
-
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
 const ONEDRIVE_VARIABLES: [&str; 3] = ["OneDrive", "OneDriveConsumer", "OneDriveCommercial"];
 
-/// The service that syncs `path`, if one is recognized.
 pub fn synced_by(path: &Path) -> Option<String> {
     synced_by_with(
         path,
@@ -20,7 +11,6 @@ pub fn synced_by(path: &Path) -> Option<String> {
     )
 }
 
-/// [`synced_by`] with the environment and the home folder supplied.
 pub fn synced_by_with(
     path: &Path,
     env: &dyn Fn(&str) -> Option<OsString>,
@@ -64,8 +54,6 @@ pub fn synced_by_with(
     None
 }
 
-/// `~/Library/CloudStorage/{Provider}-{account}`, as macOS File Provider
-/// names it.
 fn cloud_storage_provider(folder: &str) -> String {
     let provider = folder.split('-').next().unwrap_or(folder);
     match provider {
@@ -78,8 +66,6 @@ fn cloud_storage_provider(folder: &str) -> String {
     }
 }
 
-/// Paths compare without case on Windows and macOS, as their default file
-/// systems do.
 fn normalize(path: &Path) -> String {
     let text = path.to_string_lossy().replace('\\', "/");
     let text = text.trim_end_matches('/').to_owned();
@@ -104,7 +90,6 @@ fn strip(path: &Path, root: &Path) -> Option<PathBuf> {
     if !rest.is_empty() && !rest.starts_with('/') {
         return None;
     }
-    // The remainder in the original case, by component count.
     let skip = Path::new(&root_text).components().count();
     Some(path.components().skip(skip).collect())
 }
@@ -134,7 +119,6 @@ mod tests {
                 "{var}"
             );
         }
-        // A sibling whose name only starts the same is not inside.
         let sibling = dir.path().join("OneDrive - Contoso Archive");
         assert_eq!(detect(&sibling, &[("OneDrive", &onedrive)], None), None);
     }

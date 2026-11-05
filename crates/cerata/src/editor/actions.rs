@@ -1,8 +1,3 @@
-//! Editor actions and their key bindings: the editing section of Writer's
-//! `docs/keyboard-shortcuts.md:50-98` (Ctrl in place of Cmd on Windows and
-//! Linux, through GPUI's `secondary` modifier), the formatting registry of
-//! `cerata_markdown::commands`, the clipboard and the find bar.
-
 use cerata_markdown::commands::{COMMANDS, Clock, Os};
 use cerata_markdown::{Change, Selection, SelectionRange, Transaction, UserEvent};
 use gpui::{
@@ -75,7 +70,6 @@ actions!(
     ]
 );
 
-/// A formatting command of the registry, by id (`format.bold`).
 #[derive(Clone, PartialEq, Action)]
 #[action(namespace = editor, no_json)]
 pub struct RunCommand {
@@ -94,7 +88,6 @@ pub fn current_os() -> Os {
     }
 }
 
-/// A registry chord as a GPUI keystroke (`ctrl-shift-1`).
 pub fn keystroke(chord: &cerata_markdown::commands::Chord) -> String {
     let mut parts = Vec::new();
     if chord.ctrl {
@@ -113,7 +106,6 @@ pub fn keystroke(chord: &cerata_markdown::commands::Chord) -> String {
     parts.join("-")
 }
 
-/// Every editor binding, for the current OS.
 pub fn bindings() -> Vec<KeyBinding> {
     let c = Some(CONTEXT);
     let mac = cfg!(target_os = "macos");
@@ -125,8 +117,6 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("shift-enter", SoftNewline, c),
         KeyBinding::new("tab", Indent, c),
         KeyBinding::new("shift-tab", Outdent, c),
-        // CodeMirror's `toggleTabFocusMode` (Mod-m, Shift-Alt-m on macOS):
-        // Tab leaves the text for the controls around and inside it.
         KeyBinding::new(
             if mac { "alt-shift-m" } else { "ctrl-m" },
             ToggleTabFocus,
@@ -211,8 +201,6 @@ pub fn bindings() -> Vec<KeyBinding> {
     let os = current_os();
     for command in COMMANDS {
         if let Some(chord) = command.shortcut(os) {
-            // `KeyBinding::new` takes a static string; the registry's
-            // bindings are built once per app.
             let keys: &'static str = Box::leak(keystroke(&chord).into_boxed_str());
             b.push(KeyBinding::new(keys, RunCommand { id: command.id }, c));
         }
@@ -220,14 +208,12 @@ pub fn bindings() -> Vec<KeyBinding> {
     b
 }
 
-/// Registers the editor bindings once per app.
 pub fn init(cx: &mut App) {
     cx.bind_keys(bindings());
     cx.bind_keys(super::text_field::bindings());
     cx.bind_keys(super::mermaid::bindings());
 }
 
-/// The local date and time for the insert commands.
 pub fn clock() -> Clock {
     use chrono::{Datelike as _, Timelike as _};
     let now = chrono::Local::now();
@@ -247,9 +233,6 @@ macro_rules! on {
              _: &$action,
              $window: &mut Window,
              $ecx: &mut Context<Editor>| {
-                // A control drawn in or beside the text has the focus (a
-                // property field, a diagram canvas, a rail mark): the text
-                // is not edited behind it.
                 if !$editor.keys_reach_text($window, $ecx) {
                     $ecx.propagate();
                     return;
@@ -260,7 +243,6 @@ macro_rules! on {
     };
 }
 
-/// Attaches every action handler to the editor's root element.
 pub fn register(mut root: Stateful<Div>, cx: &mut Context<Editor>) -> Stateful<Div> {
     on!(root, cx, Backspace, |e, _w, cx| e
         .update_state(cx, |s| s.delete_backward()));
@@ -270,14 +252,11 @@ pub fn register(mut root: Stateful<Div>, cx: &mut Context<Editor>) -> Stateful<D
         .update_state(cx, |s| s.delete_group(false)));
     on!(root, cx, DeleteWordRight, |e, _w, cx| e
         .update_state(cx, |s| s.delete_group(true)));
-    // Enter in a table cell goes to the cell below (US-052); during an IME
-    // composition it commits it.
     on!(root, cx, Newline, |e, _w, cx| if !e.commit_composition(cx)
         && !e.completion_accept(None, cx)
     {
         e.update_state(cx, |s| s.table_enter() || s.insert_newline());
     });
-    // Shift+Enter: a `<br>` in a table cell, else a newline.
     on!(
         root,
         cx,
@@ -292,14 +271,10 @@ pub fn register(mut root: Stateful<Div>, cx: &mut Context<Editor>) -> Stateful<D
             });
         }
     );
-    // Tab indents the text it has the focus of. With Ctrl+M on, or from a
-    // control drawn in the text (a rail mark, a diagram, the find field),
-    // it moves the focus: the window's Tab binding skips the editor.
     root = root.on_action(cx.listener(|e: &mut Editor, _: &Indent, window, cx| {
         if !e.focus_handle.is_focused(window) || e.tab_focus {
             window.focus_next(cx);
         } else if !e.commit_composition(cx) && !e.completion_accept(None, cx) {
-            // In a table cell: the next cell (US-052).
             e.update_state(cx, |s| s.table_tab(false) || s.indent());
         }
     }));
@@ -414,8 +389,6 @@ impl Editor {
     fn horizontal(&mut self, forward: bool, extend: bool, cx: &mut Context<Self>) {
         self.goal_x = None;
         let columns = if forward { 1 } else { -1 };
-        // A rectangle of cells (US-054): Shift moves its head cell, a plain
-        // arrow collapses it; Shift at a content's edge starts one.
         if self.state.table_selection().is_some() {
             self.update_state(cx, |state| {
                 if extend {
@@ -432,8 +405,6 @@ impl Editor {
         self.update_state(cx, |state| state.move_char(forward, extend));
     }
 
-    /// Up and Down: into an adjacent widget's source first, else one wrapped
-    /// row, keeping the pixel column across moves.
     pub fn vertical(
         &mut self,
         down: bool,
@@ -447,7 +418,6 @@ impl Editor {
             cerata_markdown::Vertical::Up
         };
         let rows = if down { 1 } else { -1 };
-        // A rectangle of cells (US-054), as for Left and Right.
         if self.state.table_selection().is_some() {
             self.update_state(cx, |state| {
                 if extend {
@@ -458,7 +428,6 @@ impl Editor {
             });
             return;
         }
-        // Shift+Up or Down leaving a cell for the one above or below.
         if extend && self.state.selection().ranges().len() == 1 {
             let head = self.state.selection().main().head;
             if let Some((grid, row, column)) = cerata_markdown::cells::cell_at(&self.state, head) {
@@ -521,7 +490,6 @@ impl Editor {
             })
             .collect();
         if leave {
-            // A table bordering the document: a line is created past it.
             self.update_state(cx, |state| state.leave_table(down));
             self.goal_x = goal;
             return;
@@ -530,10 +498,6 @@ impl Editor {
         self.goal_x = goal;
     }
 
-    /// The position one row above or below `pos` at pixel column `goal`
-    /// (the caret's own x when `None`), and that column. In a drawn table
-    /// the rows are the cells' (US-052); `None` when the move leaves a
-    /// table that borders the document, which needs a new line.
     fn vertical_target(
         &mut self,
         pos: usize,
@@ -568,11 +532,9 @@ impl Editor {
             segment,
         } = &line
         {
-            // The cell's next line, else the cell above or below.
             if let Some((c, s, r)) = table.step(*cell, *segment, down, x) {
                 return Some((Self::offset_in_row(&table.cells[c].segments[s], r, x), x));
             }
-            // Out by the edge: from the table's last line down, its first up.
             if down {
                 ix = self.state.text().line_at(table.grid.zone().end).number;
             }
@@ -591,7 +553,6 @@ impl Editor {
             if next.height <= 0.0 {
                 continue;
             }
-            // Into a drawn table: the cell under the column, source kept.
             if let Some(block) = &next.block
                 && let BlockKind::Table(table) = &block.kind
             {
@@ -610,7 +571,6 @@ impl Editor {
         }
     }
 
-    /// Home and End on wrapped rows (`lineBoundary.ts`).
     fn line_boundary(
         &mut self,
         forward: bool,
@@ -643,8 +603,6 @@ impl Editor {
         });
     }
 
-    /// PageUp and PageDown: the caret moves by the viewport height and the
-    /// view follows.
     fn page(&mut self, down: bool, extend: bool, window: &mut Window, cx: &mut Context<Self>) {
         let Some(caret) = self.caret_bounds(self.cursor(), window, cx) else {
             return;
@@ -669,8 +627,6 @@ impl Editor {
         self.select(selection, cx);
     }
 
-    /// Escape: closes the find bar, the menu or an image's toolbar, else
-    /// collapses a multiple selection to its main range.
     fn cancel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.cancel_resize(cx) {
             return;
@@ -699,7 +655,6 @@ impl Editor {
         }
     }
 
-    /// The selected text, ranges joined by line breaks.
     pub fn selected_text(&self) -> String {
         let text = self.state.text();
         self.state
@@ -722,8 +677,6 @@ impl Editor {
         }
     }
 
-    /// A rectangle of cells copies as a GFM table, the grid as metadata
-    /// (US-055). `false` without a rectangle.
     fn copy_cells(&mut self, cx: &mut Context<Self>) -> bool {
         let Some(block) = self.state.copied_cells() else {
             return false;
@@ -737,7 +690,6 @@ impl Editor {
     }
 
     pub fn cut(&mut self, cx: &mut Context<Self>) {
-        // A rectangle: copied, then its cells emptied in one step.
         if self.copy_cells(cx) {
             self.update_state(cx, |state| state.cut_cells());
             return;
@@ -764,10 +716,6 @@ impl Editor {
         });
     }
 
-    /// Paste: files copied in the file manager when one is named like an
-    /// image, else an image (both through [`Editor::add_images`]), else
-    /// cells, else plain text; a whole document pasted into a note without
-    /// frontmatter moves its YAML to the top (`editor-clipboard.ts:37-78`).
     pub fn paste(&mut self, cx: &mut Context<Self>) {
         let Some(item) = cx.read_from_clipboard() else {
             return;
@@ -795,9 +743,6 @@ impl Editor {
         }
     }
 
-    /// In a drawn cell, a grid on the clipboard (our metadata, a GFM table
-    /// or TSV) fills the cells from the caret (US-055); `false` when the
-    /// text is pasted as text instead.
     pub fn paste_cells(
         &mut self,
         text: &str,
@@ -828,7 +773,6 @@ impl Editor {
         }
     }
 
-    /// A pasted image, saved under a time-stamped name in the assets folder.
     pub fn paste_image(&mut self, image: &gpui::Image, cx: &mut Context<Self>) {
         let source = images::pasted_source(image, chrono::Local::now());
         self.add_images(vec![source], ImageTarget::Caret, cx);
@@ -868,8 +812,6 @@ impl Editor {
         self.insert_at_selection(text, UserEvent::Command, cx);
     }
 
-    /// Replaces every selection range with `text`; carets land after it.
-    /// In a table cell the text is escaped (`cerata_markdown::cells`).
     pub fn insert_at_selection(&mut self, text: &str, event: UserEvent, cx: &mut Context<Self>) {
         self.update_state(cx, |state| state.type_text(None, text, event));
     }

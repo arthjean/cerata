@@ -4,11 +4,12 @@ Native Markdown editor with live preview, in Rust and GPUI, ported from Writer C
 
 ## Boundaries
 
+- Bumping GPUI: change the three Zed `rev` values in `Cargo.toml`, align `[patch.crates-io]` with that rev's root `Cargo.toml`, run `cargo update -p gpui`, then every check. Keep `font-kit` on `gpui_platform`: without it macOS renders blank glyphs. `rust-toolchain.toml` and the `toolchain:` inputs of `ci.yml` move together.
 - Treat the Writer Computer checkout (`WRITER_DIR` in `scripts/oracle/oracle.ts`) and the Zed sources (any local clone, `~/.cargo/git/checkouts/zed-*`) as read-only. Cerata consumes GPUI at the rev pinned in `Cargo.toml`, without a fork; a GPUI fix goes upstream.
 - Edit `PLAN.md` only on Arthur's explicit decision.
 - Leave decided ADRs as written. A rule change gets a new ADR that names the one it amends, as ADR 0007 and 0008 amend ADR 0006.
 - Product constraints that only Arthur changes: no telemetry, no network access beyond the `https_only` image fetch, no webview, and no JavaScript engine other than the isolated QuickJS renderer of ADR 0005.
-- Code ported from Writer names its origin in the module doc (`Ported from Writer <file>`), as `NOTICE` requires under GPLv3 section 5a. Obsidian is observed for behavior only: copy none of its code. Writer's name, logo and content stay out of Cerata.
+- Code ported from Writer gets a row in the origin table of `NOTICE` (Cerata file, Writer sources), which GPLv3 section 5a requires. Obsidian is observed for behavior only: copy none of its code. Writer's name, logo and content stay out of Cerata.
 - Before running the real app, back up the `cerata` config and data folders (`%APPDATA%\cerata` on Windows) and restore them afterwards: the app writes settings, recents and sessions there. Open a copy of `crates/cerata/examples/fixtures/` or a demo vault, never personal notes.
 
 ## Checks
@@ -24,7 +25,7 @@ cargo test --workspace --locked
 
 While iterating, test the affected crate (`cargo test -p cerata_markdown`). `cargo run -p cerata` launches the app.
 
-- The `cerata_markdown` oracle tests compare against snapshots that Writer's own code produces. Regenerate them with `scripts/oracle/oracle.ts` (usage in its header), never by hand. Offsets are UTF-8 bytes.
+- The `cerata_markdown` oracle tests compare against snapshots that Writer's own code produces. Regenerate them with `scripts/oracle/oracle.ts` (run without a command, it prints its usage), never by hand. Offsets are UTF-8 bytes.
 - A performance figure cited in an ADR, story or commit comes from a reference machine, with its command, per `docs/benchmarks.md`.
 - GPUI headless screenshots exist only on macOS and Linux. On Windows, prove a visual change in the real app driven by real OS input, and keep the capture.
 
@@ -38,7 +39,8 @@ While iterating, test the affected crate (`cargo test -p cerata_markdown`). `car
 
 ## Delivery
 
-- Code, comments, identifiers, UI text and commit messages are in US English. `PLAN.md`, ADRs, `docs/captures/`, `docs/research/` and `docs/benchmarks.md` are in French.
+- Code carries no comments, doc comments included: names, types and tests say what it does, and lasting rationale goes in an ADR.
+- Code, identifiers, UI text and commit messages are in US English. `PLAN.md`, ADRs, `docs/captures/`, `docs/research/` and `docs/benchmarks.md` are in French.
 - A UI change runs the `better-interface` skill on the delivered surface and fixes its blocking findings. The report and the `usNNN-<state>.png` captures go in `docs/captures/ep-NNN/README.md`, following `docs/captures/ep-007/`.
 - Commits read `type(scope): summary`, with the epic or ADR in parentheses when there is one. Captures land in their own `docs(captures)` commit.
 - End a run with the checks run and their result, the manual proof and its capture paths, and what remains unproven.

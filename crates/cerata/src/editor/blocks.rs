@@ -1,10 +1,3 @@
-//! Rich block widgets drawn in place of their source (frontmatter, HTML,
-//! formulas, diagrams). Each block is a GPUI element tree laid out in the
-//! editor's prepaint. A block reserves its estimated height until the
-//! first frame measures it; the measured height is kept per content and
-//! column width, so the line is laid out at its real height from then on.
-//! Tables are laid out by the editor itself (`table.rs`, ADR 0007).
-
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::ops::Range;
@@ -20,16 +13,12 @@ use gpui::{
 use super::layout::Fonts;
 use super::{Editor, theme};
 
-/// Where a click on rendered text leads.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LinkTarget {
-    /// A Markdown destination, as written.
     Url(String),
-    /// The raw text between a wiki link's brackets.
     Wiki(String),
 }
 
-/// What laying out a rich block needs from the editor.
 #[derive(Clone)]
 pub struct BlockStyle {
     pub fonts: Fonts,
@@ -38,7 +27,6 @@ pub struct BlockStyle {
 
 #[derive(Default)]
 pub struct RichBlocks {
-    /// Measured heights, by content and column width.
     measured: HashMap<(u64, u32), f32>,
     html: super::html::HtmlBlocks,
 }
@@ -49,7 +37,6 @@ fn key(widget: &Widget) -> u64 {
     hasher.finish()
 }
 
-/// Widgets drawn by this host, as opposed to images and rules.
 pub fn is_rich(widget: &Widget) -> bool {
     matches!(
         widget,
@@ -62,7 +49,6 @@ pub fn is_rich(widget: &Widget) -> bool {
 }
 
 impl RichBlocks {
-    /// The sanitized tree of an HTML block, and its key.
     pub fn html(&mut self, source: &str) -> (u64, Rc<Vec<cerata_markdown::html::Node>>) {
         let key = key(&Widget::Html {
             source: source.to_owned(),
@@ -78,15 +64,12 @@ impl RichBlocks {
         self.html.toggle(key, index, default);
     }
 
-    /// The height `widget` takes in a column `width` wide: measured when a
-    /// frame drew it at that width, else estimated.
     pub fn height(&mut self, widget: &Widget, width: f32, font_size: f32) -> f32 {
         let key = key(widget);
         if let Some(height) = self.measured.get(&(key, width as u32)) {
             return *height;
         }
         match widget {
-            // One row and the Add button, until a frame measures it.
             Widget::Frontmatter => 96.0,
             Widget::Html { source } => source.lines().count().max(1) as f32 * font_size * 1.6,
             Widget::Mermaid { .. } => {
@@ -96,7 +79,6 @@ impl RichBlocks {
         }
     }
 
-    /// Records the height a frame measured; `true` when it changed.
     pub fn record(&mut self, widget: &Widget, width: f32, height: f32) -> bool {
         if self.measured.len() > 1024 {
             self.measured.clear();
@@ -111,8 +93,6 @@ impl RichBlocks {
     }
 }
 
-// --- Inline text -------------------------------------------------------------
-
 #[derive(Clone, Copy, Default, PartialEq)]
 struct InlineStyle {
     bold: bool,
@@ -122,8 +102,6 @@ struct InlineStyle {
     link: bool,
 }
 
-/// Rendered inline nodes flattened into one string, its runs and the
-/// ranges that are links.
 pub struct RichText {
     pub text: SharedString,
     pub runs: Vec<TextRun>,
@@ -272,8 +250,6 @@ pub fn rich_text(nodes: &[Inline], fonts: &Fonts, base_bold: bool) -> RichText {
     }
 }
 
-/// `rich` as a text element whose links open on click. A click elsewhere
-/// falls through to the editor.
 pub fn rich_text_element(rich: RichText, cx: &mut Context<Editor>) -> AnyElement {
     let styled = StyledText::new(rich.text.clone()).with_runs(rich.runs);
     if rich.links.is_empty() {

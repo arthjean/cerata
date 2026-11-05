@@ -1,18 +1,3 @@
-//! US-002 spike (throwaway): a dedicated GPUI editor element with variable
-//! line heights, PLAN.md section 3.4 "Option C". See
-//! `docs/adr/0001-editor-engine.md` for what it proves and the measurements.
-//!
-//! ```text
-//! cargo run -p cerata --example editor_spike --release -- [<note.md>]
-//! cargo run -p cerata --example editor_spike --release -- --bench-typing [--chars N] [<note.md>]
-//! cargo run -p cerata --example editor_spike --release -- --write-fixture <dir>
-//! ```
-//!
-//! Without a note, the deterministic 1 MB fixture is generated into the
-//! system temp directory.
-
-// Hidden ranges and selections are `Vec<Range>`/`&[Range]`; one-range
-// literals are intended, not a mistaken `(a..b).collect()`.
 #![allow(clippy::single_range_in_vec_init)]
 
 #[path = "editor_spike/bench.rs"]
@@ -187,7 +172,6 @@ fn main() -> anyhow::Result<()> {
             let state = Rc::new(RefCell::new(state));
             editor.update(cx, |editor, _| editor.bench = Some(state.clone()));
             cx.spawn(async move |cx| {
-                // Let the window show, fonts load and the first frames settle.
                 cx.background_executor()
                     .timer(Duration::from_millis(1500))
                     .await;
@@ -199,9 +183,6 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Puts the caret at the end of a paragraph in the middle of the note, a
-/// few lines below a heading and with strong text and links nearby, so
-/// every keystroke runs the hide decisions of a busy viewport.
 fn place_bench_caret(editor: &mut Editor) {
     let lines = editor.buffer.line_count();
     let target = (lines / 2..lines)

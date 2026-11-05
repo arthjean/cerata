@@ -1,23 +1,6 @@
-//! Windowed reparse: ADR 0002's fallback when a full reparse misses the
-//! budget (US-010: 2 ms on the 3 000-item list, 16 ms on 1 MiB).
-//!
-//! Only a window of blocks around the edit is reparsed: the top-level blocks
-//! it touches plus one neighbor on each side, or, inside one big list, the
-//! items it touches plus one neighbor. One more block (or item) on each side
-//! is reparsed as a sentinel and must come out identical to the old one:
-//! the parse then resynchronized before and after the window, so the rest
-//! of the old tree is still exact and is kept, shifted. Whenever a guard
-//! fails, the whole document is parsed. The result is always the tree a
-//! full parse would build (checked by the fuzz test against full parses).
-
 use super::{Elt, MarkdownTree, NONE, NodeData, NodeKind, blocks};
 use crate::change::ChangeSet;
 
-/// The unclosed-`$$` block (`blocks::unclosed_display_math`) depends on the
-/// last `$$` of the document, which an edit without any `$` can move to a
-/// line start (a line break typed before it): a window never builds that
-/// block, so when `tree` (windowed, of `text`) should hold one, a full
-/// parse must. A wiki link over the `$$` is undecided here: full parse too.
 fn opens_unclosed_math(tree: &MarkdownTree, text: &str) -> bool {
     let Some(pos) = text.rfind("$$") else {
         return false;
@@ -58,14 +41,11 @@ fn shift(pos: usize, delta: isize) -> usize {
 }
 
 impl MarkdownTree {
-    /// The tree of `text`, which `changes` made from `old_text` (the text of
-    /// this tree). Equal to `MarkdownTree::parse(text)`, usually cheaper.
     pub fn reparse(&self, old_text: &str, text: &str, changes: &ChangeSet) -> MarkdownTree {
         self.reparse_window(old_text, text, changes)
             .unwrap_or_else(|| MarkdownTree::parse(text))
     }
 
-    /// The windowed reparse alone: `None` when the edit needs a full parse.
     pub fn reparse_window(
         &self,
         old_text: &str,
@@ -88,15 +68,11 @@ impl MarkdownTree {
             return None;
         }
         let delta = text.len() as isize - old_text.len() as isize;
-        // Writer's unclosed-`$$` rule and frontmatter look at the whole
-        // document: any `$` edited, or an edit on the first line or inside
-        // the frontmatter, reparses everything.
         let dollar = changes.changes().iter().any(|c| {
             c.insert.contains('$') || old_text.get(c.from..c.to).is_none_or(|s| s.contains('$'))
         });
         let frontmatter = self.root().child(NodeKind::Frontmatter);
         let protected = frontmatter.map_or_else(|| line_end(old_text, 0), |f| f.to()) + 1;
-        // A `<details>` block spans blank lines (`blocks::merge_details`).
         if dollar
             || first.from <= protected
             || self.root().last_child()?.kind() == NodeKind::Math
@@ -128,8 +104,6 @@ impl MarkdownTree {
             return None;
         }
         let node = |id: u32| super::Node { tree: self, id };
-        // Blocks touching the edited lines; an edit between two blocks
-        // touches both neighbors.
         let i = tops
             .iter()
             .position(|&id| node(id).to() >= span_from)
@@ -179,7 +153,6 @@ impl MarkdownTree {
         Some(self.splice(text, delta, start, end, 0, previous, &window, None))
     }
 
-    /// The same inside one list: `list` is the only block touched.
     #[allow(clippy::too_many_arguments)]
     fn reparse_items(
         &self,
@@ -248,8 +221,6 @@ impl MarkdownTree {
         ))
     }
 
-    /// Old nodes before `start`, then `window` (children of `parent`), then
-    /// the old nodes from `end` on, shifted.
     #[allow(clippy::too_many_arguments)]
     fn splice(
         &self,
@@ -295,7 +266,6 @@ impl MarkdownTree {
                 prev_sibling: moved(data.prev_sibling),
             });
         }
-        // The window's last node links to the first old node after it.
         if prev != NONE {
             let sibling = tree
                 .nodes
@@ -303,7 +273,6 @@ impl MarkdownTree {
                 .is_some_and(|n| n.parent == parent);
             tree.nodes[prev as usize].next_sibling = if sibling { first_after } else { NONE };
         }
-        // Ancestors of the window grow with it.
         let total = tree.nodes.len() as u32;
         if parent != 0 {
             let old = &self.nodes[parent as usize];
@@ -322,7 +291,6 @@ impl MarkdownTree {
     }
 }
 
-/// The old subtree at `old` equals `elt` shifted by `delta`.
 fn same(old: super::Node<'_>, elt: &Elt, delta: isize) -> bool {
     old.kind() == elt.kind
         && shift(old.from(), delta) == elt.from

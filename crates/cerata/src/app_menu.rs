@@ -1,8 +1,3 @@
-//! The application menus (`src-tauri/src/lib.rs:280-334`): Cerata
-//! (Preferences, Quit), Edit and Window, as macOS's native menu bar.
-//! Windows and Linux draw no menu bar; Ctrl+Q quits there as Cmd+Q does on
-//! macOS.
-
 use gpui::{Action, App, KeyBinding, MenuItem, OsAction, actions};
 
 use crate::editor::actions as editor;
@@ -10,7 +5,6 @@ use crate::shell::OpenPreferences;
 
 actions!(app, [Quit, Minimize, ToggleFullScreen, CloseWindow]);
 
-/// One entry of a menu.
 pub enum Entry {
     Item {
         label: &'static str,
@@ -36,7 +30,6 @@ fn os_item(label: &'static str, action: impl Action, os: OsAction) -> Entry {
     }
 }
 
-/// The menus, in order, with their entries.
 pub fn menus() -> Vec<(&'static str, Vec<Entry>)> {
     vec![
         (
@@ -70,7 +63,6 @@ pub fn menus() -> Vec<(&'static str, Vec<Entry>)> {
     ]
 }
 
-/// The native form of [`menus`].
 pub fn native_menus() -> Vec<gpui::Menu> {
     menus()
         .into_iter()

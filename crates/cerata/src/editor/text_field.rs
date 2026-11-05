@@ -1,6 +1,3 @@
-//! A one-line text field for the find bar: typing, IME, selection, the
-//! clipboard, and Enter, Shift+Enter and Escape reported to its owner.
-
 use std::ops::Range;
 use std::time::{Duration, Instant};
 
@@ -14,12 +11,9 @@ use gpui::{
 
 use super::theme;
 
-/// The caret is shown, then hidden, this long each (Paneflow's
-/// `text_input.rs`); typing or moving it shows it again at once.
 const BLINK: Duration = Duration::from_millis(500);
 const CARET_WIDTH: f32 = 1.0;
 
-/// Whether the caret shows `since` the last edit or move.
 fn caret_visible(since: Duration) -> bool {
     (since.as_millis() / BLINK.as_millis()).is_multiple_of(2)
 }
@@ -81,21 +75,15 @@ pub struct TextField {
     pub selection: Range<usize>,
     marked: Option<Range<usize>>,
     placeholder: SharedString,
-    /// The accessible name; the placeholder unless [`Self::labeled`].
     label: Option<SharedString>,
     pub invalid: bool,
-    /// No border, background or padding: the parent draws the field.
     bare: bool,
-    /// Text in the muted color (a property name).
     muted: bool,
     text_size: Pixels,
     last_layout: Option<(ShapedLine, Bounds<Pixels>)>,
-    /// The last edit or caret move, which the blink counts from.
     blink_anchor: Instant,
-    /// Repaints the blink while the field has the focus.
     blink_task: Option<Task<()>>,
     caret_shown: bool,
-    /// When the field took the focus, for its frame's focus animation.
     focused_since: Option<Instant>,
 }
 
@@ -122,10 +110,6 @@ impl TextField {
         }
     }
 
-    /// A field without its own chrome, its text `text_size` on a line 5
-    /// taller, for a parent that draws the field (the sidebar's Search).
-    /// Names the field for assistive technology when its placeholder is an
-    /// example or empty.
     pub fn labeled(mut self, label: impl Into<SharedString>) -> Self {
         self.label = Some(label.into());
         self
@@ -150,13 +134,10 @@ impl TextField {
         cx.notify();
     }
 
-    /// When the field took the focus, while it has it.
     pub fn focused_since(&self) -> Option<Instant> {
         self.focused_since
     }
 
-    /// Whether the caret shows now; while the field has the focus in an
-    /// active window, a task repaints it at each blink.
     fn update_caret(&mut self, window: &Window, cx: &mut Context<Self>) {
         let focused = self.focus_handle.is_focused(window);
         if focused != self.focused_since.is_some() {
@@ -269,7 +250,6 @@ impl TextField {
     }
 
     fn select_to(&mut self, pos: usize, cx: &mut Context<Self>) {
-        // The anchor is the end that does not move.
         let anchor = if pos <= self.selection.start {
             self.selection.end
         } else {
@@ -308,8 +288,6 @@ impl Render for TextField {
             .key_context(CONTEXT)
             .track_focus(&self.focus_handle)
             .cursor(CursorStyle::IBeam)
-            // The parent sets the width; a fixed one overflowed the
-            // settings cards.
             .w_full()
             .min_w_0()
             .overflow_hidden()
@@ -412,8 +390,6 @@ impl Render for TextField {
 }
 
 impl TextField {
-    /// A press at `position`, on the field or on a frame around it: the
-    /// focus, and the caret at the closest character.
     pub fn click_at(
         &mut self,
         position: Point<Pixels>,
@@ -528,8 +504,6 @@ impl Element for FieldElement {
             let field = self.field.read(cx);
             (field.selection.clone(), field.text.is_empty())
         };
-        // A selection shows only while the field has the focus: an
-        // unfocused field with highlighted text reads as selected.
         if !empty && !selection.is_empty() && focus.is_focused(window) {
             let x0 = line.x_for_index(selection.start);
             let x1 = line.x_for_index(selection.end);
@@ -559,7 +533,6 @@ impl Element for FieldElement {
             } else {
                 line.x_for_index(selection.start)
             };
-            // As tall as the text plus 2 px, centered on the line.
             let height = (text_size + px(2.0)).min(line_height);
             window.paint_quad(fill(
                 Bounds::new(

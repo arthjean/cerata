@@ -1,12 +1,7 @@
-//! The grid metadata a copied rectangle of cells carries on the clipboard
-//! (US-055, ADR 0007 decision 10): GPUI moves text and JSON metadata, so
-//! the text is a GFM table and the metadata the cells themselves.
-
 use cerata_markdown::table::Align;
 use cerata_markdown::table_clip::{CellBlock, PASTE_LIMIT};
 use serde::{Deserialize, Serialize};
 
-/// Names the metadata, so a paste ignores anything else.
 const FORMAT: &str = "cerata.table-cells";
 const VERSION: u32 = 1;
 
@@ -14,9 +9,7 @@ const VERSION: u32 = 1;
 pub struct CellClip {
     format: String,
     version: u32,
-    /// Each cell's source, row by row.
     rows: Vec<Vec<String>>,
-    /// `left`, `center`, `right` or `null`, per column.
     alignments: Vec<Option<String>>,
 }
 
@@ -43,8 +36,6 @@ impl CellClip {
         }
     }
 
-    /// The block in `json`; `None` when it is not valid JSON or not ours,
-    /// and the text is pasted instead.
     pub fn parse(json: &str) -> Option<CellBlock> {
         let clip: CellClip = serde_json::from_str(json).ok()?;
         if clip.format != FORMAT || clip.version != VERSION {
@@ -70,7 +61,6 @@ impl CellClip {
     }
 }
 
-/// `12345` as `12,345`.
 fn grouped(n: usize) -> String {
     let digits = n.to_string();
     let mut out = String::new();
@@ -83,7 +73,6 @@ fn grouped(n: usize) -> String {
     out
 }
 
-/// The notice of a paste over the limit.
 pub fn too_large(count: usize) -> String {
     format!(
         "Paste canceled: {} cells are over the {} limit",

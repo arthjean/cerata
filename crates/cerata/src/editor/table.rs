@@ -1,11 +1,3 @@
-//! A drawn GFM table laid out by the editor in the frame of the edit
-//! (ADR 0007, decision 7): each cell's text is shaped like a short line,
-//! wrapped at its column's width, from the decorations of the document.
-//! Caret, selection, hit-testing, Up and Down and the IME window go through
-//! this geometry. Sizing follows US-032 (`table-decorations.ts:485-534`):
-//! a column is never narrower than its longest word and asks for its
-//! content, capped at 48ch.
-
 use std::ops::{Deref, Range};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -21,40 +13,25 @@ use super::display::DisplayLine;
 use super::layout::{FrameInputs, LaidLine, LayoutCx};
 use super::theme;
 
-/// Corner radius of the table's border.
 const RADIUS: f32 = 8.0;
 
-/// One drawn cell: its box and the lines of its text, one per stretch
-/// between `<br>` tags.
 pub struct CellBox {
-    /// Index of the row among the drawn rows (0 is the header).
     pub row: usize,
     pub column: usize,
-    /// Buffer range of the content (an insertion point when empty).
     pub content: Range<usize>,
-    /// A missing cell of a short row: drawn empty, holds no caret.
     pub missing: bool,
-    /// Each line's `text_left` is column-relative and its `text_top` is
-    /// relative to the block's top, like the table's line.
     pub segments: Vec<LaidLine>,
-    /// What the next layout takes the cell from when only other cells
-    /// changed (US-057): the slot's text, each segment's longest word and
-    /// width, its text runs, and the width its text wrapped at.
     source: Rc<str>,
     measures: Rc<[(f32, f32)]>,
     runs: Rc<[Rc<[gpui::TextRun]>]>,
     inner: f32,
 }
 
-/// The cells a layout takes from the table's previous layout, by index in
-/// [`Grid::cells`] order, and the buffer range the others span.
 pub struct Reuse<'a> {
     previous: &'a TableLayout,
     cells: Vec<Option<usize>>,
 }
 
-/// The ranges a cell's layout depends on besides its text: the
-/// selection's, a drag's frozen selection's and the IME's marked text.
 pub fn edit_ranges(
     selection: &cerata_markdown::Selection,
     drag: Option<&cerata_markdown::Selection>,
@@ -69,12 +46,6 @@ pub fn edit_ranges(
         .collect()
 }
 
-/// Which cells of `previous`, the table laid out for the state before an
-/// edit inside it, `grid` takes as they are (US-057): the same row and
-/// column and slot text, and no end of an `old` or `new` range (selection,
-/// drag, marked text) in the slot, which would reveal syntax or show typed
-/// spaces. Also returns the range the other cells span, which their
-/// decorations are collected over (`None` when every cell is reused).
 pub fn reusable<'a>(
     state: &EditorState,
     grid: &Grid,
@@ -99,8 +70,6 @@ pub fn reusable<'a>(
                 .filter(|&i| {
                     let old_cell = &previous.cells[i];
                     let source = state.text().slice(cell.slot.clone());
-                    // The same slot text puts the content at the same
-                    // offset in it.
                     let old_start =
                         (old_cell.content.start + cell.slot.start).checked_sub(cell.content.start);
                     old_cell.missing == (cell.kind == CellKind::Missing)
@@ -120,22 +89,13 @@ pub fn reusable<'a>(
     (Reuse { previous, cells }, fresh)
 }
 
-/// The geometry of a drawn table, relative to its line's top and the text
-/// column's left edge, shifted left by its horizontal scroll: a table wider
-/// than the text column scrolls like a code block (US-056).
 pub struct TableLayout {
     pub grid: Arc<Grid>,
-    /// Width of the grid, borders included.
     pub width: f32,
-    /// Horizontal scroll the geometry is shifted by.
     pub scroll: f32,
-    /// Height of the whole block, its vertical padding included.
     pub height: f32,
-    /// Top of the grid's outer border.
     pub grid_top: f32,
-    /// Left edge and width of each column (its right border included).
     pub columns: Vec<(f32, f32)>,
-    /// Top and height of each drawn row (its bottom border included).
     pub rows: Vec<(f32, f32)>,
     pub cells: Vec<CellBox>,
 }
@@ -157,8 +117,6 @@ impl PartialEq for TableLayout {
     }
 }
 
-/// A line of text the caret can be on: a document line, or a line of a
-/// table cell (which lives in its table's layout).
 pub enum TextLine {
     Line(Box<LaidLine>),
     Cell {
@@ -184,7 +142,6 @@ impl Deref for TextLine {
 }
 
 impl TableLayout {
-    /// Box of a cell, relative to the line's top and the column's left.
     #[cfg(test)]
     pub fn cell_bounds(&self, cell: &CellBox) -> Bounds<Pixels> {
         let (x, w) = self.columns[cell.column];
@@ -192,8 +149,6 @@ impl TableLayout {
         Bounds::new(point(px(x), px(y)), size(px(w), px(h)))
     }
 
-    /// The cell line holding `pos` (a segment's bounds included), as
-    /// `(cell, segment)`.
     pub fn segment_for(&self, pos: usize) -> Option<(usize, usize)> {
         self.cells.iter().enumerate().find_map(|(c, cell)| {
             if cell.missing || pos < cell.content.start || pos > cell.content.end {
@@ -206,8 +161,6 @@ impl TableLayout {
         })
     }
 
-    /// The cell line under `(x, y)` (column-relative, line-relative), or the
-    /// nearest one when `nearest` (a click on a border or a padding).
     pub fn segment_at(&self, x: f32, y: f32, nearest: bool) -> Option<(usize, usize)> {
         let column = self
             .columns
@@ -245,7 +198,6 @@ impl TableLayout {
             if !nearest {
                 return None;
             }
-            // A short row's missing cell: its last real cell.
             index = self.cells[..index]
                 .iter()
                 .rposition(|c| c.row == row && !c.missing)?;
@@ -262,9 +214,6 @@ impl TableLayout {
         Some((index, segment))
     }
 
-    /// One visual row down or up from row `row` of a cell line: the next
-    /// line of the cell, else the cell under `x` in the next drawn row, as
-    /// `(cell, segment, row)`; `None` at the table's edge.
     pub fn step(
         &self,
         cell: usize,
@@ -285,8 +234,6 @@ impl TableLayout {
         self.enter(target, down, x)
     }
 
-    /// The cell line under `x` in drawn row `row`: its first visual row
-    /// when entering from above (`down`), its last from below.
     pub fn enter(&self, row: usize, down: bool, x: f32) -> Option<(usize, usize, usize)> {
         let (top, height) = *self.rows.get(row)?;
         let y = if down { top + 1.0 } else { top + height - 1.0 };
@@ -300,17 +247,13 @@ impl TableLayout {
         self.rows.len()
     }
 
-    /// Bottom of the grid's outer border, relative to the line's top.
     pub fn grid_bottom(&self) -> f32 {
         self.rows.last().map_or(self.grid_top, |(y, h)| y + h)
     }
 }
 
-/// Display replacements of a cell line, then its invisible ranges.
 type Replacements = (Vec<(Range<usize>, String)>, Vec<Range<usize>>);
 
-/// Display replacements and invisible ranges of a cell line, from the
-/// decorations: hidden marks, dashes, emoji, wiki links and tabs.
 fn replacements(decorations: &[&Decoration], range: &Range<usize>) -> Replacements {
     let local = |r: &Range<usize>| {
         r.start.clamp(range.start, range.end) - range.start
@@ -356,19 +299,14 @@ fn replacements(decorations: &[&Decoration], range: &Range<usize>) -> Replacemen
     (disjoint, invisible)
 }
 
-/// A shaped cell line before its column is known.
 struct Measured {
     range: Range<usize>,
     display: DisplayLine,
     runs: Rc<[gpui::TextRun]>,
-    /// Longest word and whole text, in pixels.
     word: f32,
     content: f32,
 }
 
-/// What a cell's lines are styled from: the decorations and spans that
-/// start in the cell. Both are sorted by start, so a cell finds its own by
-/// binary search instead of scanning the whole table's (US-048).
 struct CellInputs<'a> {
     decorations: Vec<&'a Decoration>,
     spans: &'a [(Range<usize>, super::layout::Span)],
@@ -391,7 +329,6 @@ impl<'a> CellInputs<'a> {
         }
     }
 
-    /// The decorations and spans starting in `cell` that may touch `line`.
     fn of(
         &self,
         cell: &Range<usize>,
@@ -481,10 +418,6 @@ fn measure(
     }
 }
 
-/// `exact` column widths rounded up to whole pixels, then narrowed one
-/// pixel at a time where a column has room above its `min`, so rounding
-/// never makes a table that fits its text column wider than it: that would
-/// clip its right border and show a scroll bar for nothing (US-056 review).
 fn whole_pixels(exact: &[f32], min: &[f32], available: f32) -> Vec<f32> {
     let mut widths: Vec<f32> = exact.iter().map(|w| w.ceil()).collect();
     if exact.iter().sum::<f32>() > available + 0.5 {
@@ -505,7 +438,6 @@ fn whole_pixels(exact: &[f32], min: &[f32], available: f32) -> Vec<f32> {
     widths
 }
 
-/// A line of a cell's text at `text_left`, its top set once the rows are.
 #[allow(clippy::too_many_arguments)]
 fn cell_line(
     ix: usize,
@@ -536,8 +468,6 @@ fn cell_line(
     }
 }
 
-/// How far a line `content` wide sits from its column's left edge: one row
-/// is aligned in the column, wrapped rows fill it.
 fn align_shift(align: Option<Align>, inner: f32, content: f32, rows: usize) -> f32 {
     if rows != 1 {
         return 0.0;
@@ -550,22 +480,14 @@ fn align_shift(align: Option<Align>, inner: f32, content: f32, rows: usize) -> f
     }
 }
 
-/// The column widths of the table the caret edits, kept while it stays in
-/// it (US-058): typing wraps the cell in its column instead of sizing the
-/// columns again. Never written to the file nor kept past the editor.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FrozenWidths {
-    /// The table's start in the document.
     pub start: usize,
-    /// Text column width the widths were computed in.
     pub column_width: f32,
-    /// One per column, borders included.
     pub widths: Vec<f32>,
 }
 
 impl FrozenWidths {
-    /// The widths still apply to `grid` in a column `column_width` wide:
-    /// the same table with as many columns.
     pub fn fits(&self, grid: &Grid, column_width: f32) -> bool {
         self.start == grid.range.start
             && self.widths.len() == grid.columns().max(1)
@@ -573,10 +495,6 @@ impl FrozenWidths {
     }
 }
 
-/// Lays out `grid` in a text column `cx.column_width` wide, with the
-/// decorations of `inputs` (which cover every cell `reuse` does not take
-/// from the previous layout). `frozen` widths, one per column, replace the
-/// sizing rules (US-058). The geometry is shifted left by `scroll` (US-056).
 #[allow(clippy::too_many_arguments)]
 pub fn layout(
     state: &EditorState,
@@ -598,8 +516,6 @@ pub fn layout(
     let columns = grid.columns().max(1);
     let cell_inputs = CellInputs::new(inputs);
 
-    // Measure every cell line once, unwrapped, or take it from the
-    // previous layout.
     struct Pending<'a> {
         row: usize,
         column: usize,
@@ -622,8 +538,6 @@ pub fn layout(
         let header = row == 0;
         for (column, cell) in grid_line.cells.iter().enumerate().take(columns) {
             let missing = cell.kind == CellKind::Missing;
-            // A selection end in the spaces after the content (a typed
-            // space): the cell shows them up to it.
             let tail = ends
                 .iter()
                 .copied()
@@ -634,7 +548,6 @@ pub fn layout(
                 let i = (*r.cells.get(pending.len())?)?;
                 Some(&r.previous.cells[i])
             });
-            // A reused cell's lines are measured already.
             let lines: Vec<Measured> = if missing || old.is_some() {
                 Vec::new()
             } else {
@@ -706,7 +619,6 @@ pub fn layout(
         pad_top: 0.0,
         pad_bottom: 0.0,
     };
-    // Shape at the column widths; cell tops are fixed once rows are known.
     let mut cells: Vec<CellBox> = pending
         .into_iter()
         .map(|p| {
@@ -715,13 +627,11 @@ pub fn layout(
             let left = lefts[p.column] + pad_x;
             let mut lines = p.lines;
             if let Some(old) = p.old {
-                // An old line starts as far into the content as it did.
                 let moved = |s: &LaidLine| {
                     let start = s.start - old.content.start + p.content.start;
                     start..start + s.len
                 };
                 if old.inner == inner {
-                    // Wrapped at the same width: the shaped lines hold.
                     let segments = old
                         .segments
                         .iter()
@@ -858,7 +768,6 @@ pub fn layout(
     }
 }
 
-/// Border, header background and rules of a table whose line top is `top`.
 pub fn paint_grid(t: &TableLayout, left: Pixels, top: Pixels, window: &mut Window) {
     let left = left - px(t.scroll);
     let border = theme::border();
@@ -925,7 +834,6 @@ pub fn paint_grid(t: &TableLayout, left: Pixels, top: Pixels, window: &mut Windo
     ));
 }
 
-/// The text of every cell.
 pub fn paint_text(
     t: &TableLayout,
     left: Pixels,
@@ -933,7 +841,6 @@ pub fn paint_text(
     window: &mut Window,
     cx: &mut gpui::App,
 ) {
-    // Only the rows in sight: a long table paints a screenful (US-057).
     let mask = window.content_mask().bounds;
     for cell in &t.cells {
         let (y, h) = t.rows[cell.row];
@@ -963,9 +870,6 @@ pub fn paint_text(
 mod tests {
     use super::whole_pixels;
 
-    /// US-056 review: columns shrunk to fill the text column exactly stay
-    /// within it once rounded to whole pixels, and none drops below its
-    /// longest word; a table too wide for any width keeps its minimums.
     #[test]
     fn rounded_widths_never_overflow_a_table_that_fits() {
         let exact = [40.4, 120.3, 99.3, 140.0];

@@ -1,28 +1,14 @@
-//! YAML frontmatter: the one parser used by the editor tree and by file
-//! reading (titles). Writer's editor rule (`markdown/frontmatter.ts:37-91`):
-//! a `---` line at offset 0, closed by the next unindented `---` line,
-//! trailing spaces allowed on both. Writer's file reader used a stricter
-//! regex (`lib/frontmatter.ts:3`); Cerata keeps the editor's rule for both.
-
 use std::ops::Range;
 
-/// Where the frontmatter sits in a document.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Frontmatter {
-    /// From offset 0 to the end of the closing `---` line (line break
-    /// excluded).
     pub range: Range<usize>,
     pub opening_mark: Range<usize>,
     pub closing_mark: Range<usize>,
-    /// The YAML between the delimiter lines, `None` when empty.
     pub content: Option<Range<usize>>,
-    /// Start of the line after the closing delimiter (the body).
     pub body_start: usize,
 }
 
-/// Lines of `text` from `from`: `(start, content_end, next_start)`. A
-/// break is `\n`, `\r\n` or `\r`; text after a final break is one more
-/// (empty) line, as in CodeMirror.
 pub(crate) fn lines(text: &str, from: usize) -> impl Iterator<Item = (usize, usize, usize)> + '_ {
     let bytes = text.as_bytes();
     let mut pos = (from <= bytes.len()).then_some(from);
@@ -51,7 +37,6 @@ fn is_delimiter_line(line: &str) -> bool {
         .is_some_and(|rest| rest.bytes().all(|b| b == b' ' || b == b'\t'))
 }
 
-/// Finds the frontmatter at the start of `text`, if any.
 pub fn detect(text: &str) -> Option<Frontmatter> {
     let mut iter = lines(text, 0);
     let (open_start, open_end, content_from) = iter.next()?;
@@ -62,7 +47,6 @@ pub fn detect(text: &str) -> Option<Frontmatter> {
         if !is_delimiter_line(&text[start..end]) {
             continue;
         }
-        // The line break before the closing delimiter is not content.
         let content_to = break_start(text, start);
         return Some(Frontmatter {
             range: 0..end,
@@ -87,10 +71,6 @@ fn break_start(text: &str, line_start: usize) -> usize {
     pos
 }
 
-/// The file for `frontmatter` (YAML without delimiters; `None` for no
-/// block) above `body`, lines ending in `eol` (`serializeFile`). An empty
-/// frontmatter keeps a blank line between its delimiters, as Writer
-/// writes it.
 pub fn join(frontmatter: Option<&str>, body: &str, eol: &str) -> String {
     match frontmatter {
         None => body.to_owned(),
@@ -98,7 +78,6 @@ pub fn join(frontmatter: Option<&str>, body: &str, eol: &str) -> String {
     }
 }
 
-/// The frontmatter text (without delimiters, `""` when empty) and the body.
 pub fn split(text: &str) -> (Option<&str>, &str) {
     match detect(text) {
         Some(fm) => (
@@ -113,7 +92,6 @@ pub fn split(text: &str) -> (Option<&str>, &str) {
 mod tests {
     use super::*;
 
-    /// `frontmatter.test.ts:66-96`.
     #[test]
     fn join_writes_writers_delimiters_and_round_trips() {
         assert_eq!(
@@ -138,7 +116,6 @@ mod tests {
         assert_eq!(split("---\n\n---\nBody").0, Some(""));
     }
 
-    /// `frontmatter.test.ts:124-134` (`serializeDocument`).
     #[test]
     fn a_body_is_written_verbatim_under_its_frontmatter() {
         assert_eq!(
@@ -181,7 +158,6 @@ mod tests {
         assert_eq!(split("---\r\na: 1\r\n---\r\nhi"), (Some("a: 1"), "hi"));
     }
 
-    /// `frontmatter.test.ts` parseFrontmatter.
     #[test]
     fn split_matches_writers_cases() {
         assert_eq!(

@@ -1,21 +1,9 @@
-//! Pinned files of each library, in `pins.json` of the app data folder.
-//!
-//! Writer kept them in a webview preference
-//! (`workspace:<root>:sidebar-pinned-files`, `workspace-store.ts:343-421`).
-//! ADR 0009 lets Cerata write only notes, their `{stem}-assets/` folders,
-//! `.cerata/config` and `.cerata/id` in a library, so pins live next to
-//! the sessions, keyed the same way: by library id, with paths relative to
-//! the root (`/` separators), converted from an absolute key on first use
-//! (US-077). On load they are normalized as in Writer: inside the root
-//! only, without duplicates.
-
 use crate::json_store::{JsonStore, StoreError};
 use crate::library::LibraryKey;
 use crate::session::{legacy_key, to_absolute, to_relative};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// Library id (or, before migration, absolute root) to stored paths.
 type Pins = BTreeMap<String, Vec<String>>;
 
 #[derive(Debug, Clone)]
@@ -30,7 +18,6 @@ impl PinStore {
         }
     }
 
-    /// Pinned files of `library`, most recently pinned first.
     pub fn load(&self, library: &LibraryKey) -> Result<Vec<PathBuf>, StoreError> {
         let pins: Pins = self.store.load()?;
         if !pins.contains_key(&library.id) && pins.contains_key(&legacy_key(&library.root)) {
@@ -42,7 +29,6 @@ impl PinStore {
         ))
     }
 
-    /// Pins `path` (first) or unpins it. Returns the new list.
     pub fn toggle(&self, library: &LibraryKey, path: &Path) -> Result<Vec<PathBuf>, StoreError> {
         let root = &library.root;
         self.edit(library, |pins| {
@@ -54,7 +40,6 @@ impl PinStore {
         })
     }
 
-    /// A file or folder moved: pins at `old` or under it follow.
     pub fn rewrite_prefix(
         &self,
         library: &LibraryKey,
@@ -74,7 +59,6 @@ impl PinStore {
         })
     }
 
-    /// A file or folder is gone: its pins and those under it are dropped.
     pub fn remove_prefix(
         &self,
         library: &LibraryKey,

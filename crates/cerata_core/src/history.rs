@@ -1,19 +1,3 @@
-//! A note's history (EP-018): every version of a note, addressed by the
-//! BLAKE3 hash of its bytes, in the library's store.
-//!
-//! The `.md` file stays the truth and is always written first; a version
-//! is inserted afterwards, by one recorder thread per library that groups
-//! what arrives within [`BATCH_WINDOW`] into one transaction. A save of
-//! Cerata's becomes a version once the note has not been written for
-//! [`SAVE_PAUSE`] (the typing pause), or at once when its tab closes, the
-//! library changes or the app quits ([`History::flush`]). A change made
-//! outside Cerata is recorded at once, with the known head as its parent.
-//!
-//! Blobs are deltas (US-088, ADR 0009 addendum): zstd level 3 with the
-//! previous version of the note as the dictionary, a full blob first and
-//! after [`MAX_CHAIN`] deltas. Two identical successive contents of a note
-//! make one version.
-
 pub mod device;
 pub mod gc;
 pub mod retention;
@@ -29,22 +13,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant, SystemTime};
 
-/// Most deltas between a blob and a full one (US-088): decoding a version
-/// never applies more than this many.
 pub const MAX_CHAIN: usize = 32;
-/// A save becomes a version once the note was not written for this long.
 pub const SAVE_PAUSE: Duration = Duration::from_secs(30);
-/// Versions arriving within this window share one transaction.
 pub const BATCH_WINDOW: Duration = Duration::from_millis(500);
-/// zstd level of every blob.
 const LEVEL: i32 = 3;
 
-/// Blob codecs.
 const CODEC_ZSTD: i64 = 1;
 const CODEC_DELTA: i64 = 2;
 
-/// Schema of the history (store migration 2). `version.parent` is the
-/// hash of the version before; `blob.base` the blob a delta applies to.
 pub const SCHEMA: &str = "
     CREATE TABLE blob (
         hash BLOB PRIMARY KEY,
@@ -74,7 +50,6 @@ pub const SCHEMA: &str = "
         value
     ) WITHOUT ROWID;";
 
-/// Why a version exists.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Cause {
     Save,
@@ -110,7 +85,6 @@ impl Cause {
         Self::ALL.into_iter().find(|cause| cause.as_str() == text)
     }
 
-    /// The label of the history panel (US-091).
     pub fn label(self) -> &'static str {
         match self {
             Self::Save => "Saved",
@@ -123,7 +97,6 @@ impl Cause {
     }
 }
 
-/// One version of a note.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VersionInfo {
     pub note: i64,
@@ -133,36 +106,26 @@ pub struct VersionInfo {
     pub cause: Cause,
     pub device_id: String,
     pub device_name: String,
-    /// Seconds since the Unix epoch.
     pub ts: i64,
     pub pinned: bool,
 }
 
-/// A deleted note that still has versions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeletedNote {
     pub id: i64,
-    /// Where it was, relative to the library root.
     pub path: String,
     pub deleted_at: i64,
     pub versions: usize,
-    /// The hash of its last version.
     pub head: ContentHash,
 }
 
-/// One version to insert.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Request {
-    /// The note, relative to the library root, `/`-separated.
     pub path: String,
-    /// The file's bytes.
     pub bytes: Vec<u8>,
     pub cause: Cause,
-    /// Seconds since the Unix epoch.
     pub ts: i64,
-    /// Inserted only while the note has no version at all.
     pub only_if_empty: bool,
-    /// `Some` parent instead of the head (a conflict copy's branch point).
     pub parent: Option<ContentHash>,
 }
 
@@ -195,9 +158,6 @@ pub(crate) fn hash_of(bytes: Vec<u8>) -> Option<ContentHash> {
     ContentHash::try_from(bytes.as_slice()).ok()
 }
 
-// Blobs -----------------------------------------------------------------
-
-/// Deltas between `hash` and its full blob.
 fn chain_length(connection: &Connection, hash: &ContentHash) -> rusqlite::Result<usize> {
     let mut statement = connection.prepare_cached("SELECT base FROM blob WHERE hash = ?1")?;
     let mut current = *hash;
@@ -238,11 +198,9 @@ fn decompress(bytes: &[u8], dictionary: Option<&[u8]>) -> rusqlite::Result<Vec<u
     Ok(out)
 }
 
-/// The bytes of blob `hash`, checked against it; `None` if absent.
 pub fn read_blob(connection: &Connection, hash: &ContentHash) -> rusqlite::Result<Option<Vec<u8>>> {
     let mut statement =
         connection.prepare_cached("SELECT codec, base, bytes FROM blob WHERE hash = ?1")?;
-    // From `hash` down to its full blob.
     let mut chain: Vec<(i64, Vec<u8>)> = Vec::new();
     let mut current = *hash;
     loop {
@@ -279,8 +237,6 @@ pub fn read_blob(connection: &Connection, hash: &ContentHash) -> rusqlite::Resul
     Ok(Some(content))
 }
 
-/// Inserts the blob of `bytes` unless present: a delta on `base` (its
-/// content given) while the chain stays within [`MAX_CHAIN`].
 fn put_blob(
     transaction: &Transaction,
     hash: &ContentHash,
@@ -314,7 +270,6 @@ fn put_blob(
     Ok(())
 }
 
-/// Re-encodes blob `hash` as a delta on `base`, or alone without one.
 pub(crate) fn reencode_blob(
     transaction: &Transaction,
     hash: &ContentHash,
@@ -343,14 +298,6 @@ pub(crate) fn reencode_blob(
     Ok(())
 }
 
-// Versions --------------------------------------------------------------
-
-/// The id of the note at `path`. A note that left `path` since the request
-/// was made (a save pending through the typing pause) is found where it
-/// went: the one live note holding these bytes (moved outside Cerata), else
-/// the last deleted row at `path`. Only a note the index has not recorded
-/// yet gets a new row (its next upsert completes it); the row has no hash,
-/// so it names no content a blob would be kept for.
 fn note_id(transaction: &Transaction, path: &str, bytes: &[u8]) -> rusqlite::Result<i64> {
     let id: Option<i64> = transaction
         .prepare_cached("SELECT id FROM note WHERE deleted_at IS NULL AND path = ?1")?
@@ -386,9 +333,6 @@ fn note_id(transaction: &Transaction, path: &str, bytes: &[u8]) -> rusqlite::Res
     Ok(transaction.last_insert_rowid())
 }
 
-/// The newest sequence number of `note`, and the hash of its head: the
-/// newest version that is not a conflict copy (a branch beside the note's
-/// line, US-093).
 fn head(
     connection: &Connection,
     note: i64,
@@ -406,7 +350,6 @@ fn head(
     Ok((seq, hash.and_then(hash_of)))
 }
 
-/// Whether `note` already has a conflict version holding `hash`.
 fn conflict_known(
     connection: &Connection,
     note: i64,
@@ -421,8 +364,6 @@ fn conflict_known(
     Ok(found.is_some())
 }
 
-/// The last content inserted per note, so a delta does not decode its
-/// base again. Bounded: cleared past [`Self::LIMIT`] notes.
 #[derive(Default)]
 struct HeadCache(HashMap<i64, (ContentHash, Vec<u8>)>);
 
@@ -451,8 +392,6 @@ impl HeadCache {
     }
 }
 
-/// Inserts `request` as the next version of its note, unless it holds the
-/// head's content. Returns whether a version was added.
 fn insert_version(
     transaction: &Transaction,
     device: &Device,
@@ -465,8 +404,6 @@ fn insert_version(
         return Ok(false);
     }
     let hash = content_hash(&request.bytes);
-    // A restore is a gesture worth listing even when it brings back the
-    // head's text (a deleted note); other causes skip an unchanged text.
     let always = matches!(request.cause, Cause::Conflict | Cause::Restore);
     if !always && head == Some(hash) {
         return Ok(false);
@@ -524,7 +461,6 @@ fn version_row(row: &rusqlite::Row) -> rusqlite::Result<VersionInfo> {
 const VERSION_COLUMNS: &str = "v.note, v.seq, v.hash, v.parent, v.cause, v.device, d.name, v.ts, \
                                v.pinned FROM version v LEFT JOIN device d ON d.id = v.device";
 
-/// The versions of note `id`, newest first.
 pub fn versions_of_note(store: &Store, id: i64) -> Result<Vec<VersionInfo>, StoreError> {
     store.read(|connection| {
         let mut statement = connection.prepare(&format!(
@@ -535,7 +471,6 @@ pub fn versions_of_note(store: &Store, id: i64) -> Result<Vec<VersionInfo>, Stor
     })
 }
 
-/// The live note at `path` and its versions, newest first.
 pub fn versions_of_path(
     store: &Store,
     path: &str,
@@ -546,13 +481,11 @@ pub fn versions_of_path(
     Ok(Some((note.id, versions_of_note(store, note.id)?)))
 }
 
-/// The bytes of a version.
 pub fn content(store: &Store, hash: &ContentHash) -> Result<Option<Vec<u8>>, StoreError> {
     let hash = *hash;
     store.read(move |connection| read_blob(connection, &hash))
 }
 
-/// The last version of the live note at `path` written before `ts`.
 pub fn version_before(
     store: &Store,
     path: &str,
@@ -576,7 +509,6 @@ pub fn version_before(
     })
 }
 
-/// Deleted notes that still have versions, most recently deleted first.
 pub fn deleted_notes(store: &Store) -> Result<Vec<DeletedNote>, StoreError> {
     store.read(|connection| {
         let mut statement = connection.prepare(
@@ -599,8 +531,6 @@ pub fn deleted_notes(store: &Store) -> Result<Vec<DeletedNote>, StoreError> {
     })
 }
 
-/// Live notes whose newest version is not their last known content: a
-/// crash came between a write and its version (US-089).
 pub fn unversioned_heads(store: &Store) -> Result<Vec<String>, StoreError> {
     store.read(|connection| {
         let mut statement = connection.prepare(
@@ -617,10 +547,6 @@ pub fn unversioned_heads(store: &Store) -> Result<Vec<String>, StoreError> {
     })
 }
 
-/// The `conflict` version of the conflict copy at `copy` (`relative` to
-/// the library root), when its original is next to it: a branch of the
-/// original whose parent is the original's last version written before
-/// the copy (US-093).
 pub fn conflict_version(
     store: &Store,
     root: &std::path::Path,
@@ -645,9 +571,6 @@ pub fn conflict_version(
     Some(request)
 }
 
-/// Gives deleted note `id` back its life at `path` (relative), so a note
-/// restored from "Deleted Notes" keeps its history. Nothing happens when a
-/// live note already holds `path`. Answers whether the row was revived.
 pub fn undelete(
     store: &Store,
     token: &EpochToken,
@@ -672,7 +595,6 @@ pub fn undelete(
     })
 }
 
-/// Pins or unpins a version (kept by every retention tier).
 pub fn set_pinned(
     store: &Store,
     token: &EpochToken,
@@ -689,14 +611,9 @@ pub fn set_pinned(
     })
 }
 
-// The recorder ----------------------------------------------------------
-
-/// The first retention check waits this long after the library opens.
 pub const RETENTION_DELAY: Duration = Duration::from_secs(60);
-/// Then whether a pass is due is checked this often.
 pub const RETENTION_CHECK: Duration = Duration::from_secs(3600);
 
-/// How long the recorder waits; shortened by tests.
 #[derive(Debug, Clone, Copy)]
 pub struct Timing {
     pub save_pause: Duration,
@@ -722,7 +639,6 @@ enum Command {
     Flush {
         path: Option<String>,
         done: Option<Sender<()>>,
-        /// The library closes: a retention pass follows.
         closing: bool,
     },
     Renamed {
@@ -731,10 +647,8 @@ enum Command {
     },
 }
 
-/// Told once per session when a version could not be written.
 pub type HistoryNotice = Arc<dyn Fn(String) + Send + Sync>;
 
-/// The message of a version that could not be written (US-089).
 pub fn failure_message(error: &StoreError) -> String {
     let detail = match error {
         StoreError::Sqlite(error) => error.to_string(),
@@ -744,15 +658,10 @@ pub fn failure_message(error: &StoreError) -> String {
     format!("Cerata couldn't save this note's history: {detail}")
 }
 
-/// The history of one library: versions go to its store through one
-/// recorder thread. Clones share it; it stops once the last is dropped,
-/// after writing what it holds.
 #[derive(Clone)]
 pub struct History {
     store: Store,
     token: EpochToken,
-    /// Never stale: retention passes and purges finish even once the
-    /// library is closed in the window.
     maintenance: EpochToken,
     cache: Arc<parking_lot::Mutex<HeadCache>>,
     commands: Sender<Command>,
@@ -814,20 +723,16 @@ impl History {
         &self.token
     }
 
-    /// Records a version within the batch window.
     pub fn record(&self, request: Request) {
         let _ = self.commands.send(Command::Record(request));
     }
 
-    /// Cerata wrote `bytes` to `path`: a `save` version once the note has
-    /// not been written for [`SAVE_PAUSE`], or on [`Self::flush`].
     pub fn saved(&self, path: impl Into<String>, bytes: Vec<u8>) {
         let _ = self
             .commands
             .send(Command::Saved(Request::new(path, bytes, Cause::Save)));
     }
 
-    /// Writes the pending save of `path` (every one with `None`) now.
     pub fn flush(&self, path: Option<&str>) {
         let _ = self.commands.send(Command::Flush {
             path: path.map(str::to_owned),
@@ -836,8 +741,6 @@ impl History {
         });
     }
 
-    /// The library closes: every pending save is written (waited for up
-    /// to `timeout`), then a retention pass runs on the store's thread.
     pub fn close(&self, timeout: Duration) -> bool {
         let (done, wait) = std::sync::mpsc::channel();
         let sent = self.commands.send(Command::Flush {
@@ -848,15 +751,11 @@ impl History {
         sent.is_ok() && wait.recv_timeout(timeout).is_ok()
     }
 
-    /// How many versions `purge` would delete, read on the calling thread.
     pub fn purge_count(&self, purge: gc::Purge) -> Result<usize, StoreError> {
         self.store
             .read(move |connection| gc::purge_count(connection, purge))
     }
 
-    /// Deletes the versions of `purge` for good: their rows and blobs, then
-    /// a vacuum and an emptied WAL leave none of their bytes in the files.
-    /// The notes are never touched.
     pub fn purge(&self, purge: gc::Purge) -> Receiver<Result<gc::Removed, StoreError>> {
         let (answer, receiver) = std::sync::mpsc::channel();
         let (counted, removed) = std::sync::mpsc::channel();
@@ -890,8 +789,6 @@ impl History {
         receiver
     }
 
-    /// [`Self::flush`], waiting up to `timeout` for the versions to be
-    /// committed. `false` at the deadline.
     pub fn flush_and_wait(&self, path: Option<&str>, timeout: Duration) -> bool {
         let (done, wait) = std::sync::mpsc::channel();
         let sent = self.commands.send(Command::Flush {
@@ -902,7 +799,6 @@ impl History {
         sent.is_ok() && wait.recv_timeout(timeout).is_ok()
     }
 
-    /// A note Cerata moved: its pending save follows it.
     pub fn renamed(&self, from: &str, to: &str) {
         let _ = self.commands.send(Command::Renamed {
             from: from.to_owned(),
@@ -929,7 +825,6 @@ struct Recorder {
 
 impl Recorder {
     fn run(&self, commands: &Receiver<Command>) {
-        // A purge interrupted during its vacuum vacuums again.
         let owed = self
             .store
             .read(|connection| gc::meta_get(connection, gc::VACUUM_OWED))
@@ -968,7 +863,6 @@ impl Recorder {
             let mut close = false;
             match received {
                 Ok(Command::Record(request)) => {
-                    // A save still pending for the note came first.
                     if let Some(earlier) = pending.remove(&request.path) {
                         batch.push(earlier.request);
                     }
@@ -1036,7 +930,6 @@ impl Recorder {
         }
     }
 
-    /// A retention pass, when one is due or `always` (the library closes).
     fn retention(&self, always: bool) {
         let now = unix_now();
         let cache = self.cache.clone();
@@ -1062,13 +955,10 @@ impl Recorder {
         }
     }
 
-    /// Inserts `batch` in one transaction and waits for it.
     fn commit(&self, mut batch: Vec<Request>) {
         if batch.is_empty() {
             return;
         }
-        // Oldest first, so each note's versions keep their order; the sort
-        // is stable for requests of the same second.
         batch.sort_by_key(|request| request.ts);
         let device = self.device.clone();
         let cache = self.cache.clone();
@@ -1090,13 +980,11 @@ impl Recorder {
             .recv();
         match result {
             Ok(Err(error)) => {
-                // The `.md` files are written already; only versions miss.
                 self.cache.lock().0.clear();
                 if !self.noticed.swap(true, Ordering::SeqCst) {
                     (self.notice)(failure_message(&error));
                 }
             }
-            // Rolled back: the cache may hold what was not committed.
             Ok(Ok(false)) => self.cache.lock().0.clear(),
             Ok(Ok(true)) => {}
             Err(_) => log::warn!("history: the store writer stopped"),

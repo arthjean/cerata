@@ -1,6 +1,3 @@
-//! Editor zoom (`lib/zoom.ts`): a fixed ladder from 50 to 300 %, stored in
-//! `editor.zoom`; it multiplies the font size, which it never rewrites.
-
 pub const ZOOM_KEY: &str = "editor.zoom";
 pub const DEFAULT: f64 = 100.0;
 pub const MIN: f64 = 50.0;
@@ -9,8 +6,6 @@ pub const STEPS: [f64; 13] = [
     50.0, 60.0, 70.0, 80.0, 90.0, 100.0, 110.0, 125.0, 150.0, 175.0, 200.0, 250.0, 300.0,
 ];
 
-/// A stored value as a zoom: anything not finite is the default, the rest
-/// is clamped to the ladder's ends.
 pub fn normalize(value: Option<f64>) -> f64 {
     match value {
         Some(v) if v.is_finite() => v.clamp(MIN, MAX),
@@ -18,7 +13,6 @@ pub fn normalize(value: Option<f64>) -> f64 {
     }
 }
 
-/// The first step above `current`, or the maximum.
 pub fn zoom_in(current: Option<f64>) -> f64 {
     let current = normalize(current);
     STEPS
@@ -27,7 +21,6 @@ pub fn zoom_in(current: Option<f64>) -> f64 {
         .unwrap_or(MAX)
 }
 
-/// The last step below `current`, or the minimum.
 pub fn zoom_out(current: Option<f64>) -> f64 {
     let current = normalize(current);
     STEPS
@@ -40,8 +33,6 @@ pub fn zoom_out(current: Option<f64>) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // Ported from Writer `tests/zoom.test.ts:56-132`.
 
     #[test]
     fn the_ladder_spans_the_schema_bounds_and_holds_the_default() {

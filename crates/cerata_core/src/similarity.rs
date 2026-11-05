@@ -1,16 +1,5 @@
-//! Content similarity of two notes, to recognize a note renamed and edited
-//! outside Cerata (US-085).
-//!
-//! The estimate follows git's rename score (`diffcore-delta.c`): both texts
-//! are cut into lines, a line longer than 64 bytes into 64-byte chunks;
-//! the bytes of the chunks the two texts share (counted with their
-//! multiplicity) are divided by the size of the larger text. A note is kept
-//! as a [`Sketch`], so the store can compare it once the file is gone.
-
-/// Chunks longer than this are cut, as git does.
 const CHUNK_BYTES: usize = 64;
 
-/// Line chunks of a text, as sorted `(hash, bytes)` pairs.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Sketch {
     chunks: Vec<(u32, u32)>,
@@ -40,7 +29,6 @@ impl Sketch {
         Self { chunks: merged }
     }
 
-    /// Little-endian `(hash, bytes)` pairs, for the store.
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(self.chunks.len() * 8);
         for (hash, count) in &self.chunks {
@@ -50,7 +38,6 @@ impl Sketch {
         bytes
     }
 
-    /// The inverse of [`Self::to_bytes`]; trailing bytes are ignored.
     pub fn from_bytes(bytes: &[u8]) -> Self {
         let (pairs, _) = bytes.as_chunks::<8>();
         let chunks = pairs
@@ -65,12 +52,10 @@ impl Sketch {
         Self { chunks }
     }
 
-    /// Total bytes of the text.
     pub fn size(&self) -> u64 {
         self.chunks.iter().map(|(_, bytes)| u64::from(*bytes)).sum()
     }
 
-    /// Share of content in common, from 0 (nothing) to 1 (same chunks).
     pub fn similarity(&self, other: &Sketch) -> f64 {
         let largest = self.size().max(other.size());
         if largest == 0 {
@@ -100,7 +85,6 @@ impl Sketch {
     }
 }
 
-/// 32-bit FNV-1a: stable across builds, since sketches are stored.
 fn chunk(bytes: &[u8]) -> (u32, u32) {
     let mut hash: u32 = 0x811c_9dc5;
     for byte in bytes {
@@ -134,7 +118,6 @@ mod tests {
 
     #[test]
     fn similarity_is_the_share_of_shared_lines() {
-        // 6 lines of 10 kept, 4 replaced by lines of the same length.
         let old = lines(10, "x");
         let new: String = old
             .lines()

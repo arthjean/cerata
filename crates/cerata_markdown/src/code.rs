@@ -1,12 +1,8 @@
-//! Blocks rendered as code: fenced and indented code, and the frontmatter
-//! (`codeFenceScroll.ts:56-62`, `codeFenceExtension.ts:28-112`).
-
 use std::ops::Range;
 
 use crate::text::Text;
 use crate::tree::{MarkdownTree, Node, NodeKind};
 
-/// The label Writer shows on a frontmatter block.
 pub const FRONTMATTER_LABEL: &str = "YAML (FRONTMATTER)";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -20,15 +16,9 @@ pub enum CodeBlockKind {
 pub struct CodeBlock {
     pub kind: CodeBlockKind,
     pub range: Range<usize>,
-    /// The fence's info string as written (`rust`), empty when none.
     pub language: String,
-    /// What the block's first line shows: the language in uppercase, or
-    /// `YAML (FRONTMATTER)`.
     pub label: String,
-    /// The code the copy button copies: without the fences, and without
-    /// the four-space indent of indented code.
     pub code: String,
-    /// Range of the code itself (between the fences).
     pub code_range: Range<usize>,
 }
 
@@ -39,8 +29,6 @@ pub fn is_code_block_node(kind: NodeKind) -> bool {
     )
 }
 
-/// The code block holding `pos`, the one ending at `pos` first, so a caret
-/// right after a closing fence is still in its block (`codeBlockAt`).
 pub fn code_block_at(tree: &MarkdownTree, pos: usize) -> Option<Node<'_>> {
     [-1, 1].into_iter().find_map(|side| {
         let node = tree.resolve(pos, side);
@@ -72,9 +60,6 @@ pub fn describe(text: &Text, node: Node<'_>) -> Option<CodeBlock> {
             let label = language.to_uppercase();
             let first = text.line_at(node.from());
             let start = (first.to + 1).min(node.to());
-            // The closing fence, when there is one on a later line. Writer
-            // cut four bytes (`\n```), which truncates unclosed fences and
-            // longer fences; this keeps exactly the content.
             let closing = node.last_child().filter(|c| {
                 c.kind() == NodeKind::CodeMark && text.line_at(c.from()).number > first.number
             });
@@ -110,7 +95,6 @@ pub fn describe(text: &Text, node: Node<'_>) -> Option<CodeBlock> {
     })
 }
 
-/// `^(?: {1,4}|\t)` removed.
 fn strip_indent(line: &str) -> &str {
     if let Some(rest) = line.strip_prefix('\t') {
         return rest;
@@ -119,7 +103,6 @@ fn strip_indent(line: &str) -> &str {
     &line[spaces..]
 }
 
-/// Every code block of the document, in order.
 pub fn code_blocks(tree: &MarkdownTree, text: &Text) -> Vec<CodeBlock> {
     tree.iter()
         .filter(|n| is_code_block_node(n.kind()))

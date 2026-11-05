@@ -1,46 +1,31 @@
-//! A note's assets folder, `{stem}-assets` next to it, follows the note
-//! when Cerata renames, moves or duplicates it (EP-015, FR-13 and FR-14):
-//! the pair is never left apart by an operation that fails half way.
-
 use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 
 use super::{FsError, WorkspaceFs};
 
-/// `{stem}-assets` next to `note`.
 pub fn assets_dir(note: &Path) -> Option<PathBuf> {
     let stem = note.file_stem()?.to_string_lossy();
     Some(note.with_file_name(format!("{stem}-assets")))
 }
 
-/// The assets folder of `note` when one exists: a real folder, never a
-/// symlink.
 fn existing_assets(note: &Path) -> Option<PathBuf> {
     assets_dir(note).filter(|dir| fs::symlink_metadata(dir).is_ok_and(|meta| meta.is_dir()))
 }
 
-/// What happened to a note's assets folder.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AssetsOutcome {
-    /// The note has no assets folder.
     None,
-    /// The folder followed the note: moved, or copied for a duplicate.
     Followed { from: PathBuf, to: PathBuf },
-    /// The folder stayed at `folder`: `taken` already existed.
     Stayed { folder: PathBuf, taken: PathBuf },
 }
 
-/// A note renamed, moved or duplicated with its assets folder.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NoteOperation {
-    /// The note's new path (the copy, for a duplicate).
     pub path: PathBuf,
     pub assets: AssetsOutcome,
 }
 
-/// How the destinations of a note change: the folder, relative to the note
-/// before the operation, and where it is now, relative to the note after.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LinkRewrite {
     pub from: String,
@@ -48,8 +33,6 @@ pub struct LinkRewrite {
 }
 
 impl NoteOperation {
-    /// The rewrite the note's text needs, `old` being the note before the
-    /// operation; `None` when its destinations stay valid as written.
     pub fn links(&self, old: &Path) -> Option<LinkRewrite> {
         let actual = match &self.assets {
             AssetsOutcome::None => return None,
@@ -61,8 +44,6 @@ impl NoteOperation {
         (from != to).then_some(LinkRewrite { from, to })
     }
 
-    /// `Images stay in "foo-assets": "bar-assets" already exists`, when the
-    /// folder could not follow.
     pub fn notice(&self) -> Option<String> {
         let AssetsOutcome::Stayed { folder, taken } = &self.assets else {
             return None;
@@ -80,7 +61,6 @@ impl NoteOperation {
     }
 }
 
-/// `to` relative to the folder `from`, with `/` separators; both absolute.
 pub fn relative_between(from: &Path, to: &Path) -> Option<String> {
     let from: Vec<Component<'_>> = from.components().collect();
     let to: Vec<Component<'_>> = to.components().collect();
@@ -98,11 +78,6 @@ pub fn relative_between(from: &Path, to: &Path) -> Option<String> {
 }
 
 impl WorkspaceFs {
-    /// Renames or moves the Markdown file `old` to `new` with its assets
-    /// folder. The folder goes first, to `{new stem}-assets` next to `new`;
-    /// when the note then cannot follow, the folder goes back. A folder
-    /// name already taken leaves the folder where it is and moves the note
-    /// alone. A note without a folder is renamed exactly as [`Self::rename`].
     pub fn rename_note(&self, old: &Path, new: &Path) -> Result<NoteOperation, FsError> {
         let note = self.confine_entry(old)?;
         let Some(folder) = existing_assets(&note) else {
@@ -137,12 +112,6 @@ impl WorkspaceFs {
         }
     }
 
-    /// [`Self::duplicate`] with the assets folder: `foo copy.md` gets a full
-    /// copy of `foo-assets` as `foo copy-assets`, and its destinations are
-    /// rewritten to it before the note is written. A folder name already
-    /// taken leaves the copy's links on `foo-assets`, valid from the same
-    /// folder. On a failure, the partial folder and the copy are removed.
-    /// Blocking: runs off the interface thread.
     pub fn duplicate_note(
         &self,
         source: &Path,
@@ -201,9 +170,6 @@ impl WorkspaceFs {
         Ok(operation)
     }
 
-    /// Copies the folder `from` to the new folder `to`, files and
-    /// subfolders; symlinks are skipped, so nothing outside the root comes
-    /// in. An existing `to` is refused; a failure removes what was copied.
     fn copy_folder(
         &self,
         from: &Path,
@@ -251,7 +217,6 @@ mod tests {
         WorkspaceFs::new(dir.path()).unwrap()
     }
 
-    /// `foo.md` and `foo-assets/x.png` (plus `sub/y.png`) in `dir`.
     fn note(root: &Path, dir: &str) -> PathBuf {
         let parent = root.join(dir);
         fs::create_dir_all(parent.join("foo-assets/sub")).unwrap();
@@ -321,7 +286,6 @@ mod tests {
             done.notice().as_deref(),
             Some("Images stay in \"foo-assets\": \"foo-assets\" already exists")
         );
-        // Renamed in place over a taken name, the folder is still a sibling.
         let other = note(&root, "c");
         fs::create_dir(root.join("c/bar-assets")).unwrap();
         let done = ws.rename_note(&other, &root.join("c/bar.md")).unwrap();
@@ -338,7 +302,6 @@ mod tests {
         let ws = ws(&dir);
         let root = ws.root().to_path_buf();
         let old = note(&root, "");
-        // The note's rename fails after the folder moved: its name is taken.
         fs::write(root.join("bar.md"), "other").unwrap();
         let error = ws.rename_note(&old, &root.join("bar.md")).unwrap_err();
         assert!(matches!(error, FsError::AlreadyExists(_)), "{error}");

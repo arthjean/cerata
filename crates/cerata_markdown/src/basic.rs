@@ -1,10 +1,3 @@
-//! The editing commands Writer inherits from CodeMirror's basic setup and
-//! default keymap (`docs/keyboard-shortcuts.md:74-98`, `basicSetup.ts:30-60`):
-//! character and word motion, document boundaries, line moves and copies,
-//! line deletion, blank line below, indent more or less, and the occurrence
-//! selections. Vertical motion depends on wrapped rows and lives in the
-//! renderer.
-
 use std::ops::Range;
 
 use crate::change::Change;
@@ -13,7 +6,6 @@ use crate::selection::{Selection, SelectionRange};
 use crate::state::{EditorState, Transaction};
 use crate::text::Text;
 
-/// CodeMirror's default `indentUnit`.
 pub const INDENT_UNIT: &str = "  ";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -33,7 +25,6 @@ fn category(c: char) -> Category {
     }
 }
 
-/// One step before or after `pos`, a `\r\n` break counting as one.
 pub fn char_step(text: &Text, pos: usize, forward: bool) -> usize {
     let s = text.as_str();
     if forward {
@@ -53,9 +44,6 @@ pub fn char_step(text: &Text, pos: usize, forward: bool) -> usize {
     }
 }
 
-/// CodeMirror's group motion (`moveByGroup`): spaces, then the run of
-/// characters sharing the first non-space one's category. A line break is
-/// one step of its own.
 pub fn group_step(text: &Text, pos: usize, forward: bool) -> usize {
     let line = text.line_at(pos);
     if forward && pos >= line.to {
@@ -94,7 +82,6 @@ pub fn group_step(text: &Text, pos: usize, forward: bool) -> usize {
     }
 }
 
-/// The word (letters, digits, `_`) around `pos`, if any.
 pub fn word_around(text: &Text, pos: usize) -> Option<Range<usize>> {
     let line = text.line_at(pos);
     let content = text.slice(line.range());
@@ -113,14 +100,12 @@ pub fn word_around(text: &Text, pos: usize) -> Option<Range<usize>> {
     (start < end).then(|| line.from + start..line.from + end)
 }
 
-/// The line numbers each selection range covers, merged into blocks.
 fn line_blocks(state: &EditorState) -> Vec<(usize, usize)> {
     let text = state.text();
     let mut blocks: Vec<(usize, usize)> = Vec::new();
     for range in state.selection().ranges() {
         let first = text.line_at(range.from()).number;
         let mut last = text.line_at(range.to()).number;
-        // A selection ending at a line start does not take that line.
         if last > first && text.line(last).from == range.to() {
             last -= 1;
         }
@@ -146,8 +131,6 @@ impl EditorState {
         .is_ok()
     }
 
-    /// Moves (or extends) every range with `step`; a plain move from a
-    /// non-empty range collapses it to its side instead.
     fn motion(
         &mut self,
         extend: bool,
@@ -173,7 +156,6 @@ impl EditorState {
         self.select_with(selection)
     }
 
-    /// Left or Right (with Shift: extend). The list prefix moves first.
     pub fn move_char(&mut self, forward: bool, extend: bool) -> bool {
         if self.list_arrow(forward, extend) {
             return true;
@@ -181,10 +163,7 @@ impl EditorState {
         self.motion(extend, forward, |text, pos| char_step(text, pos, forward))
     }
 
-    /// Word left or right (Alt on macOS, Ctrl elsewhere).
     pub fn move_group(&mut self, forward: bool, extend: bool) -> bool {
-        // In a table cell, a word motion stops at the cell's edge before
-        // it leaves it (`cells.rs`).
         let cells = self.cell_contents();
         let heads: Vec<usize> = self.selection().ranges().iter().map(|r| r.head).collect();
         self.motion(extend, forward, |text, pos| {
@@ -196,7 +175,6 @@ impl EditorState {
             match cell {
                 Some((c, _, _)) if forward && pos < c.end && to > c.end => c.end,
                 Some((c, _, _)) if !forward && pos > c.start && to < c.start => c.start,
-                // At the edge: the neighboring cell.
                 Some((c, next, _)) if forward && pos == c.end => next,
                 Some((c, _, prev)) if !forward && pos == c.start => prev,
                 _ => to,
@@ -204,7 +182,6 @@ impl EditorState {
         })
     }
 
-    /// Start or end of the document.
     pub fn move_doc_boundary(&mut self, forward: bool, extend: bool) -> bool {
         let target = if forward { self.text().len() } else { 0 };
         let main = self.selection().main();
@@ -221,12 +198,10 @@ impl EditorState {
         self.select_with(Selection::single(0, len))
     }
 
-    /// Delete: the selection or the character after each caret.
     pub fn delete_forward(&mut self) -> bool {
         self.delete_by(|text, pos| char_step(text, pos, true))
     }
 
-    /// Word deletion before or after each caret.
     pub fn delete_group(&mut self, forward: bool) -> bool {
         self.delete_by(|text, pos| group_step(text, pos, forward))
     }
@@ -235,7 +210,6 @@ impl EditorState {
         if self.is_loading() {
             return false;
         }
-        // Over a rectangle of cells: they are emptied (US-054).
         if let Some(done) = self.clear_cells() {
             return done;
         }
@@ -255,7 +229,6 @@ impl EditorState {
         if self.guard_atomic_deletes(&cut) || self.guard_table_joins(&cut) {
             return true;
         }
-        // A caret in a table cell deletes inside it only (`cells.rs`).
         let changes: Vec<Change> = self.cell_cuts(&cut).into_iter().flatten().collect();
         if changes.is_empty() {
             return true;
@@ -263,8 +236,6 @@ impl EditorState {
         self.replace_ranges(changes, UserEvent::Delete)
     }
 
-    /// Alt+Up or Alt+Down: swaps the selected lines with the line above or
-    /// below; the selection moves with them.
     pub fn move_lines(&mut self, up: bool) -> bool {
         if self.is_loading() {
             return false;
@@ -326,8 +297,6 @@ impl EditorState {
         .is_ok()
     }
 
-    /// Alt+Shift+Up or Down: duplicates the selected lines above or below;
-    /// the selection lands on the copy in the direction of the key.
     pub fn copy_lines(&mut self, up: bool) -> bool {
         if self.is_loading() {
             return false;
@@ -376,8 +345,6 @@ impl EditorState {
         .is_ok()
     }
 
-    /// Cmd+Shift+K: deletes the selected lines and their line break; each
-    /// caret goes to the start of the line that took their place.
     pub fn delete_lines(&mut self) -> bool {
         if self.is_loading() {
             return false;
@@ -419,8 +386,6 @@ impl EditorState {
         .is_ok()
     }
 
-    /// Cmd+Enter: a new line below each range's line, with its indentation,
-    /// and the caret on it (`insertBlankLine`).
     pub fn insert_blank_line(&mut self) -> bool {
         if self.is_loading() {
             return false;
@@ -446,8 +411,6 @@ impl EditorState {
         self.replace_ranges(changes, UserEvent::Command)
     }
 
-    /// Cmd+] and Cmd+[: one indent unit more or less at the start of every
-    /// selected line.
     pub fn indent_lines(&mut self, more: bool) -> bool {
         if self.is_loading() {
             return false;
@@ -492,9 +455,6 @@ impl EditorState {
         .is_ok()
     }
 
-    /// Cmd+D (`selectNextOccurrence`): a caret first selects its word; then
-    /// each press adds the next occurrence of the main selection, wrapping
-    /// around the document, as the new main range.
     pub fn select_next_occurrence(&mut self) -> bool {
         let text = self.text();
         if self
@@ -538,7 +498,6 @@ impl EditorState {
         ranges.push(SelectionRange::new(from, from + needle.len()));
         let main_index = ranges.len() - 1;
         let selection = Selection::new(ranges, main_index);
-        // `Selection::new` sorts its ranges: find the new main again.
         let main_index = selection
             .ranges()
             .iter()
@@ -548,8 +507,6 @@ impl EditorState {
         self.select_with(selection)
     }
 
-    /// Cmd+Shift+L (`selectSelectionMatches`): every occurrence of the main
-    /// selection (or of the word at the caret), the main one staying main.
     pub fn select_all_occurrences(&mut self) -> bool {
         let text = self.text();
         let main = self.selection().main();

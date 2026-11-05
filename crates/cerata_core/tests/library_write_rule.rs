@@ -1,9 +1,3 @@
-//! ADR 0009 write rule (US-075): in a library, Cerata writes notes, their
-//! `{stem}-assets/` folders, `.cerata/config` and `.cerata/id`, and nothing
-//! else. The test drives a temporary library through the core entry
-//! points (open, create, save, rename, duplicate, delete, image import, a
-//! library setting), then checks every file left in the folder.
-
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::path::{Path, PathBuf};
@@ -17,7 +11,6 @@ use cerata_core::settings::{ConfigValue, Layer};
 use cerata_core::startup::CoreApp;
 use tempfile::TempDir;
 
-/// Files under `root` that the rule does not allow, relative to it.
 fn violations(root: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
     let mut stack = vec![root.to_path_buf()];
@@ -78,7 +71,6 @@ fn library_write_rule() {
     let fs = &runtime.fs;
     let root = info.root.clone();
 
-    // Create and save notes, in the root and in a folder.
     let a = fs.create_file(&root.join("a.md")).unwrap().path;
     fs.write_file(&a, "# A\n\nbody", TextFormat::default())
         .unwrap();
@@ -86,7 +78,6 @@ fn library_write_rule() {
     let b = fs.create_file(&root.join("dir").join("b.md")).unwrap().path;
     fs.write_file(&b, "# B", TextFormat::default()).unwrap();
 
-    // Import an image into `a-assets/`.
     let planned = plan_import(
         Some(&a),
         &root,
@@ -103,7 +94,6 @@ fn library_write_rule() {
         .unwrap();
     assert!(root.join("a-assets").is_dir());
 
-    // Rename the note with its assets, duplicate it, write a setting.
     let renamed = root.join("renamed.md");
     fs.rename_note(&a, &renamed).unwrap();
     fs.duplicate_note(&renamed, None).unwrap();
@@ -117,7 +107,6 @@ fn library_write_rule() {
         )
         .unwrap();
 
-    // Delete a note (to the trash, when the session has one).
     if let Err(error) = fs.delete(&b) {
         eprintln!("delete skipped: no trash available here: {error}");
     }
@@ -131,7 +120,6 @@ fn library_write_rule() {
     );
 }
 
-/// The check names a file written outside the rule.
 #[test]
 fn library_write_rule_names_a_stray_file() {
     let root = TempDir::new().unwrap();

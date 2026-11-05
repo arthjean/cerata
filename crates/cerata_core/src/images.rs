@@ -1,36 +1,15 @@
-//! Image import (US-059): what a dropped, picked or pasted image becomes
-//! before it reaches a note, without GPUI.
-//!
-//! [`plan_import`] checks every source with the renderer's own rules
-//! (format by signature, pixel ceiling, self-contained SVG), links a file
-//! already inside the workspace, and names a copy in `{stem}-assets/` for
-//! anything else. [`run_import`] performs one planned copy through
-//! [`WorkspaceFs`]. Both read or write files: run them off the UI thread.
-//!
-//! Names follow the OWASP File Upload Cheat Sheet: sanitized, type by
-//! signature, never by the declared extension.
-
 use std::collections::HashSet;
 use std::io::{Cursor, Read as _};
 use std::path::{Component, Path, PathBuf};
 
 use crate::fs::{FsError, WorkspaceFs};
 
-/// GPUI decodes an image to RGBA at its natural size: a header claiming
-/// more pixels than this (a decompression bomb) is never shown.
 pub const MAX_PIXELS: f32 = 50_000_000.0;
-/// Pasted bytes larger than this are refused (Writer's paste limit,
-/// `editor-clipboard.ts:9-10`). Files have no byte limit.
 pub const MAX_PASTE_BYTES: usize = 5 * 1024 * 1024;
-/// A local SVG larger than this is never shown: it is read whole, to be
-/// checked before GPUI sees it.
 pub const MAX_SVG_BYTES: u64 = 8 * 1024 * 1024;
-/// Bytes read to find a raster image's format and size.
 const HEADER_BYTES: u64 = 64 * 1024;
-/// The longest base name a copy gets, in UTF-8 bytes.
 const MAX_NAME_BYTES: usize = 120;
 
-/// The image formats Cerata displays.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ImageKind {
     Png,
@@ -44,7 +23,6 @@ pub enum ImageKind {
 }
 
 impl ImageKind {
-    /// The extension a file of this format is saved with.
     pub fn extension(self) -> &'static str {
         match self {
             Self::Png => "png",
@@ -59,7 +37,6 @@ impl ImageKind {
     }
 }
 
-/// The image format of `bytes`, by signature, SVG included.
 pub fn sniff(bytes: &[u8]) -> Option<ImageKind> {
     if is_svg(bytes) {
         return Some(ImageKind::Svg);
@@ -76,13 +53,11 @@ pub fn sniff(bytes: &[u8]) -> Option<ImageKind> {
     })
 }
 
-/// Whether `bytes` start like an SVG document.
 pub fn is_svg(bytes: &[u8]) -> bool {
     let head = &bytes[..bytes.len().min(1024)];
     std::str::from_utf8(head).is_ok_and(|s| s.contains("<svg"))
 }
 
-/// Natural size of an image, read from its header without decoding it.
 pub fn natural_size(bytes: &[u8]) -> Option<(f32, f32)> {
     if is_svg(bytes) {
         return svg_size(bytes);
@@ -95,7 +70,6 @@ pub fn natural_size(bytes: &[u8]) -> Option<(f32, f32)> {
     (w > 0 && h > 0).then_some((w as f32, h as f32))
 }
 
-/// `width` and `height` of the root `<svg>`, else its `viewBox`.
 fn svg_size(bytes: &[u8]) -> Option<(f32, f32)> {
     let text = String::from_utf8_lossy(&bytes[..bytes.len().min(8192)]);
     let start = text.find("<svg")?;
@@ -122,12 +96,6 @@ fn svg_size(bytes: &[u8]) -> Option<(f32, f32)> {
         .then(|| (view_box[2], view_box[3]))
 }
 
-/// Whether GPUI can render `svg` without reaching outside it. Its SVG
-/// renderer (usvg's default resolver) reads any `href` naming a file,
-/// network shares included, and parses nested SVG data with the same rule;
-/// FR-13 of the port PRD forbids an SVG's external resources. Only fragment
-/// references and inline raster images pass; entity declarations,
-/// character references and anything else reject the whole image.
 pub fn svg_is_self_contained(svg: &[u8]) -> bool {
     const INLINE_RASTER: &[&str] = &[
         "data:image/png",
@@ -163,10 +131,6 @@ pub fn svg_is_self_contained(svg: &[u8]) -> bool {
     true
 }
 
-/// The format of `bytes` and its natural size, when the renderer would
-/// show it: under the pixel ceiling and, for an SVG, self-contained.
-/// `Err(None)` when it is no image at all, `Err(Some(kind))` when it is
-/// one Cerata refuses to display.
 pub fn check_displayable(bytes: &[u8]) -> Result<(ImageKind, (f32, f32)), Option<ImageKind>> {
     let kind = sniff(bytes).ok_or(None)?;
     let size = natural_size(bytes).ok_or(Some(kind))?;
@@ -179,7 +143,6 @@ pub fn check_displayable(bytes: &[u8]) -> Result<(ImageKind, (f32, f32)), Option
     Ok((kind, size))
 }
 
-/// A bitmap re-encoded as PNG (lossless), `None` when it does not decode.
 fn bmp_to_png(bmp: &[u8]) -> Option<Vec<u8>> {
     let image = image::load_from_memory_with_format(bmp, image::ImageFormat::Bmp).ok()?;
     let mut png = Vec::new();
@@ -191,13 +154,9 @@ fn bmp_to_png(bmp: &[u8]) -> Option<Vec<u8>> {
 
 pub use cerata_markdown::asset_links::markdown_destination;
 
-/// What enters a note.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ImportSource {
-    /// A file: dropped, picked, or copied in the file manager.
     File(PathBuf),
-    /// Pasted bytes, with the format the clipboard declared and the base
-    /// name to save them under (`YYYYMMDD-HHMMSS-xxxx`).
     Bytes {
         bytes: Vec<u8>,
         declared: ImageKind,
@@ -205,8 +164,6 @@ pub enum ImportSource {
     },
 }
 
-/// Why a source was not added. Its text completes `Image not added: `
-/// (see [`Refusal::notice`]).
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum Refusal {
     #[error("the note is not saved in a folder")]
@@ -217,13 +174,11 @@ pub enum Refusal {
     NotDisplayable(String),
     #[error("{0:.1} MB is over the 5 MB limit")]
     TooLarge(f64),
-    /// A file that could not be read or written: the OS error.
     #[error("{0}")]
     Io(String),
 }
 
 impl Refusal {
-    /// The notice for this refusal alone.
     pub fn notice(&self) -> String {
         match self {
             Self::NotAnImage(_) | Self::NotDisplayable(_) => self.to_string(),
@@ -240,8 +195,6 @@ impl Refusal {
     }
 }
 
-/// One notice for the refusals of a gesture: the refusal alone, or
-/// `{n} files not added: {first}`. `None` without refusals.
 pub fn refusal_notice(refusals: &[Refusal]) -> Option<String> {
     match refusals {
         [] => None,
@@ -250,32 +203,24 @@ pub fn refusal_notice(refusals: &[Refusal]) -> Option<String> {
     }
 }
 
-/// What a copy writes.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CopyFrom {
     File(PathBuf),
     Bytes(Vec<u8>),
 }
 
-/// A file to write before the Markdown is inserted.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PlannedCopy {
     pub from: CopyFrom,
-    /// In `{stem}-assets/`, never taken when planned.
     pub to: PathBuf,
 }
 
-/// An accepted source: the Markdown to insert, and the copy that must
-/// succeed first (`None` for a file already inside the workspace).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PlannedImage {
     pub markdown: String,
     pub copy: Option<PlannedCopy>,
 }
 
-/// Plans `sources` for the note at `note` in the workspace at `root`: for
-/// each, in order, the Markdown and copy to perform, or why it is refused.
-/// Reads headers and checks names; writes nothing.
 pub fn plan_import(
     note: Option<&Path>,
     root: &Path,
@@ -296,8 +241,6 @@ pub fn plan_import(
         .collect()
 }
 
-/// Performs `planned`'s copy through `fs` and returns its Markdown. A
-/// copied file is checked again, since it may have changed since planning.
 pub fn run_import(fs: &WorkspaceFs, planned: PlannedImage) -> Result<String, Refusal> {
     let Some(copy) = planned.copy else {
         return Ok(planned.markdown);
@@ -322,11 +265,9 @@ pub fn run_import(fs: &WorkspaceFs, planned: PlannedImage) -> Result<String, Ref
     Ok(planned.markdown)
 }
 
-/// The note's folder and assets folder, canonical.
 struct NoteContext {
     root: PathBuf,
     dir: PathBuf,
-    /// `{stem}-assets`, as written in destinations.
     assets_name: String,
 }
 
@@ -365,8 +306,6 @@ impl NoteContext {
                 let too_large =
                     |bytes: &[u8]| Refusal::TooLarge(bytes.len() as f64 / (1024.0 * 1024.0));
                 let (bytes, kind) = match check_displayable(&bytes) {
-                    // A screenshot copied as a bitmap (`CF_DIB`) arrives
-                    // uncompressed: saved as PNG, it fits the limit.
                     Ok((ImageKind::Bmp, _)) => match bmp_to_png(&bytes) {
                         Some(png) => (png, ImageKind::Png),
                         None => return Err(Refusal::NotDisplayable(pasted)),
@@ -444,9 +383,6 @@ impl NoteContext {
         }
     }
 
-    /// `{base}.{ext}`, else `{base} 1.{ext}`, `{base} 2.{ext}`...: free in
-    /// the assets folder and not chosen earlier in the same gesture
-    /// (compared case-insensitively, as Windows and macOS do).
     fn unique_name(&self, base: &str, ext: &str, taken: &mut HashSet<String>) -> String {
         let assets = self.assets();
         let mut n: u64 = 0;
@@ -462,8 +398,6 @@ impl NoteContext {
                     taken.insert(key);
                     return name;
                 }
-                // Taken on disk: on a case-sensitive file system, a later
-                // `SHOT.png` of the gesture must not land beside `shot.png`.
                 taken.insert(key);
             }
             n += 1;
@@ -471,10 +405,6 @@ impl NoteContext {
     }
 }
 
-/// A file name safe on every OS (US-059): reserved characters and control
-/// characters become `-`, leading and trailing dots and spaces go, a
-/// Windows device name gets a `-` suffix, the name is cut to 120 bytes on a
-/// character boundary, and an empty name becomes `image`.
 pub fn sanitize_name(name: &str) -> String {
     const RESERVED: &[&str] = &[
         "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
@@ -508,7 +438,6 @@ pub fn sanitize_name(name: &str) -> String {
     name
 }
 
-/// An image's alt text: `\`, `[` and `]` escaped.
 fn escape_alt(alt: &str) -> String {
     let mut out = String::with_capacity(alt.len());
     for c in alt.chars() {
@@ -520,8 +449,6 @@ fn escape_alt(alt: &str) -> String {
     out
 }
 
-/// `target` relative to the folder `dir`, with `/` separators. Both are
-/// canonical and inside the same root.
 fn relative_path(dir: &Path, target: &Path) -> String {
     let dir: Vec<Component> = dir.components().collect();
     let target: Vec<Component> = target.components().collect();
@@ -542,7 +469,6 @@ fn file_name(path: &Path) -> String {
     )
 }
 
-/// The first `limit` bytes of a file.
 fn read_prefix(path: &Path, limit: u64) -> std::io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
     std::fs::File::open(path)?
@@ -563,7 +489,6 @@ mod tests {
         bytes
     }
 
-    /// A PNG header claiming `width` x `height` pixels, without the pixels.
     fn png_header(width: u32, height: u32) -> Vec<u8> {
         let mut bytes = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
         bytes.extend(width.to_be_bytes());
@@ -646,7 +571,6 @@ mod tests {
     #[test]
     fn a_file_outside_is_copied_with_the_detected_extension() {
         let ws = Workspace::new();
-        // A JPEG named `.png`: the signature wins.
         let mut jpeg = Vec::new();
         image::RgbImage::new(2, 2)
             .write_to(&mut Cursor::new(&mut jpeg), image::ImageFormat::Jpeg)
@@ -684,7 +608,6 @@ mod tests {
         let ws = Workspace::new();
         let target = ws.outside_file("secret.png", &png(3, 2));
         let link = ws.root.path().join("notes/link.png");
-        // Creating a symlink needs Developer Mode or an elevated shell.
         if std::os::windows::fs::symlink_file(&target, &link).is_err() {
             eprintln!("skipped: symlinks are not allowed here");
             return;
@@ -730,8 +653,6 @@ mod tests {
     #[test]
     fn a_reserved_or_empty_name_is_copied_under_a_safe_name() {
         let ws = Workspace::new();
-        // Before Windows 11, `nul.png` still names the NUL device unless the
-        // path is verbatim (`\\?\`), so the source is written and read that way.
         let reserved = ws.outside.path().join("nul.png");
         #[cfg(windows)]
         let reserved = {
@@ -821,7 +742,6 @@ mod tests {
             plan[3].as_ref().unwrap_err().notice(),
             "image.png is not an image"
         );
-        // A pasted bitmap over the limit is saved as a PNG under it.
         let mut bmp = Vec::new();
         image::RgbImage::from_pixel(1400, 1400, image::Rgb([40, 90, 160]))
             .write_to(&mut Cursor::new(&mut bmp), image::ImageFormat::Bmp)
@@ -848,7 +768,6 @@ mod tests {
         };
         assert_eq!(sniff(saved), Some(ImageKind::Png));
         assert!(saved.len() < MAX_PASTE_BYTES);
-        // A file has no byte limit.
         let mut big = png(3, 2);
         big.resize(MAX_PASTE_BYTES + 1024 * 1024, 0);
         let file = ws.outside_file("big.png", &big);
@@ -883,8 +802,6 @@ mod tests {
         );
     }
 
-    /// `paths.test.ts:102-110`: a written destination with spaces goes in
-    /// angle brackets; one without is left as is.
     #[test]
     fn written_destinations_bracket_spaces() {
         assert_eq!(

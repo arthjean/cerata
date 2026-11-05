@@ -1,23 +1,3 @@
-//! Settings (US-004): three layers (schema defaults, the global config, the
-//! workspace config) in a hand-editable `key = value` format.
-//!
-//! Ported from Writer `config.rs`, with the write ordering of Writer's
-//! `src/stores/settings-store.ts` moved into the core. The app holds a
-//! [`Settings`] handle per window:
-//!
-//! ```no_run
-//! # use cerata_core::settings::{ConfigValue, Layer, Settings};
-//! # fn main() -> Result<(), cerata_core::settings::SettingsError> {
-//! let (settings, _warnings) = Settings::open_default()?;
-//! let pending = settings.begin_set("editor.zoom", ConfigValue::Number(125.0), Layer::Global)?;
-//! // `settings.get("editor.zoom")` already reads 125; write on a background thread:
-//! pending.commit()?;
-//! # Ok(()) }
-//! ```
-//!
-//! Files: `paths::global_config_dir()/config` and
-//! `paths::workspace_config_path(root)`.
-
 mod atomic;
 mod format;
 mod schema;
@@ -33,7 +13,6 @@ use serde::Deserialize;
 pub use schema::{Normalization, Schema, Scope, SettingDef, ValueType};
 pub use store::{PendingWrite, Settings, WriteOutcome, global_config_path};
 
-/// A setting value. Lists are written as one `key = item` line per item.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(untagged)]
 pub enum ConfigValue {
@@ -73,40 +52,27 @@ impl ConfigValue {
     }
 }
 
-/// The config file a write targets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Layer {
     Global,
     Workspace,
 }
 
-/// A problem found in a config file. The offending line is skipped (or, for
-/// [`WarningKind::OutOfRange`], clamped), other lines still load, and the
-/// file text itself is never rewritten because of it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConfigWarning {
     pub path: PathBuf,
-    /// 1-based line number.
     pub line: usize,
-    /// The line's key, or the whole line when it is malformed.
     pub key: String,
     pub kind: WarningKind,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum WarningKind {
-    /// The value does not parse as the schema type; the key falls back to
-    /// the next layer.
     InvalidValue { raw: String, expected: ValueType },
-    /// A range value outside its bounds, clamped.
     OutOfRange { raw: String },
-    /// A key the schema does not declare (including Writer-legacy keys).
     UnknownKey,
-    /// A global-only key in a workspace config; ignored.
     GlobalOnly,
-    /// A scalar key repeated; the last valid line wins.
     Duplicate { first_line: usize },
-    /// A non-comment line without `key = value`.
     Malformed,
 }
 

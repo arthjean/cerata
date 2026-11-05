@@ -1,13 +1,3 @@
-//! The tab strip (`editor-tabs.tsx:104-225`): back and forward for the
-//! active tab, the tabs, and a new-tab button. It sits in the title bar, so
-//! each control occludes the drag area.
-//!
-//! The tabs take Paneflow's pane tabs at comfortable density (`pane.rs`,
-//! `unified_tab_chip`) but keep Cerata's width (at most 180 px): 32 px
-//! pills with a 12 px medium label, the active one raised by a border and a
-//! shadow, a round close button on hover only, a red dot after a failed
-//! save, and fades over the strip's hidden ends.
-
 use gpui::{
     BoxShadow, Context, FontWeight, Hsla, InteractiveElement, IntoElement, MouseButton,
     ParentElement, ScrollHandle, StatefulInteractiveElement, Styled, black, canvas, div, fill,
@@ -39,9 +29,6 @@ fn label(location: &Location) -> String {
     }
 }
 
-/// The active chip's fill, border and shadow, and the hover fill of the
-/// others. Light themes raise the active chip on the editor's surface;
-/// dark ones fill it with the text at 16 %.
 struct ChipColors {
     active: Hsla,
     active_border: Hsla,
@@ -69,7 +56,6 @@ fn chip_colors() -> ChipColors {
     }
 }
 
-/// Gradients over the strip's ends while tabs hide past them.
 fn strip_fades(scroll: ScrollHandle, color: Hsla) -> impl IntoElement {
     canvas(
         |_, _, _| {},
@@ -228,8 +214,6 @@ pub fn render(view: &WindowView, cx: &mut Context<WindowView>) -> impl IntoEleme
                 .text_ellipsis()
                 .child(name.clone()),
         );
-        // The close button shows on hover only; the keyboard reaches the
-        // active tab's (or Ctrl+W closes it).
         let close = crate::a11y::button(div().id(("tab-close", tab.id)), format!("Close {name}"))
             .tab_stop(is_active)
             .flex_none()
@@ -254,8 +238,6 @@ pub fn render(view: &WindowView, cx: &mut Context<WindowView>) -> impl IntoEleme
         .flex_1()
         .min_w_0()
         .h_full()
-        // On Windows the title bar's top pixel sits under the window border,
-        // so the chips center on the 38 px between it and the row's border.
         .when(cfg!(target_os = "windows"), |bar| bar.pt(px(1.0)))
         .items_center()
         .gap(px(4.0))
@@ -293,7 +275,6 @@ pub fn render(view: &WindowView, cx: &mut Context<WindowView>) -> impl IntoEleme
 }
 
 impl WindowView {
-    /// A file tab's menu (`editor-context-menu.ts:162-181`).
     pub fn open_tab_menu(
         &mut self,
         ix: usize,
@@ -313,8 +294,6 @@ impl WindowView {
         cx.notify();
     }
 
-    /// Expands the file's folders in the sidebar (showing it if hidden)
-    /// and scrolls to its row.
     pub fn reveal_in_sidebar(&mut self, path: &std::path::Path, cx: &mut Context<Self>) {
         let Some(sidebar) = self.sidebar.clone() else {
             return;

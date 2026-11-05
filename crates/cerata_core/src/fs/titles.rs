@@ -1,13 +1,3 @@
-//! Sidebar titles, read off the listing path in batches.
-//!
-//! Ported from Writer `fs.rs:50-112` (`extract_title`) and implements Writer's
-//! unshipped `SPECs/slow-storage-resilience-spec.md` (defect 12: Writer read
-//! titles synchronously inside `read_directory`, so one iCloud placeholder or
-//! stalled network mount froze the sidebar). Listings return no titles; the
-//! caller then starts [`spawn_title_batches`], which reads titles on
-//! background threads, gives each batch at most [`TITLE_BATCH_DEADLINE`],
-//! and stops as soon as the workspace epoch moves.
-
 use crate::epoch::EpochToken;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -16,17 +6,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-/// Bytes read from the start of a file to find its title.
 pub const TITLE_PROBE_BYTES: usize = 4096;
-/// Wall-clock budget of one batch; slower files are reported as timed out.
 pub const TITLE_BATCH_DEADLINE: Duration = Duration::from_secs(2);
-/// Files per batch.
 pub const TITLE_BATCH_SIZE: usize = 64;
-/// Reader threads per batch, so one slow file does not serialize the rest.
 const READERS_PER_BATCH: usize = 4;
 
-/// Title of a Markdown file: the frontmatter `title:` field, else a leading
-/// `# ` heading (the first non-blank line). Reads at most 4 KB.
 pub fn extract_title(path: &Path) -> Option<String> {
     let mut file = std::fs::File::open(path).ok()?;
     let mut buf = vec![0u8; TITLE_PROBE_BYTES];
@@ -34,21 +18,15 @@ pub fn extract_title(path: &Path) -> Option<String> {
     title_from_bytes(&buf[..read])
 }
 
-/// [`extract_title`] on bytes already read: only the first 4 KB count,
-/// so a title found from a whole file is the one the sidebar finds.
 pub fn title_from_bytes(bytes: &[u8]) -> Option<String> {
     let probe = &bytes[..bytes.len().min(TITLE_PROBE_BYTES)];
     let text = match std::str::from_utf8(probe) {
         Ok(text) => text,
-        // The 4 KB cut may split a character: keep the valid prefix.
         Err(error) => std::str::from_utf8(&probe[..error.valid_up_to()]).ok()?,
     };
     title_from_text(text.strip_prefix('\u{feff}').unwrap_or(text))
 }
 
-/// [`extract_title`] on text already in memory. The frontmatter is found by
-/// the editor's parser (`cerata_markdown::frontmatter`), so the sidebar and
-/// the editor never disagree on where it ends (US-010).
 pub fn title_from_text(text: &str) -> Option<String> {
     let (frontmatter, body) = cerata_markdown::frontmatter::split(text);
     if let Some(frontmatter) = frontmatter {
@@ -75,18 +53,13 @@ fn leading_h1(text: &str) -> Option<String> {
     (!title.is_empty()).then(|| title.to_owned())
 }
 
-/// Titles of one batch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TitleBatch {
     pub epoch: u64,
-    /// Every path of the batch, with `None` for no title or not read in time.
     pub titles: Vec<(PathBuf, Option<String>)>,
-    /// Paths whose read did not finish before the batch deadline.
     pub timed_out: Vec<PathBuf>,
 }
 
-/// Reads the titles of `paths` in batches on a background thread and hands
-/// each batch to `on_batch`. Stops, without reporting, once `token` is stale.
 pub fn spawn_title_batches(
     paths: Vec<PathBuf>,
     token: EpochToken,
@@ -136,8 +109,6 @@ fn read_batch(paths: &[PathBuf], read: &TitleReader, deadline: Duration, epoch: 
     for _ in 0..READERS_PER_BATCH.min(paths.len()) {
         let (shared, next, sender, read) =
             (shared.clone(), next.clone(), sender.clone(), read.clone());
-        // Readers stuck in a blocking syscall are left behind on purpose: a
-        // read blocked in the kernel cannot be canceled from user space.
         let spawned = std::thread::Builder::new()
             .name("cerata-title-reader".into())
             .spawn(move || {
@@ -206,11 +177,6 @@ mod tests {
         extract_title(&path)
     }
 
-    // Ported from Writer `fs.rs` title tests.
-
-    /// `frontmatter.test.ts:98-122` (`parseDocument`): the title comes from
-    /// the frontmatter, else a leading H1, else none; the body stays
-    /// verbatim.
     #[test]
     fn titles_leave_the_body_verbatim() {
         let doc = "---\ntitle: Hello\ntags: [a]\n---\n\n# Hello #\n\nBody";
@@ -283,12 +249,9 @@ mod tests {
 
     #[test]
     fn extract_title_frontmatter_closed_at_end_of_file() {
-        // The editor's rule: a closing `---` with no newline after it.
         assert_eq!(title_of("---\ntitle: End\n---").as_deref(), Some("End"));
         assert_eq!(title_of("---\ntitle: Open\n# H"), None);
     }
-
-    // Batches.
 
     fn collect(
         paths: Vec<PathBuf>,

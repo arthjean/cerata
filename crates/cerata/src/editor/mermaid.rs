@@ -1,14 +1,3 @@
-//! Mermaid diagrams (US-037): a closed ` ```mermaid ` fence drawn as a
-//! canvas 480 px tall, rendered by Pele on the renderer's thread
-//! (`cerata_render::js`). Ported from `mermaid-canvas.ts:24-690`,
-//! `mermaid-fullscreen.ts:11-88` and `mermaid-canvas.css:22-53`.
-//!
-//! Dragging pans; Ctrl or Cmd with the wheel, and a pinch, zoom from 0.25
-//! to 4 around the pointer; arrows, `+`, `-` and `0` drive it from the
-//! keyboard; a fit keeps 16 px around the diagram. The edit panel (a third
-//! of the width) holds the whole fence and writes it back 150 ms after the
-//! last keystroke. Diagram links are off (`links: false`).
-
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -28,7 +17,6 @@ use super::{Editor, theme};
 use crate::icons::{Icon, icon};
 
 pub const CANVAS_HEIGHT: f32 = 480.0;
-/// Space above and below the canvas in the text column.
 pub const CANVAS_MARGIN: f32 = 8.0;
 const ZOOM_MIN: f32 = 0.25;
 const ZOOM_MAX: f32 = 4.0;
@@ -40,7 +28,6 @@ const PINCH_ZOOM_SENSITIVITY: f32 = 0.01;
 const KEY_PAN_STEP: f32 = 24.0;
 const FIT_MARGIN: f32 = 16.0;
 const SOURCE_CHANGE_DEBOUNCE: Duration = Duration::from_millis(150);
-/// The edit panel's share of the width (`mermaid-canvas.css`).
 pub const PANEL_SHARE: f32 = 0.33;
 
 actions!(
@@ -52,8 +39,6 @@ actions!(
 
 pub const CONTEXT: &str = "MermaidCanvas";
 
-/// Keys of a focused diagram (`mermaid-canvas.ts:323-373`). The edit panel
-/// sits outside this context, so its keys stay text.
 pub fn bindings() -> Vec<KeyBinding> {
     let c = Some(CONTEXT);
     vec![
@@ -72,7 +57,6 @@ pub fn bindings() -> Vec<KeyBinding> {
     ]
 }
 
-/// `mix(a, b, t)`: `t` of `a` over `b`, as CSS `color-mix(in srgb, ...)`.
 fn mix(a: Hsla, b: Hsla, t: f32) -> String {
     let (a, b) = (a.to_rgb(), b.to_rgb());
     let channel = |x: f32, y: f32| ((x * t + y * (1.0 - t)).clamp(0.0, 1.0) * 255.0).round() as u8;
@@ -84,9 +68,6 @@ fn mix(a: Hsla, b: Hsla, t: f32) -> String {
     )
 }
 
-/// A diagram's accessible name: its own `accTitle`, else "Mermaid
-/// diagram:" and its first line (`mermaid-decorations.ts:53`,
-/// `mermaid-canvas.ts:464-471`).
 pub fn accessible_name(source: &str) -> String {
     let own = source.lines().find_map(|l| {
         l.trim()
@@ -104,8 +85,6 @@ pub fn accessible_name(source: &str) -> String {
     }
 }
 
-/// Pele's variables in the active theme (`mermaid-canvas.css:22-53`, at
-/// contrast 1).
 pub fn diagram_theme() -> DiagramTheme {
     let (bg, fg, accent) = (theme::background(), theme::text(), theme::accent());
     let critical = gpui::rgb(0xe5484d).into();
@@ -137,14 +116,10 @@ pub fn diagram_theme() -> DiagramTheme {
     }
 }
 
-/// What a canvas asks of the editor.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CanvasEvent {
-    /// Write this text over the whole fence.
     Rewrite(String),
-    /// Open this diagram full screen.
     Expand,
-    /// Close the full-screen canvas.
     Close,
 }
 
@@ -156,29 +131,21 @@ pub struct View {
 
 pub struct MermaidCanvas {
     focus_handle: FocusHandle,
-    /// The fence body, as rendered.
     pub source: String,
-    /// The whole fence, as the edit panel shows it.
     pub fence: String,
     request: Option<DiagramRequest>,
     rendered: Option<Rendered>,
     render_task: Option<Task<()>>,
     pub view: View,
-    /// The viewport size and diagram the view was last fitted to.
     fitted: Option<(f32, f32, usize)>,
     fit_zoom: f32,
-    /// Where the pointer and the pan were when a drag started.
     drag: Option<(Point<Pixels>, Point<f32>)>,
     pub editing: bool,
     panel: Option<(Entity<Editor>, Subscription)>,
     debounce: Option<Task<()>>,
-    /// The panel's revision the debounce last started for: a repaint of
-    /// the panel is not a keystroke.
     panel_revision: Option<u64>,
-    /// The viewport's bounds at the last frame (zoom around the pointer).
     viewport: Rc<Cell<Option<Bounds<Pixels>>>>,
     images: HashMap<(usize, u32), Arc<Image>>,
-    /// Full screen: no edit panel, a close button, as tall as given.
     pub fullscreen: bool,
     config: EditorConfig,
 }
@@ -218,8 +185,6 @@ impl MermaidCanvas {
         }
     }
 
-    /// Follows the document: the fence's body and its whole text. A text
-    /// the panel did not write replaces the panel's (undo, other edits).
     pub fn set_source(&mut self, source: &str, fence: &str, cx: &mut Context<Self>) {
         if self.source != source {
             self.source = source.to_owned();
@@ -243,7 +208,6 @@ impl MermaidCanvas {
         let request = DiagramRequest {
             source: self.source.clone(),
             theme: diagram_theme(),
-            // Writer's `diagramFonts`: the interface face and the code face.
             font: super::config::default_family(false).to_owned(),
             mono: if self.config.mono_families.is_empty() {
                 super::config::default_family(true).to_owned()
@@ -296,7 +260,6 @@ impl MermaidCanvas {
         zoom.clamp(ZOOM_MIN.min(self.fit_zoom), ZOOM_MAX)
     }
 
-    /// Fits the diagram in a `width` x `height` viewport, centered.
     fn fit(&mut self, width: f32, height: f32) {
         let Some(svg) = self.svg() else {
             return;
@@ -309,7 +272,6 @@ impl MermaidCanvas {
         self.fitted = Some((width, height, Arc::as_ptr(&svg) as *const u8 as usize));
     }
 
-    /// Zooms by `factor` keeping the viewport point `at` still.
     fn zoom_at(&mut self, at: Point<f32>, factor: f32, cx: &mut Context<Self>) {
         let next = self.clamp_zoom(self.view.zoom * factor);
         if (next - self.view.zoom).abs() < f32::EPSILON {
@@ -368,7 +330,6 @@ impl MermaidCanvas {
         if self.editing && self.panel.is_none() {
             let fence = self.fence.clone();
             let mut config = self.config.clone();
-            // `mermaid-canvas.css:115-121`: 12 px code at 1.5.
             config.font_size = 12.0;
             config.line_height = 1.5;
             config.font_families = config.mono_families.clone();
@@ -388,8 +349,6 @@ impl MermaidCanvas {
         cx.notify();
     }
 
-    /// The panel changed: its text goes to the document 150 ms after the
-    /// last keystroke.
     fn panel_changed(&mut self, panel: &Entity<Editor>, cx: &mut Context<Self>) {
         let state = &panel.read(cx).state;
         let revision = state.revision();
@@ -416,8 +375,6 @@ impl MermaidCanvas {
         cx.emit(CanvasEvent::Rewrite(next));
     }
 
-    /// The image of `svg` rasterized at `scale` (1, 2 or 4): a zoomed
-    /// diagram stays sharp.
     fn image(&mut self, svg: &Arc<Svg>, scale: u32) -> Arc<Image> {
         if self.images.len() > 16 {
             self.images.clear();
@@ -603,7 +560,6 @@ impl MermaidCanvas {
                 }),
             )
             .on_scroll(cx.listener(|canvas, event: &ScrollEvent, _, cx| {
-                // Without Ctrl or Cmd the note scrolls past the diagram.
                 if !(event.modifiers.control || event.modifiers.platform) {
                     cx.propagate();
                     return;
@@ -627,9 +583,6 @@ impl MermaidCanvas {
     }
 }
 
-/// The fit of a `w` x `h` diagram in a `width` x `height` viewport
-/// (`fitToViewport`): the zoom filling one axis with 16 px around it, and
-/// the view at that zoom (capped at 4), centered.
 fn fit_view(w: f32, h: f32, width: f32, height: f32) -> Option<(f32, View)> {
     if w <= 0.0 || h <= 0.0 || width <= 0.0 || height <= 0.0 {
         return None;
@@ -645,8 +598,6 @@ fn fit_view(w: f32, h: f32, width: f32, height: f32) -> Option<(f32, View)> {
     Some((fit_zoom, view))
 }
 
-/// `svg` with its root sized `width` x `height` (its `viewBox` keeps the
-/// drawing).
 fn scaled(svg: &str, width: f32, height: f32) -> String {
     let Some(head_end) = svg.find('>') else {
         return svg.to_owned();
@@ -739,8 +690,6 @@ impl Render for MermaidCanvas {
                 |canvas, _, cx| canvas.zoom_center(1.0 / BUTTON_ZOOM_FACTOR, cx),
             ));
 
-        // The diagram and its controls take the keys; the edit panel is
-        // outside, so typing there stays text.
         let stage = div()
             .id("mermaid-stage")
             .relative()
@@ -759,7 +708,6 @@ impl Render for MermaidCanvas {
             )
             .on_action(cx.listener(|c, _: &Fit, _, cx| c.refit(cx)))
             .on_action(cx.listener(|c, _: &ToggleEdit, window, cx| {
-                // Enter on a focused toolbar button clicks it instead.
                 if c.focus_handle.is_focused(window) {
                     c.toggle_edit(window, cx);
                 } else {
@@ -793,7 +741,6 @@ impl Render for MermaidCanvas {
             .cursor(CursorStyle::Arrow)
             .role(gpui::Role::Image)
             .aria_label(SharedString::from(accessible_name(&self.source)))
-            // The text behind never sees a click in the canvas.
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation());
         if self.editing
@@ -819,10 +766,6 @@ impl Render for MermaidCanvas {
     }
 }
 
-// --- In the editor -------------------------------------------------------------
-
-/// The ranges of the document's ` ```mermaid ` fences, in order, at any
-/// depth of quotes and lists.
 pub fn fences(
     tree: &cerata_markdown::MarkdownTree,
     text: &cerata_markdown::Text,
@@ -860,7 +803,6 @@ pub fn fences(
 }
 
 impl Editor {
-    /// The canvas drawn for the fence starting at `pos`, `width` wide.
     pub(super) fn mermaid_element(
         &mut self,
         source: &str,
@@ -912,7 +854,6 @@ impl Editor {
                     return;
                 }
                 let change = cerata_markdown::Change::new(range, next.clone());
-                // The caret stays where it was: the panel has the focus.
                 self.update_state(cx, |state| {
                     let _ = state.apply(
                         cerata_markdown::Transaction::new()
@@ -949,7 +890,6 @@ impl Editor {
         }
     }
 
-    /// Closes the full-screen diagram; the focus goes back to its canvas.
     pub(super) fn close_fullscreen(&mut self, cx: &mut Context<Self>) {
         if let Some(full) = self.fullscreen.take() {
             self.refocus_to = Some(full.returns_to);
@@ -957,7 +897,6 @@ impl Editor {
         }
     }
 
-    /// The full-screen overlay, over the whole editor.
     pub(super) fn render_fullscreen(
         &mut self,
         window: &mut Window,
@@ -979,7 +918,6 @@ impl Editor {
             .bg(theme::overlay())
             .occlude()
             .role(gpui::Role::Dialog)
-            // A click on the backdrop closes; the canvas stops its clicks.
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|editor, _, _, cx| {
@@ -994,19 +932,15 @@ impl Editor {
     }
 }
 
-/// The diagram open full screen, and the canvas the focus returns to.
 pub struct Fullscreen {
     pub canvas: Entity<MermaidCanvas>,
     _events: Subscription,
     returns_to: FocusHandle,
-    /// Take the focus at the next frame.
     focus: bool,
 }
 
 #[cfg(test)]
 mod tests {
-    /// `mermaid.test.ts:314-330`: the first line names a diagram, unless it
-    /// has an accessible title of its own.
     #[test]
     fn a_diagram_is_named_by_its_title_or_first_line() {
         assert_eq!(
@@ -1026,8 +960,6 @@ mod tests {
         );
     }
 
-    /// `mermaid.test.ts:243-275` and `:270`: the theme sets every color
-    /// Pele reads; the canvas has a fixed whole-pixel height.
     #[test]
     fn the_theme_sets_every_color_pele_reads() {
         let theme = super::diagram_theme();
@@ -1039,8 +971,6 @@ mod tests {
 
     use super::*;
 
-    /// A wide diagram fills the width with 16 px each side, centered; a
-    /// small one stops at 4x; one too large for 0.25 keeps its fit.
     #[test]
     fn a_fit_keeps_16_px_and_bounds_the_zoom() {
         let (fit, view) = fit_view(2000.0, 400.0, 600.0, 480.0).unwrap();

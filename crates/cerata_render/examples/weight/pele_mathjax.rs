@@ -1,4 +1,3 @@
-//! US-031 binary weight: Pele and MathJax sharing one QuickJS.
 const PELE: &str = include_str!(concat!(
     env!("CERATA_SPIKE_JS"),
     "/pele/package/dist/pele.global.js"

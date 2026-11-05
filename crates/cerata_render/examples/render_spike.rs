@@ -1,13 +1,3 @@
-//! US-031 throwaway spike: diagram and formula rendering without a browser.
-//! Compares `mermaid-svg` with Pele in QuickJS for diagrams, and mitex +
-//! Typst with MathJax in QuickJS for formulas: share rendered without error,
-//! visual gap, p95 render time. Binary weight comes from the `weight_*`
-//! examples. Results: `docs/adr/0005-diagram-and-math-rendering.md`.
-//!
-//! `CERATA_SPIKE_JS` points at a folder holding the unpacked npm and Typst
-//! packages (`pele/package`, `mathjax3/package`, `mitex-typ`, `xarrow-typ`).
-//! Writes SVGs, PNGs and `report.json` under `target/render_spike/`.
-
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 #[path = "render_spike/corpus.rs"]
@@ -31,7 +21,6 @@ struct Outcome {
 
 #[derive(Clone)]
 struct Raster {
-    /// 128x128 grayscale, the image fitted and centered.
     thumb: Vec<u8>,
     png: Vec<u8>,
 }
@@ -159,8 +148,6 @@ fn run(
         match first {
             Ok(svg) => {
                 for _ in 0..RUNS {
-                    // Cold renders: Typst memoizes whole compilations, and
-                    // the app caches results itself.
                     typst::comemo::evict(0);
                     let start = Instant::now();
                     let _ = render(source);
@@ -201,15 +188,10 @@ fn run(
     }
 }
 
-/// resvg resolves no CSS custom property. Pele declares its palette as
-/// custom properties on the root `style` (`--_bg:var(--pele-bg,#fff)`) and
-/// uses `var(--_bg)` everywhere: substitute the declared values, falling
-/// back to the `var()` fallback.
 fn resolve_vars(svg: &str) -> String {
     let mut vars: std::collections::HashMap<String, String> = Default::default();
     let mut s = svg.to_string();
     for _ in 0..4 {
-        // Declarations, in `style` attributes only.
         let mut rest = s.as_str();
         while let Some(i) = rest.find("--") {
             let tail = &rest[i..];
@@ -311,8 +293,6 @@ fn rasterize(svg: &str) -> Result<Raster, String> {
     Ok(Raster { thumb: gray, png })
 }
 
-/// Mean absolute gray difference of the fitted thumbnails, in percent of
-/// full scale, over the items both engines rendered.
 fn visual_gap(a: &Outcome, b: &Outcome) -> Option<f64> {
     if std::ptr::eq(a, b) {
         return Some(0.0);

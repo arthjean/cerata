@@ -1,6 +1,3 @@
-//! EP-018 through the window: the history panel (US-091), the merge of a
-//! change made outside Cerata (US-092) and sync conflict copies (US-093).
-
 use cerata_core::fs::text::TextFormat;
 use cerata_core::history::{self, Cause, VersionInfo};
 use cerata_core::merge::Choice;
@@ -29,7 +26,6 @@ fn store(cx: &mut TestAppContext, handle: WindowHandle<WindowView>) -> cerata_co
     })
 }
 
-/// The versions of `path`, newest first, once those recorded are in.
 fn versions(
     cx: &mut TestAppContext,
     handle: WindowHandle<WindowView>,
@@ -57,7 +53,6 @@ fn causes(versions: &[VersionInfo]) -> Vec<Cause> {
     versions.iter().map(|v| v.cause).collect()
 }
 
-/// Opens the panel and waits for its list and the first preview.
 fn open_panel(
     cx: &mut TestAppContext,
     handle: WindowHandle<WindowView>,
@@ -86,8 +81,6 @@ fn undo(cx: &mut TestAppContext, handle: WindowHandle<WindowView>) {
     });
 }
 
-/// US-091: "Restore" is one undoable transaction; the text it replaces and
-/// the restored text are both versions.
 #[gpui::test]
 fn restoring_a_version_is_one_undo_step(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -101,14 +94,12 @@ fn restoring_a_version_is_one_undo_step(cx: &mut TestAppContext) {
     let before = editor_text(cx, handle);
     assert_eq!(before, "first draft\nsecond");
 
-    // The first edit offered the text found on disk as the first version.
     open_panel(cx, handle, None, View::Note);
     let listed = read(cx, handle, |view, cx| {
         view.history_panel.as_ref().unwrap().read(cx).versions.len()
     });
     assert!(listed >= 1, "the pre-edit state is listed");
 
-    // Newest first: select the oldest, "first draft".
     update(cx, handle, |view, _, cx| {
         let panel = view.history_panel.clone().unwrap();
         panel.update(cx, |panel, cx| panel.select(Some(listed - 1), cx));
@@ -128,8 +119,6 @@ fn restoring_a_version_is_one_undo_step(cx: &mut TestAppContext) {
         panel.update(cx, |panel, cx| panel.restore(cx));
     });
     assert_eq!(editor_text(cx, handle), "first draft\n");
-    // The list reloads with the new versions on top; the selection stays
-    // on the version that was restored.
     wait_until(cx, |cx| {
         read(cx, handle, |view, cx| {
             let panel = view.history_panel.as_ref().unwrap().read(cx);
@@ -157,8 +146,6 @@ fn restoring_a_version_is_one_undo_step(cx: &mut TestAppContext) {
     assert_eq!(editor_text(cx, handle), before, "one Ctrl+Z undoes it");
 }
 
-/// US-091: a deleted note comes back beside a file that took its path,
-/// never over it, with its history.
 #[gpui::test]
 fn a_deleted_note_restores_beside_a_taken_path(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -211,7 +198,6 @@ fn a_deleted_note_restores_beside_a_taken_path(cx: &mut TestAppContext) {
     );
 }
 
-/// US-091: 1,000 versions list in at most 200 ms.
 #[gpui::test]
 fn the_panel_lists_1000_versions_within_200_ms(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -241,9 +227,6 @@ fn the_panel_lists_1000_versions_within_200_ms(cx: &mut TestAppContext) {
     assert!(took <= Duration::from_millis(200), "listed in {took:?}");
 }
 
-/// US-091 and US-090 through the panel: "Copy" fills the clipboard, "Pin
-/// Version" and "Unpin" toggle the pin, and "Delete History Before…" asks
-/// before deleting the older versions, never the note.
 #[gpui::test]
 fn copy_pin_and_delete_before_act_from_the_panel(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -254,7 +237,6 @@ fn copy_pin_and_delete_before_act_from_the_panel(cx: &mut TestAppContext) {
         let runtime = view.core.runtime().unwrap();
         (view.history().unwrap(), runtime.relative(&a).unwrap())
     });
-    // Newest first in the list: "today" (now), then "old" (2001).
     for (text, ts) in [("old\n", 1_000_000_000), ("today\n", history::unix_now())] {
         let mut request = history::Request::new(relative.clone(), text.into(), Cause::Save);
         request.ts = ts;
@@ -310,8 +292,6 @@ fn copy_pin_and_delete_before_act_from_the_panel(cx: &mut TestAppContext) {
     assert_eq!(std::fs::read_to_string(&a).unwrap(), "today\n");
 }
 
-/// US-091: without a store (synced folder, newer schema), the panel says
-/// why and offers no action.
 #[gpui::test]
 fn the_panel_says_why_history_is_unavailable(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -344,7 +324,6 @@ fn the_panel_says_why_history_is_unavailable(cx: &mut TestAppContext) {
     );
 }
 
-/// US-091: a note without versions says how history starts.
 #[gpui::test]
 fn a_note_without_versions_has_an_empty_history(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -360,7 +339,6 @@ fn a_note_without_versions_has_an_empty_history(cx: &mut TestAppContext) {
         (panel.versions.is_empty(), panel.is_available())
     });
     assert!(empty && available);
-    // The panel's actions are palette commands while it is open (US-091).
     let commands = read(cx, handle, |view, _| view.availability());
     let offered: Vec<_> = crate::palette::HistoryCommand::ALL
         .into_iter()
@@ -373,8 +351,6 @@ fn a_note_without_versions_has_an_empty_history(cx: &mut TestAppContext) {
     assert!(read(cx, handle, |view, _| view.history_panel.is_none()));
 }
 
-/// Leaves `a` dirty, its disk changed to `theirs` outside Cerata, and the
-/// change detected.
 fn change_outside(
     cx: &mut TestAppContext,
     handle: WindowHandle<WindowView>,
@@ -388,8 +364,6 @@ fn change_outside(
     });
 }
 
-/// US-092: changes that do not overlap merge into the buffer as one undo
-/// step; the disk state and the result are versions.
 #[gpui::test]
 fn disjoint_outside_changes_merge_into_the_buffer(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -399,7 +373,6 @@ fn disjoint_outside_changes_merge_into_the_buffer(cx: &mut TestAppContext) {
     update(cx, handle, |view, window, cx| {
         view.open_file(&a, window, cx)
     });
-    // A save ends the note with a newline.
     change_outside(cx, handle, &a, "ALPHA\n\nbeta\n mine\n");
     assert_eq!(editor_text(cx, handle), "ALPHA\n\nbeta\n mine more");
     assert_eq!(conflict(cx, handle), None);
@@ -416,8 +389,6 @@ fn disjoint_outside_changes_merge_into_the_buffer(cx: &mut TestAppContext) {
     assert_eq!(editor_text(cx, handle), "alpha\n\nbeta\n mine more");
 }
 
-/// US-092: overlapping changes leave the buffer alone until "Review
-/// Changes" decides; "Keep Both" keeps both texts, written as a merge.
 #[gpui::test]
 fn overlapping_changes_wait_for_the_review(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -471,8 +442,6 @@ fn overlapping_changes_wait_for_the_review(cx: &mut TestAppContext) {
     );
 }
 
-/// US-092: quitting with the review undone writes the buffer; the disk
-/// state was already a version, so neither side is lost.
 #[gpui::test]
 fn quitting_during_a_conflict_loses_neither_side(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -506,7 +475,6 @@ fn quitting_during_a_conflict_loses_neither_side(cx: &mut TestAppContext) {
 
 const COPY: &str = "a.sync-conflict-20261103-101010-ABCDEFG.md";
 
-/// Opens `a` dirty, then a Syncthing conflict copy of it arrives.
 fn copy_arrives(
     cx: &mut TestAppContext,
     env: &Env,
@@ -530,9 +498,6 @@ fn copy_arrives(
     copy
 }
 
-/// US-093: a copy that arrives while its original is open with unsaved
-/// edits becomes a `conflict` version; "Review Conflict" merges it, then
-/// the copy goes to the trash.
 #[gpui::test]
 fn a_conflict_copy_is_reviewed_and_trashed(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -575,7 +540,6 @@ fn a_conflict_copy_is_reviewed_and_trashed(cx: &mut TestAppContext) {
         notice_text(cx, handle).is_some_and(|n| n != MERGED)
     });
     match notice_text(cx, handle) {
-        // Headless sessions may have no trash: the copy must survive.
         Some(notice) if notice.starts_with("Conflict not resolved") => assert!(copy.exists()),
         notice => {
             assert_eq!(notice.as_deref(), Some(RESOLVED));
@@ -584,9 +548,6 @@ fn a_conflict_copy_is_reviewed_and_trashed(cx: &mut TestAppContext) {
     }
 }
 
-/// US-093: resolving a copy against an original that was never opened nor
-/// versioned keeps the original's text in the history, even when "Keep
-/// Theirs" drops it from the note: no side is ever lost.
 #[gpui::test]
 fn resolving_a_copy_keeps_the_original_in_the_history(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -627,8 +588,6 @@ fn resolving_a_copy_keeps_the_original_in_the_history(cx: &mut TestAppContext) {
     assert!(texts.iter().any(|t| t == "copy text\n"), "{texts:?}");
 }
 
-/// US-093: "Keep Both" makes the copy an ordinary note, `{stem} (2).md`,
-/// and its mark goes.
 #[gpui::test]
 fn keep_both_renames_the_copy_into_a_note(cx: &mut TestAppContext) {
     let env = setup(cx);
@@ -662,7 +621,6 @@ fn keep_both_renames_the_copy_into_a_note(cx: &mut TestAppContext) {
     });
 }
 
-/// US-093: a copy without its original is an ordinary note.
 #[gpui::test]
 fn a_copy_without_its_original_is_an_ordinary_note(cx: &mut TestAppContext) {
     let env = setup(cx);

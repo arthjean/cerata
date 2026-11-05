@@ -1,10 +1,3 @@
-//! US-010 reparse budget: `MarkdownTree::reparse` after one keystroke on
-//! the 3 000-item list of `list-enter-exit.spec.js` (budget 2 ms) and on a
-//! 1 MiB note (budget 16 ms), each keystroke reparsed from the previous
-//! tree as `EditorState` does. US-013: Enter after `sub item!!` on the same
-//! list, the whole `EditorState::insert_newline` path (budget 16 ms).
-//! Run with `--release`.
-
 #[path = "parser_spike/corpus.rs"]
 #[allow(dead_code)]
 mod corpus;
